@@ -1,0 +1,23 @@
+[Unit]
+Description=Stock Platform Scanner Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{DEPLOY_PATH}}/api
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH={{DEPLOY_PATH}}:{{DEPLOY_PATH}}/api"
+ExecStart=/usr/bin/python3 -m uvicorn index:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stock-scanner
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
