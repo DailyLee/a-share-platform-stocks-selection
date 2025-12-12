@@ -927,7 +927,7 @@ const config = ref({
 
   // 技术指标参数
   use_technical_indicators: false, // 是否启用技术指标
-  use_breakthrough_prediction: false, // 是否启用突破前兆识别
+  use_breakthrough_prediction: true, // 是否启用突破前兆识别
 
   // 位置参数
   use_low_position: true, // 是否启用低位判断
@@ -941,12 +941,12 @@ const config = ref({
   rapid_decline_threshold: 0.15, // 快速下跌阈值
 
   // 突破确认参数
-  use_breakthrough_confirmation: false, // 是否启用突破确认
+  use_breakthrough_confirmation: true, // 是否启用突破确认
   breakthrough_confirmation_days: 1, // 确认天数，默认为1天，这样启用时不需要手动修改
 
   // 箱体检测参数
   use_box_detection: true, // 是否启用箱体检测
-  box_quality_threshold: 0.3, // 箱体质量阈值
+  box_quality_threshold: 0.75, // 箱体质量阈值
 
   // 基本面筛选参数
   use_fundamental_filter: false, // 是否启用基本面筛选
@@ -959,7 +959,7 @@ const config = ref({
   fundamental_years_to_check: 3, // 检查连续增长的年数
 
   // 窗口权重参数
-  use_window_weights: false, // 是否使用窗口权重
+  use_window_weights: true, // 是否使用窗口权重
   window_weights: {} // 窗口权重
 });
 

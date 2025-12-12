@@ -165,18 +165,16 @@ onUnmounted(() => {
 }
 
 .tooltip-content {
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 
 .tooltip-inner {
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 1);
   border-left: 3px solid hsl(var(--primary));
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .dark .tooltip-inner {
-  background-color: rgba(30, 41, 59, 0.75);
+  background-color: rgba(30, 41, 59, 1);
 }
 
 .tooltip-title {

@@ -109,13 +109,13 @@
   }
 
   .tooltip-inner {
-    @apply bg-card bg-opacity-85 backdrop-blur-md border border-border border-opacity-30 rounded-md p-3 text-sm;
+    @apply bg-card bg-opacity-100 border border-border border-opacity-30 rounded-md p-3 text-sm;
     border-left: 3px solid hsl(var(--primary));
     box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.15);
   }
 
   .dark .tooltip-inner {
-    @apply bg-card bg-opacity-90;
+    @apply bg-card bg-opacity-100;
   }
 }
 
