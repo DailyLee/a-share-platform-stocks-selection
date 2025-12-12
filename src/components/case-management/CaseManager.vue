@@ -94,7 +94,7 @@ const loadCases = async () => {
 
   try {
     // 从API加载案例
-    const response = await axios.get('/api/cases');
+    const response = await axios.get('/platform/api/cases');
     cases.value = response.data.cases || [];
     loading.value = false;
   } catch (err) {
@@ -147,7 +147,7 @@ const confirmDeleteCase = (caseItem) => {
 const deleteCase = async () => {
   try {
     // 调用API删除案例
-    await axios.delete(`/api/cases/${caseToDelete.value}`);
+      await axios.delete(`/platform/api/cases/${caseToDelete.value}`);
 
     // 从本地列表中移除
     cases.value = cases.value.filter(caseItem => caseItem.id !== caseToDelete.value);

@@ -1472,7 +1472,7 @@ async function exportToCase (stock) {
     }
 
     // 发送请求到后端
-    const response = await axios.post('/api/cases/export', exportData);
+    const response = await axios.post('/platform/api/cases/export', exportData);
 
     // 关闭加载提示
     closeToast(loadingToast);
@@ -1715,7 +1715,7 @@ function startPolling (taskId) {
   // 设置新的轮询
   pollingInterval.value = setInterval(async () => {
     try {
-      const response = await axios.get(`/api/scan/status/${taskId}`);
+      const response = await axios.get(`/platform/api/scan/status/${taskId}`);
       const taskData = response.data;
 
       // 更新任务状态
@@ -1847,8 +1847,8 @@ async function fetchPlatformStocks () {
       fundamental_years_to_check: config.value.fundamental_years_to_check
     };
 
-    console.log("发送POST请求到 /api/scan/start...");
-    const resp = await axios.post('/api/scan/start', payload);
+    console.log("发送POST请求到 /platform/api/scan/start...");
+    const resp = await axios.post('/platform/api/scan/start', payload);
     console.log("POST请求完成，获取任务ID:", resp.data);
 
     if (resp.data && resp.data.task_id) {
@@ -1947,7 +1947,7 @@ async function fetchPlatformStocksLegacy () {
     };
 
     console.log("使用旧版API直接请求...");
-    const resp = await axios.post('/api/scan', payload, {
+    const resp = await axios.post('/platform/api/scan', payload, {
       timeout: 300000
     });
 

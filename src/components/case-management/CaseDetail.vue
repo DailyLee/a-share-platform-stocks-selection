@@ -294,7 +294,7 @@ const loadCaseData = async () => {
 
   try {
     // 从API加载案例数据
-    const response = await axios.get(`/api/cases/${props.caseId}`);
+    const response = await axios.get(`/platform/api/cases/${props.caseId}`);
     const caseDataFromApi = response.data;
 
     // 更新案例数据
@@ -491,7 +491,7 @@ const saveCase = async () => {
     };
 
     // 保存到API
-    const response = await axios.put(`/api/cases/${caseData.value.id}`, updateData);
+    const response = await axios.put(`/platform/api/cases/${caseData.value.id}`, updateData);
 
     // 更新本地数据
     if (response.data) {

@@ -4,6 +4,7 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: '/platform/', // 设置基础路径为 /platform/
   plugins: [vue()],
   resolve: {
     alias: {
@@ -13,10 +14,10 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     proxy: {
-      "/api": {
+      "/platform/api": {
         target: process.env.VITE_API_URL || "http://127.0.0.1:8001",
         changeOrigin: true,
-        rewrite: (path) => path,
+        rewrite: (path) => path.replace(/^\/platform\/api/, '/api'),
         configure: (proxy, options) => {
           // 增加超时时间到10分钟
           proxy.on("error", (err, req, res) => {

@@ -606,95 +606,7 @@ else
     print_info "可以手动启动后端服务: cd api && python3 -m uvicorn index:app --host 0.0.0.0 --port 8001"
 fi
 
-# 8. 配置Nginx提供前端静态文件
-print_info "配置Nginx..."
-if ! command -v nginx &> /dev/null; then
-    print_info "安装Nginx..."
-    if command -v yum &> /dev/null; then
-        yum install -y nginx 2>/dev/null || true
-    elif command -v apt-get &> /dev/null; then
-        apt-get update -qq && apt-get install -y nginx 2>/dev/null || true
-    fi
-fi
-
-if command -v nginx &> /dev/null; then
-    print_info "生成Nginx配置文件..."
-    NGINX_CONF="/etc/nginx/conf.d/stock-scanner.conf"
-    
-    # 读取配置（从环境变量或使用默认值）
-    FRONTEND_PORT=${FRONTEND_PORT:-80}
-    BACKEND_PORT=${BACKEND_PORT:-8001}
-    
-    # 创建nginx配置
-    sudo tee "$NGINX_CONF" > /dev/null <<EOF
-server {
-    listen ${FRONTEND_PORT};
-    server_name _;
-
-    # 前端静态文件
-    location / {
-        root $SCRIPT_DIR/dist;
-        index index.html;
-        try_files \$uri \$uri/ /index.html;
-        
-        # 缓存静态资源
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
-    }
-
-    # 后端API代理
-    location /api {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        # 超时设置
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # WebSocket支持
-    location /ws {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    }
-
-    # 日志
-    access_log /var/log/nginx/stock-scanner-access.log;
-    error_log /var/log/nginx/stock-scanner-error.log;
-}
-EOF
-
-    # 测试nginx配置
-    if sudo nginx -t 2>/dev/null; then
-        print_info "Nginx配置测试通过"
-        # 启动并启用nginx
-        sudo systemctl enable nginx 2>/dev/null || true
-        sudo systemctl restart nginx 2>/dev/null || true
-        print_info "Nginx已启动"
-    else
-        print_error "Nginx配置测试失败"
-        sudo nginx -t
-    fi
-else
-    print_warn "Nginx安装失败，无法提供前端服务"
-fi
-
-# 9. 配置防火墙（如果需要）
+# 8. 配置防火墙（如果需要）
 print_info "检查防火墙配置..."
 if command -v firewall-cmd &> /dev/null; then
     print_info "配置firewalld规则..."
@@ -712,3 +624,5 @@ print_info "前端文件位置: $SCRIPT_DIR/dist"
 print_info "后端代码位置: $SCRIPT_DIR/api"
 print_info "查看后端服务状态: sudo systemctl status stock-scanner.service"
 print_info "查看后端日志: sudo journalctl -u stock-scanner.service -f"
+print_warn "注意: 请手动配置Nginx来提供前端静态文件和API代理"
+print_info "参考配置文件: nginx.conf.example"

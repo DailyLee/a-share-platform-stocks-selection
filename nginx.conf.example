@@ -1,27 +1,19 @@
 # Nginx配置文件示例
 # 将此文件复制到服务器 /etc/nginx/conf.d/stock-scanner.conf
 # 并根据实际情况修改配置
+# 
+# 配置说明：
+# - 前端访问地址: http://your-ip/platform
+# - 后端API地址: http://your-ip/platform/api
+# - 部署路径: /opt/stock-scanner (根据 .deploy.env 中的 DEPLOY_PATH 修改)
 
 server {
     listen 80;
-    server_name your-domain.com;  # 修改为你的域名或IP
+    server_name _;  # 可以改为你的域名或IP，使用 _ 表示接受所有请求
 
-    # 前端静态文件
-    location / {
-        root /opt/stock-scanner/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-        
-        # 缓存静态资源
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
-    }
-
-    # 后端API代理
-    location /api {
-        proxy_pass http://127.0.0.1:8001;
+    # 后端API代理 - 使用 /platform/api 路径（必须在 /platform 之前）
+    location /platform/api/ {
+        proxy_pass http://127.0.0.1:8001/api/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -31,14 +23,28 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
         
-        # 超时设置
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        # 超时设置（根据实际需求调整）
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
     }
 
-    # WebSocket支持（如果需要）
-    location /ws {
+    # 前端静态文件 - /platform 路径（必须在 API 之后）
+    location /platform {
+        alias /opt/stock-scanner/dist;  # 根据实际部署路径修改
+        index index.html;
+        try_files $uri $uri/ /platform/index.html;
+        
+        # 缓存静态资源
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+
+    # WebSocket支持 - /platform/ws 路径
+    location /platform/ws {
+        rewrite ^/platform/ws(.*)$ /ws$1 break;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -46,6 +52,11 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        
+        # WebSocket超时设置
+        proxy_connect_timeout 7d;
+        proxy_send_timeout 7d;
+        proxy_read_timeout 7d;
     }
 
     # 日志
