@@ -40,9 +40,28 @@ fi
 # 安装必要工具
 print_info "安装必要工具..."
 if command -v yum &> /dev/null; then
-    yum install -y rsync curl wget 2>/dev/null || true
+    yum install -y rsync curl wget coreutils 2>/dev/null || true
 elif command -v apt-get &> /dev/null; then
-    apt-get update -qq && apt-get install -y rsync curl wget 2>/dev/null || true
+    apt-get update -qq && apt-get install -y rsync curl wget coreutils 2>/dev/null || true
+fi
+
+# 检查timeout命令是否可用，如果不可用则创建一个简单的包装函数
+if ! command -v timeout &> /dev/null; then
+    print_warn "timeout命令不可用，将使用备用方法"
+    timeout() {
+        local duration=$1
+        shift
+        # 使用后台进程和sleep实现简单的超时
+        "$@" &
+        local pid=$!
+        sleep $duration
+        if kill -0 $pid 2>/dev/null; then
+            kill $pid 2>/dev/null
+            return 124
+        fi
+        wait $pid
+        return $?
+    }
 fi
 
 # 1. 安装Node.js和npm（如果未安装或版本<=20）
@@ -70,15 +89,66 @@ fi
 if [ "$NEED_INSTALL" = true ] || [ "$NEED_UPGRADE" = true ]; then
     # 使用NodeSource安装/升级Node.js 22.x
     print_info "配置NodeSource仓库..."
-    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+    print_info "提示: 这可能需要几分钟，请耐心等待..."
+    
+    # 使用timeout命令限制curl执行时间（5分钟超时）
+    if ! timeout 300 curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | bash - 2>&1 | tee /tmp/nodesource_setup.log; then
+        EXIT_CODE=${PIPESTATUS[0]}
+        if [ "$EXIT_CODE" -eq 124 ]; then
+            print_error "NodeSource仓库配置超时（超过5分钟）"
+        else
+            print_error "NodeSource仓库配置失败（退出码: $EXIT_CODE）"
+            print_error "配置日志（最后10行）:"
+            tail -10 /tmp/nodesource_setup.log 2>/dev/null || true
+        fi
+        print_error "请检查网络连接或手动配置NodeSource仓库"
+        exit 1
+    fi
+    print_info "NodeSource仓库配置完成"
     
     if [ "$NEED_UPGRADE" = true ]; then
         print_info "升级Node.js到22.x..."
-        # 升级时确保使用nodesource仓库
-        yum install -y nodejs --disablerepo='*' --enablerepo=nodesource || yum upgrade -y nodejs
+        print_info "提示: 正在下载和安装Node.js，这可能需要几分钟..."
+        print_info "提示: yum会显示下载和安装进度，请耐心等待..."
+        # 升级时确保使用nodesource仓库，添加超时（10分钟）
+        if timeout 600 yum install -y nodejs --disablerepo='*' --enablerepo=nodesource 2>&1 | tee /tmp/nodejs_install.log; then
+            print_info "Node.js升级成功"
+        else
+            EXIT_CODE=${PIPESTATUS[0]}
+            if [ "$EXIT_CODE" -eq 124 ]; then
+                print_error "Node.js升级超时（超过10分钟）"
+            else
+                print_warn "使用nodesource仓库升级失败，尝试备用方法..."
+                if timeout 600 yum upgrade -y nodejs 2>&1 | tee -a /tmp/nodejs_install.log; then
+                    print_info "Node.js升级成功（使用备用方法）"
+                else
+                    EXIT_CODE2=${PIPESTATUS[0]}
+                    print_error "Node.js升级失败（退出码: $EXIT_CODE2）"
+                fi
+            fi
+            if [ "$EXIT_CODE" -eq 124 ] || [ "${EXIT_CODE2:-0}" -ne 0 ]; then
+                print_error "安装日志（最后20行）:"
+                tail -20 /tmp/nodejs_install.log 2>/dev/null || true
+                exit 1
+            fi
+        fi
     else
         print_info "安装Node.js 22.x..."
-        yum install -y nodejs
+        print_info "提示: 正在下载和安装Node.js，这可能需要几分钟..."
+        print_info "提示: yum会显示下载和安装进度，请耐心等待..."
+        # 添加超时（10分钟）
+        if ! timeout 600 yum install -y nodejs 2>&1 | tee /tmp/nodejs_install.log; then
+            EXIT_CODE=${PIPESTATUS[0]}
+            if [ "$EXIT_CODE" -eq 124 ]; then
+                print_error "Node.js安装超时（超过10分钟）"
+            else
+                print_error "Node.js安装失败（退出码: $EXIT_CODE）"
+            fi
+            print_error "安装日志（最后20行）:"
+            tail -20 /tmp/nodejs_install.log 2>/dev/null || true
+            exit 1
+        fi
+        print_info "Node.js安装成功"
     fi
     
     print_info "Node.js安装完成: $(node --version)"
@@ -123,10 +193,21 @@ else
     print_info "✓ Python版本检查通过: $PYTHON_VERSION"
 fi
 
-# 升级pip
-print_info "升级pip..."
-python3 -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple || \
-python3 -m pip install --upgrade pip
+# 检查并升级pip（仅在需要时）
+print_info "检查pip版本..."
+PIP_VERSION=$(python3 -m pip --version 2>/dev/null | grep -oP 'pip \K[0-9]+\.[0-9]+' || echo "0.0")
+PIP_MAJOR=$(echo $PIP_VERSION | cut -d. -f1)
+PIP_MINOR=$(echo $PIP_VERSION | cut -d. -f2)
+
+# 只在pip版本过低时升级（例如 < 20.0）
+if [ "$PIP_MAJOR" -lt 20 ]; then
+    print_info "pip版本过低 ($PIP_VERSION)，正在升级..."
+    python3 -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
+    python3 -m pip install --upgrade pip 2>/dev/null || true
+    print_info "pip升级完成: $(python3 -m pip --version 2>/dev/null | grep -oP 'pip \K[0-9.]+' || echo 'unknown')"
+else
+    print_info "pip版本满足要求 ($PIP_VERSION)，跳过升级"
+fi
 
 # 3. 安装前端依赖
 print_info "安装前端依赖..."
@@ -155,71 +236,129 @@ if [ -f "api/requirements.txt" ]; then
     print_info "使用Python: $PYTHON3_CMD"
     print_info "使用pip: $PIP3_CMD"
     
-    # 升级pip
-    print_info "升级pip..."
-    $PYTHON3_CMD -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
-    $PYTHON3_CMD -m pip install --upgrade pip 2>/dev/null || true
+    # 检查并升级pip（仅在需要时）
+    print_info "检查pip版本..."
+    PIP_VERSION=$($PYTHON3_CMD -m pip --version 2>/dev/null | grep -oP 'pip \K[0-9]+\.[0-9]+' || echo "0.0")
+    PIP_MAJOR=$(echo $PIP_VERSION | cut -d. -f1)
+    PIP_MINOR=$(echo $PIP_VERSION | cut -d. -f2)
     
-    # 尝试多个镜像源，按顺序尝试
-    print_info "尝试安装Python依赖..."
-    INSTALL_SUCCESS=false
+    # 只在pip版本过低时升级（例如 < 20.0）
+    if [ "$PIP_MAJOR" -lt 20 ]; then
+        print_info "pip版本过低 ($PIP_VERSION)，正在升级..."
+        $PYTHON3_CMD -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple 2>/dev/null || \
+        $PYTHON3_CMD -m pip install --upgrade pip 2>/dev/null || true
+        print_info "pip升级完成: $($PYTHON3_CMD -m pip --version 2>/dev/null | grep -oP 'pip \K[0-9.]+' || echo 'unknown')"
+    else
+        print_info "pip版本满足要求 ($PIP_VERSION)，跳过升级"
+    fi
     
-    # 镜像源列表
-    MIRRORS=(
-        "https://pypi.tuna.tsinghua.edu.cn/simple"
-        "https://mirrors.aliyun.com/pypi/simple"
-        "https://pypi.douban.com/simple"
-        "https://pypi.org/simple"
-    )
+    # 检查依赖是否已安装且版本满足要求
+    print_info "检查Python依赖是否已安装..."
+    NEED_INSTALL=false
     
-    for mirror in "${MIRRORS[@]}"; do
-        print_info "尝试使用镜像源: $mirror"
-        print_info "正在安装Python依赖（这可能需要几分钟，请耐心等待）..."
-        print_info "提示: 如果看起来卡住了，实际上可能正在下载和安装包，请稍候..."
+    # 使用Python脚本检查requirements.txt中的所有依赖是否已安装且版本满足要求
+    if $PYTHON3_CMD -c "
+import sys
+import subprocess
+
+def check_requirements():
+    try:
+        import pkg_resources
+    except ImportError:
+        # 如果没有pkg_resources，尝试安装
+        return False
+    
+    try:
+        with open('requirements.txt', 'r') as f:
+            for line in f:
+                line = line.strip()
+                # 跳过注释和空行
+                if not line or line.startswith('#'):
+                    continue
+                try:
+                    # 检查包是否满足版本要求
+                    pkg_resources.require(line)
+                except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict) as e:
+                    return False
+        return True
+    except Exception as e:
+        return False
+
+sys.exit(0 if check_requirements() else 1)
+" 2>/dev/null; then
+        print_info "✓ 所有依赖已安装且版本满足要求，跳过安装"
+        INSTALL_SUCCESS=true
+        NEED_INSTALL=false
+    else
+        print_info "检测到需要安装或更新的依赖"
+        NEED_INSTALL=true
+    fi
+    
+    # 如果需要安装，尝试多个镜像源，按顺序尝试
+    if [ "$NEED_INSTALL" = true ]; then
+        print_info "开始安装/更新Python依赖..."
+        INSTALL_SUCCESS=false
         
-        # 使用tee同时显示输出和保存到文件
-        # 直接显示所有输出，让用户看到进度
-        if $PYTHON3_CMD -m pip install -r requirements.txt -i "$mirror" 2>&1 | tee /tmp/pip_install.log; then
-            PIP_EXIT_CODE=0
-        else
-            PIP_EXIT_CODE=1
-        fi
+        # 镜像源列表
+        MIRRORS=(
+            "https://pypi.tuna.tsinghua.edu.cn/simple"
+            "https://mirrors.aliyun.com/pypi/simple"
+            "https://pypi.douban.com/simple"
+            "https://pypi.org/simple"
+        )
         
-        # 检查是否有错误（即使退出码为0，也可能有包安装失败）
-        HAS_ERROR=false
-        if grep -q "ERROR" /tmp/pip_install.log; then
-            HAS_ERROR=true
-            print_error "检测到安装错误:"
-            grep "ERROR" /tmp/pip_install.log | head -5
-        fi
-        
-        # 检查是否有"No matching distribution found"错误
-        if grep -q "No matching distribution found\|Could not find a version" /tmp/pip_install.log; then
-            HAS_ERROR=true
-            print_error "检测到版本不兼容错误:"
-            grep -E "No matching distribution found|Could not find a version" /tmp/pip_install.log | head -3
-        fi
-        
-        if [ $PIP_EXIT_CODE -eq 0 ] && [ "$HAS_ERROR" = false ]; then
-            INSTALL_SUCCESS=true
-            print_info "✓ 使用镜像源 $mirror 安装成功"
-            # 显示安装摘要
-            if grep -q "Successfully installed" /tmp/pip_install.log; then
-                print_info "已安装的包:"
-                grep "Successfully installed" /tmp/pip_install.log | tail -1
-            fi
-            break
-        else
-            if [ $PIP_EXIT_CODE -ne 0 ]; then
-                print_warn "镜像源 $mirror 安装失败 (退出码: $PIP_EXIT_CODE)"
+        for mirror in "${MIRRORS[@]}"; do
+            print_info "尝试使用镜像源: $mirror"
+            print_info "正在安装/更新Python依赖（这可能需要几分钟，请耐心等待）..."
+            print_info "提示: 如果看起来卡住了，实际上可能正在下载和安装包，请稍候..."
+            
+            # 使用--upgrade-strategy only-if-needed，只在需要时升级
+            # 使用tee同时显示输出和保存到文件
+            # 直接显示所有输出，让用户看到进度
+            if $PYTHON3_CMD -m pip install -r requirements.txt --upgrade-strategy only-if-needed -i "$mirror" 2>&1 | tee /tmp/pip_install.log; then
+                PIP_EXIT_CODE=0
             else
-                print_warn "镜像源 $mirror 安装部分失败 (退出码: $PIP_EXIT_CODE，但检测到错误)"
+                PIP_EXIT_CODE=1
             fi
-            print_warn "尝试下一个镜像源..."
-        fi
-    done
+            
+            # 检查是否有错误（即使退出码为0，也可能有包安装失败）
+            HAS_ERROR=false
+            if grep -q "ERROR" /tmp/pip_install.log; then
+                HAS_ERROR=true
+                print_error "检测到安装错误:"
+                grep "ERROR" /tmp/pip_install.log | head -5
+            fi
+            
+            # 检查是否有"No matching distribution found"错误
+            if grep -q "No matching distribution found\|Could not find a version" /tmp/pip_install.log; then
+                HAS_ERROR=true
+                print_error "检测到版本不兼容错误:"
+                grep -E "No matching distribution found|Could not find a version" /tmp/pip_install.log | head -3
+            fi
+            
+            if [ $PIP_EXIT_CODE -eq 0 ] && [ "$HAS_ERROR" = false ]; then
+                INSTALL_SUCCESS=true
+                print_info "✓ 使用镜像源 $mirror 安装成功"
+                # 显示安装摘要
+                if grep -q "Successfully installed" /tmp/pip_install.log; then
+                    print_info "已安装的包:"
+                    grep "Successfully installed" /tmp/pip_install.log | tail -1
+                fi
+                break
+            else
+                if [ $PIP_EXIT_CODE -ne 0 ]; then
+                    print_warn "镜像源 $mirror 安装失败 (退出码: $PIP_EXIT_CODE)"
+                else
+                    print_warn "镜像源 $mirror 安装部分失败 (退出码: $PIP_EXIT_CODE，但检测到错误)"
+                fi
+                print_warn "尝试下一个镜像源..."
+            fi
+        done
+    else
+        print_info "依赖检查完成，无需安装"
+    fi
     
-    if [ "$INSTALL_SUCCESS" = false ]; then
+    if [ "$INSTALL_SUCCESS" = false ] && [ "$NEED_INSTALL" = true ]; then
         print_error "所有镜像源都失败，尝试逐个安装关键依赖..."
         print_error "最后尝试的日志（最后20行）:"
         tail -20 /tmp/pip_install.log 2>/dev/null || true
