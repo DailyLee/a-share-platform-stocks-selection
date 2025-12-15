@@ -110,11 +110,90 @@
               
               <!-- 详细解释 -->
               <div v-if="result.explanation.analysis_details.selection_reasons" class="mt-4 p-4 bg-muted/30 rounded-md">
-                <h3 class="text-sm font-medium mb-2">判断依据:</h3>
-                <div class="space-y-2">
-                  <div v-for="(reason, window) in result.explanation.analysis_details.selection_reasons" :key="window" class="text-sm">
-                    <span class="font-medium text-primary">{{ window }}天窗口:</span>
-                    <span class="ml-2">{{ reason }}</span>
+                <h3 class="text-sm font-medium mb-3">判断依据:</h3>
+                <div class="space-y-4">
+                  <div v-for="(reason, window) in result.explanation.analysis_details.selection_reasons" :key="window" class="space-y-2">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="font-medium text-primary text-base">{{ window }}天窗口</span>
+                      <span class="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                        符合平台期
+                      </span>
+                    </div>
+                    
+                    <!-- 解析并格式化选择理由 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <!-- 价格相关 -->
+                      <div v-if="reason.includes('价格区间')" class="flex items-start gap-2">
+                        <i class="fas fa-chart-line text-primary mt-0.5"></i>
+                        <div>
+                          <span class="text-muted-foreground">价格区间:</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '价格区间') }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 均线相关 -->
+                      <div v-if="reason.includes('均线收敛')" class="flex items-start gap-2">
+                        <i class="fas fa-wave-square text-primary mt-0.5"></i>
+                        <div>
+                          <span class="text-muted-foreground">均线收敛:</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '均线收敛') }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 波动率 -->
+                      <div v-if="reason.includes('波动率')" class="flex items-start gap-2">
+                        <i class="fas fa-chart-area text-primary mt-0.5"></i>
+                        <div>
+                          <span class="text-muted-foreground">波动率:</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '波动率') }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 箱体质量 -->
+                      <div v-if="reason.includes('箱体质量')" class="flex items-start gap-2">
+                        <i class="fas fa-cube text-primary mt-0.5"></i>
+                        <div>
+                          <span class="text-muted-foreground">箱体质量:</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '箱体质量') }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 低位判断 -->
+                      <div v-if="reason.includes('低位')" class="flex items-start gap-2 sm:col-span-2">
+                        <i class="fas fa-map-marker-alt text-primary mt-0.5"></i>
+                        <div class="flex-1">
+                          <span class="text-muted-foreground">低位判断:</span>
+                          <span class="ml-1">{{ extractLowPositionInfo(reason) }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 快速下跌 -->
+                      <div v-if="reason.includes('快速下跌')" class="flex items-start gap-2 sm:col-span-2">
+                        <i class="fas fa-arrow-down text-primary mt-0.5"></i>
+                        <div class="flex-1">
+                          <span class="text-muted-foreground">快速下跌:</span>
+                          <span class="ml-1">{{ extractRapidDeclineInfo(reason) }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 标准模式 -->
+                      <div v-if="reason.includes('标准模式')" class="flex items-start gap-2 sm:col-span-2">
+                        <i class="fas fa-check-double text-primary mt-0.5"></i>
+                        <div class="flex-1">
+                          <span class="text-muted-foreground">模式:</span>
+                          <span class="ml-1 font-medium">{{ extractTextValue(reason, '标准模式') }}</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 突破前兆 -->
+                      <div v-if="reason.includes('突破前兆')" class="flex items-start gap-2 sm:col-span-2">
+                        <i class="fas fa-bolt text-amber-500 mt-0.5"></i>
+                        <div class="flex-1">
+                          <span class="text-muted-foreground">突破前兆:</span>
+                          <span class="ml-1 font-medium text-amber-600 dark:text-amber-400">{{ extractBreakthroughInfo(reason) }}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -143,23 +222,186 @@
               </div>
 
               <!-- 技术指标详情 -->
-              <div v-if="result.explanation.breakthrough_signal.has_signal" class="mt-4">
-                <h3 class="text-sm font-medium mb-2">技术指标详情:</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div v-for="(hasSignal, indicator) in result.explanation.breakthrough_signal.signals" :key="indicator" :class="[
-                    'p-3 rounded-md',
-                    hasSignal ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/30'
+              <div v-if="result.explanation.breakthrough_signal.has_signal" class="mt-4 p-4 bg-muted/30 rounded-md">
+                <h3 class="text-sm font-medium mb-3">技术指标详情:</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <!-- MACD -->
+                  <div v-if="result.explanation.breakthrough_signal.details.MACD" class="p-3 rounded-md" :class="[
+                    result.explanation.breakthrough_signal.signals.MACD ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/30'
                   ]">
-                    <div class="flex items-center justify-between">
-                      <span class="font-medium">{{ indicator }}</span>
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-medium">MACD</span>
                       <i :class="[
                         'fas',
-                        hasSignal ? 'fa-check-circle text-amber-500' : 'fa-times-circle text-gray-400'
+                        result.explanation.breakthrough_signal.signals.MACD ? 'fa-check-circle text-amber-500' : 'fa-times-circle text-gray-400'
                       ]"></i>
                     </div>
-                    <div v-if="result.explanation.breakthrough_signal.details[indicator]" class="mt-2 text-xs text-muted-foreground">
-                      <div v-for="(value, key) in result.explanation.breakthrough_signal.details[indicator]" :key="key">
-                        <span class="font-medium">{{ key }}:</span> {{ value }}
+                    <div class="space-y-1 text-xs">
+                      <div>
+                        <span class="text-muted-foreground">状态:</span>
+                        <span :class="result.explanation.breakthrough_signal.signals.MACD ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400'">
+                          {{ result.explanation.breakthrough_signal.details.MACD.status }}
+                        </span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.MACD.current_macd !== undefined">
+                        <span class="text-muted-foreground">MACD值:</span>
+                        <span class="font-medium">{{ result.explanation.breakthrough_signal.details.MACD.current_macd }}</span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.MACD.current_signal !== undefined">
+                        <span class="text-muted-foreground">信号线:</span>
+                        <span class="font-medium">{{ result.explanation.breakthrough_signal.details.MACD.current_signal }}</span>
+                      </div>
+                      <div class="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+                        <span :class="result.explanation.breakthrough_signal.details.MACD.crossover ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.MACD.crossover ? 'fas fa-check' : 'fas fa-times'"></i>
+                          金叉
+                        </span>
+                        <span :class="result.explanation.breakthrough_signal.details.MACD.macd_increasing ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.MACD.macd_increasing ? 'fas fa-check' : 'fas fa-times'"></i>
+                          MACD上升
+                        </span>
+                        <span :class="result.explanation.breakthrough_signal.details.MACD.histogram_increasing ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.MACD.histogram_increasing ? 'fas fa-check' : 'fas fa-times'"></i>
+                          柱状图上升
+                        </span>
+                      </div>
+                      <div class="text-xs text-muted-foreground italic mt-1">
+                        说明: MACD金叉或MACD与柱状图同时上升时产生突破信号
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- RSI -->
+                  <div v-if="result.explanation.breakthrough_signal.details.RSI" class="p-3 rounded-md" :class="[
+                    result.explanation.breakthrough_signal.signals.RSI ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/30'
+                  ]">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-medium">RSI</span>
+                      <i :class="[
+                        'fas',
+                        result.explanation.breakthrough_signal.signals.RSI ? 'fa-check-circle text-amber-500' : 'fa-times-circle text-gray-400'
+                      ]"></i>
+                    </div>
+                    <div class="space-y-1 text-xs">
+                      <div>
+                        <span class="text-muted-foreground">状态:</span>
+                        <span :class="result.explanation.breakthrough_signal.signals.RSI ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400'">
+                          {{ result.explanation.breakthrough_signal.details.RSI.status }}
+                        </span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.RSI.current_rsi !== undefined">
+                        <span class="text-muted-foreground">RSI值:</span>
+                        <span class="font-medium">{{ result.explanation.breakthrough_signal.details.RSI.current_rsi }}</span>
+                        <span class="text-xs ml-1">
+                          (超卖: &lt;30, 超买: &gt;70)
+                        </span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.RSI.rsi_increasing !== undefined" class="mt-2 pt-2 border-t border-border/50">
+                        <span :class="result.explanation.breakthrough_signal.details.RSI.rsi_increasing ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.RSI.rsi_increasing ? 'fas fa-check' : 'fas fa-times'"></i>
+                          RSI上升
+                        </span>
+                      </div>
+                      <div class="text-xs text-muted-foreground italic mt-1">
+                        说明: RSI从超卖区域（&lt;30）上升或持续上升时产生突破信号
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- KDJ -->
+                  <div v-if="result.explanation.breakthrough_signal.details.KDJ" class="p-3 rounded-md" :class="[
+                    result.explanation.breakthrough_signal.signals.KDJ ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/30'
+                  ]">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-medium">KDJ</span>
+                      <i :class="[
+                        'fas',
+                        result.explanation.breakthrough_signal.signals.KDJ ? 'fa-check-circle text-amber-500' : 'fa-times-circle text-gray-400'
+                      ]"></i>
+                    </div>
+                    <div class="space-y-1 text-xs">
+                      <div>
+                        <span class="text-muted-foreground">状态:</span>
+                        <span :class="result.explanation.breakthrough_signal.signals.KDJ ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400'">
+                          {{ result.explanation.breakthrough_signal.details.KDJ.status }}
+                        </span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.KDJ.current_k !== undefined" class="flex gap-3">
+                        <div>
+                          <span class="text-muted-foreground">K:</span>
+                          <span class="font-medium">{{ result.explanation.breakthrough_signal.details.KDJ.current_k }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">D:</span>
+                          <span class="font-medium">{{ result.explanation.breakthrough_signal.details.KDJ.current_d }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">J:</span>
+                          <span class="font-medium">{{ result.explanation.breakthrough_signal.details.KDJ.current_j }}</span>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+                        <span :class="result.explanation.breakthrough_signal.details.KDJ.golden_cross ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.KDJ.golden_cross ? 'fas fa-check' : 'fas fa-times'"></i>
+                          K线上穿D线
+                        </span>
+                        <span :class="result.explanation.breakthrough_signal.details.KDJ.k_increasing && result.explanation.breakthrough_signal.details.KDJ.j_increasing ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.KDJ.k_increasing && result.explanation.breakthrough_signal.details.KDJ.j_increasing ? 'fas fa-check' : 'fas fa-times'"></i>
+                          K、J上升
+                        </span>
+                      </div>
+                      <div class="text-xs text-muted-foreground italic mt-1">
+                        说明: K线上穿D线（金叉）或K、J线同时上升时产生突破信号
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 布林带 -->
+                  <div v-if="result.explanation.breakthrough_signal.details.布林带" class="p-3 rounded-md" :class="[
+                    result.explanation.breakthrough_signal.signals.布林带 ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/30'
+                  ]">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-medium">布林带</span>
+                      <i :class="[
+                        'fas',
+                        result.explanation.breakthrough_signal.signals.布林带 ? 'fa-check-circle text-amber-500' : 'fa-times-circle text-gray-400'
+                      ]"></i>
+                    </div>
+                    <div class="space-y-1 text-xs">
+                      <div>
+                        <span class="text-muted-foreground">状态:</span>
+                        <span :class="result.explanation.breakthrough_signal.signals.布林带 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400'">
+                          {{ result.explanation.breakthrough_signal.details.布林带.status }}
+                        </span>
+                      </div>
+                      <div v-if="result.explanation.breakthrough_signal.details.布林带.current_bandwidth !== undefined" class="flex gap-3">
+                        <div>
+                          <span class="text-muted-foreground">带宽:</span>
+                          <span class="font-medium">{{ result.explanation.breakthrough_signal.details.布林带.current_bandwidth }}</span>
+                        </div>
+                        <div v-if="result.explanation.breakthrough_signal.details.布林带.bandwidth_change !== undefined">
+                          <span class="text-muted-foreground">带宽变化:</span>
+                          <span :class="result.explanation.breakthrough_signal.details.布林带.bandwidth_expanding ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                            {{ result.explanation.breakthrough_signal.details.布林带.bandwidth_change > 0 ? '+' : '' }}{{ result.explanation.breakthrough_signal.details.布林带.bandwidth_change }}
+                          </span>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 mt-2 pt-2 border-t border-border/50">
+                        <span :class="result.explanation.breakthrough_signal.details.布林带.close_to_upper ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.布林带.close_to_upper ? 'fas fa-check' : 'fas fa-times'"></i>
+                          接近上轨
+                        </span>
+                        <span :class="result.explanation.breakthrough_signal.details.布林带.bandwidth_expanding ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.布林带.bandwidth_expanding ? 'fas fa-check' : 'fas fa-times'"></i>
+                          带宽扩张
+                        </span>
+                        <span :class="result.explanation.breakthrough_signal.details.布林带.above_middle && result.explanation.breakthrough_signal.details.布林带.price_increasing ? 'text-green-600 dark:text-green-400' : 'text-gray-500'">
+                          <i :class="result.explanation.breakthrough_signal.details.布林带.above_middle && result.explanation.breakthrough_signal.details.布林带.price_increasing ? 'fas fa-check' : 'fas fa-times'"></i>
+                          价格上升
+                        </span>
+                      </div>
+                      <div class="text-xs text-muted-foreground italic mt-1">
+                        说明: 价格突破布林带上轨时产生突破信号
                       </div>
                     </div>
                   </div>
@@ -404,6 +646,54 @@ const loading = ref(false)
 const error = ref(null)
 const result = ref(null)
 const isDarkMode = ref(false)
+
+// 辅助函数：从选择理由中提取值（用于数字值）
+function extractValue(reason, key) {
+  // 匹配 "价格区间0.20" 或 "价格区间: 0.20" 格式
+  const regex = new RegExp(`${key}[：:]?\\s*([\\d.]+)`)
+  const match = reason.match(regex)
+  return match ? match[1].trim() : ''
+}
+
+// 提取文本值（用于标准模式等）
+function extractTextValue(reason, key) {
+  // 匹配 "标准模式: 低位+快速下跌后形成平台期" 格式
+  const regex = new RegExp(`${key}[：:]?\\s*([^,，]+)`)
+  const match = reason.match(regex)
+  return match ? match[1].trim() : ''
+}
+
+// 提取低位判断信息
+function extractLowPositionInfo(reason) {
+  const declineMatch = reason.match(/从高点下跌([\d.]+)%/)
+  const dateMatch = reason.match(/高点日期([\d-]+)/)
+  const parts = []
+  if (declineMatch) {
+    parts.push(`从高点下跌${declineMatch[1]}%`)
+  }
+  if (dateMatch) {
+    parts.push(`高点日期: ${dateMatch[1]}`)
+  }
+  return parts.length > 0 ? parts.join('，') : ''
+}
+
+// 提取快速下跌信息
+function extractRapidDeclineInfo(reason) {
+  const match = reason.match(/快速下跌[：:]?\s*([\d.]+)%\s*\(([^)]+)\)/)
+  if (match) {
+    return `${match[1]}% (${match[2]})`
+  }
+  return ''
+}
+
+// 提取突破前兆信息
+function extractBreakthroughInfo(reason) {
+  const match = reason.match(/突破前兆[：:]?\s*(\d+)个指标\s*\(([^)]+)\)/)
+  if (match) {
+    return `${match[1]}个指标 (${match[2]})`
+  }
+  return ''
+}
 
 async function checkStock() {
   if (!stockCode.value.trim()) {
