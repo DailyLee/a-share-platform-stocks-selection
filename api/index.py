@@ -7,6 +7,9 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field, RootModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
 import sys
 import os
 
@@ -23,6 +26,10 @@ try:
     from api.case_api import router as case_router
     from api.json_utils import convert_numpy_types
     from api.analyzers.fundamental_analyzer import get_stock_fundamentals
+    from api.backtest_history_manager import (
+        save_backtest_history, get_backtest_history_list, 
+        get_backtest_history, delete_backtest_history, clear_all_backtest_history
+    )
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
     from .config import ScanConfig
@@ -32,6 +39,10 @@ except ImportError:
     from .case_api import router as case_router
     from .json_utils import convert_numpy_types
     from .analyzers.fundamental_analyzer import get_stock_fundamentals
+    from .backtest_history_manager import (
+        save_backtest_history, get_backtest_history_list, 
+        get_backtest_history, delete_backtest_history, clear_all_backtest_history
+    )
 
 # Import default values from config to ensure consistency
 try:
@@ -241,9 +252,11 @@ app.include_router(case_router, prefix="/api")
 try:
     from api.data_fetcher import fetch_kline_data
     from api.analyzers.combined_analyzer import analyze_stock
+    from api.cache_manager import get_cache_manager
 except ImportError:
     from .data_fetcher import fetch_kline_data
     from .analyzers.combined_analyzer import analyze_stock
+    from .cache_manager import get_cache_manager
 
 from datetime import datetime, timedelta
 
@@ -259,6 +272,39 @@ async def root():
         "status": "ok",
         "message": "Stock Platform Scanner API is running",
         "version": "1.0.0"
+    }
+
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """
+    Get cache statistics including hit rate, cache size, etc.
+    Useful for monitoring cache performance.
+    """
+    cache_manager = get_cache_manager()
+    stats = cache_manager.get_stats()
+    
+    # Cleanup expired entries
+    evicted = cache_manager.cleanup_expired()
+    
+    return {
+        "cache_stats": stats,
+        "expired_entries_cleaned": evicted
+    }
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """
+    Clear all cache entries.
+    Useful for forcing fresh data fetch or troubleshooting.
+    """
+    cache_manager = get_cache_manager()
+    cache_manager.clear()
+    
+    return {
+        "message": "Cache cleared successfully",
+        "status": "ok"
     }
 
 
@@ -820,3 +866,555 @@ async def check_platform(request: PlatformCheckRequest):
         )
 
 # 注意：我们已经有了根端点 (/), 不需要额外的 /api 端点
+
+# =================================
+# Backtest API
+# =================================
+
+class BacktestRequest(BaseModel):
+    """Request model for backtest"""
+    backtest_date: str  # 回测日（截止日），格式：YYYY-MM-DD
+    stat_date: str  # 统计日，格式：YYYY-MM-DD
+    buy_strategy: str = "fixed_amount"  # 买入策略
+    use_stop_loss: bool = True  # 使用止损
+    use_take_profit: bool = True  # 使用止盈
+    stop_loss_percent: float = -3.0  # 止损百分比
+    take_profit_percent: float = 10.0  # 止盈百分比
+    scan_config: Dict[str, Any]  # 扫描配置
+
+
+class BuyRecord(BaseModel):
+    """买入记录"""
+    code: str
+    name: str
+    buyDate: str
+    buyPrice: float
+    quantity: int
+    buyAmount: float
+
+
+class SellRecord(BaseModel):
+    """卖出记录"""
+    code: str
+    name: str
+    buyDate: str
+    sellDate: str
+    buyPrice: float
+    sellPrice: float
+    returnRate: float
+    profit: float
+    sellReason: str  # 止损、止盈、统计日卖出
+
+
+class StockDetail(BaseModel):
+    """每只股票详细数据"""
+    code: str
+    name: str
+    buyAmount: float
+    sellAmount: float
+    profit: float
+    returnRate: float
+    status: str  # 已卖出、未卖出
+
+
+class BacktestSummary(BaseModel):
+    """回测摘要"""
+    totalStocks: int
+    totalInvestment: float
+    totalProfit: float
+    totalReturnRate: float
+    profitableStocks: int
+    lossStocks: int
+
+
+class BacktestResponse(BaseModel):
+    """回测响应"""
+    summary: BacktestSummary
+    buyRecords: List[BuyRecord]
+    sellRecords: List[SellRecord]
+    stockDetails: List[StockDetail]
+
+
+def run_backtest_with_progress(request: BacktestRequest, progress_callback=None):
+    """
+    执行回测的内部函数，支持进度回调
+    """
+    from datetime import datetime, timedelta
+    import time
+    
+    # 验证日期格式
+    try:
+        backtest_date = datetime.strptime(request.backtest_date, '%Y-%m-%d')
+        stat_date = datetime.strptime(request.stat_date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+    
+    if backtest_date >= stat_date:
+        raise HTTPException(status_code=400, detail="回测日必须早于统计日")
+    
+    if progress_callback:
+        progress_callback(5, "开始回测，准备扫描配置...")
+    
+    # 1. 使用扫描配置执行扫描（以回测日为截止日）
+    print(f"{Fore.CYAN}开始回测: 回测日={request.backtest_date}, 统计日={request.stat_date}{Style.RESET_ALL}")
+    
+    # 准备扫描配置
+    scan_config_dict = request.scan_config.copy()
+    
+    # 创建ScanConfig对象
+    scan_config = ScanConfig(**scan_config_dict)
+    
+    if progress_callback:
+        progress_callback(10, "正在获取股票基本信息...")
+    
+    # 执行扫描（使用回测日作为截止日）
+    with BaostockConnectionManager():
+        # 获取股票基本信息
+        stock_basics_df = fetch_stock_basics()
+        
+        if progress_callback:
+            progress_callback(15, "正在获取行业数据...")
+        
+        # 获取行业数据
+        try:
+            industry_df = fetch_industry_data()
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
+            industry_df = pd.DataFrame()
+        
+        if progress_callback:
+            progress_callback(20, "正在准备股票列表...")
+        
+        # 准备股票列表
+        stock_list = prepare_stock_list(stock_basics_df, industry_df)
+        
+        if progress_callback:
+            progress_callback(25, f"开始扫描 {len(stock_list)} 只股票，查找符合条件的平台期股票...")
+        
+        # 执行扫描（使用回测日作为截止日）
+        end_date = backtest_date.strftime('%Y-%m-%d')
+        
+        # 定义进度更新回调
+        def scan_progress_update(progress, message):
+            if progress_callback:
+                # 扫描阶段占30-60%
+                scaled_progress = 30 + int(progress * 0.3)
+                progress_callback(scaled_progress, message)
+        
+        scanned_stocks = scan_stocks(stock_list, scan_config, update_progress=scan_progress_update, end_date=end_date)
+        
+        print(f"{Fore.GREEN}扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票{Style.RESET_ALL}")
+    
+    if progress_callback:
+        progress_callback(60, f"扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
+    
+    # 2. 对于每只股票，执行买入和卖出逻辑
+    buy_records = []
+    sell_records = []
+    stock_details = []
+    
+    buy_amount_per_stock = 10000  # 每只股票买入1万元
+    
+    total_stocks = len(scanned_stocks)
+    for idx, stock in enumerate(scanned_stocks):
+        code = stock['code']
+        name = stock.get('name', code)
+        
+        if progress_callback:
+            progress = 60 + int((idx + 1) / total_stocks * 35)
+            progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
+        
+        # 获取从回测日到统计日的历史数据
+        start_date = request.backtest_date
+        end_date = request.stat_date
+        
+        with BaostockConnectionManager():
+            kline_df = fetch_kline_data(code, start_date, end_date)
+        
+        if kline_df.empty:
+            print(f"{Fore.YELLOW}Warning: {code} 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
+            continue
+        
+        # 确保数据按日期排序
+        kline_df = kline_df.sort_values('date')
+        kline_df = kline_df.reset_index(drop=True)
+        
+        # 找到回测日的数据（买入日）
+        # 确保日期格式一致（转换为字符串进行比较）
+        kline_df['date_str'] = kline_df['date'].astype(str)
+        buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
+        if buy_day_data.empty:
+            # 如果回测日没有数据，使用第一个交易日
+            if len(kline_df) > 0:
+                buy_day_data = kline_df.iloc[[0]]
+            else:
+                continue
+        
+        buy_price = float(buy_day_data.iloc[0]['open'])
+        buy_date = str(buy_day_data.iloc[0]['date'])
+        quantity = int(buy_amount_per_stock / buy_price / 100) * 100  # 按手（100股）买入
+        actual_buy_amount = quantity * buy_price
+        
+        # 记录买入
+        buy_records.append({
+            'code': code,
+            'name': name,
+            'buyDate': buy_date,
+            'buyPrice': buy_price,
+            'quantity': quantity,
+            'buyAmount': actual_buy_amount
+        })
+        
+        # 从买入日的下一天开始检查卖出条件
+        buy_day_index = buy_day_data.index[0]
+        sell_price = None
+        sell_date = None
+        sell_reason = None
+        
+        # 检查从买入日到统计日的数据
+        for i in range(buy_day_index + 1, len(kline_df)):
+            day_data = kline_df.iloc[i]
+            current_date = str(day_data['date'])
+            current_close = float(day_data['close'])
+            current_low = float(day_data['low'])
+            current_high = float(day_data['high'])
+            
+            # 计算收益率
+            return_rate = ((current_close - buy_price) / buy_price) * 100
+            
+            # 检查止损（使用最低价）
+            if request.use_stop_loss:
+                low_return_rate = ((current_low - buy_price) / buy_price) * 100
+                if low_return_rate <= request.stop_loss_percent:
+                    sell_price = buy_price * (1 + request.stop_loss_percent / 100)
+                    sell_date = current_date
+                    sell_reason = '止损'
+                    break
+            
+            # 检查止盈（使用最高价）
+            if request.use_take_profit:
+                high_return_rate = ((current_high - buy_price) / buy_price) * 100
+                if high_return_rate >= request.take_profit_percent:
+                    sell_price = buy_price * (1 + request.take_profit_percent / 100)
+                    sell_date = current_date
+                    sell_reason = '止盈'
+                    break
+            
+            # 如果到了统计日，使用收盘价卖出（确保日期格式一致）
+            if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
+                sell_price = current_close
+                sell_date = current_date
+                sell_reason = '统计日卖出'
+                break
+        
+        # 如果没有卖出（理论上不应该发生，因为统计日一定会卖出）
+        if sell_price is None:
+            # 使用最后一天的收盘价
+            if len(kline_df) > 0:
+                last_day = kline_df.iloc[-1]
+                sell_price = float(last_day['close'])
+                sell_date = str(last_day['date'])
+                sell_reason = '统计日卖出'
+            else:
+                # 如果没有数据，使用买入价（未卖出）
+                sell_price = buy_price
+                sell_date = buy_date
+                sell_reason = '未卖出'
+        
+        # 计算盈亏
+        sell_amount = quantity * sell_price
+        profit = sell_amount - actual_buy_amount
+        final_return_rate = ((sell_price - buy_price) / buy_price) * 100
+        
+        # 记录卖出
+        sell_records.append({
+            'code': code,
+            'name': name,
+            'buyDate': buy_date,
+            'sellDate': sell_date,
+            'buyPrice': buy_price,
+            'sellPrice': sell_price,
+            'returnRate': final_return_rate,
+            'profit': profit,
+            'sellReason': sell_reason
+        })
+        
+        # 记录股票详情
+        stock_details.append({
+            'code': code,
+            'name': name,
+            'buyAmount': actual_buy_amount,
+            'sellAmount': sell_amount,
+            'profit': profit,
+            'returnRate': final_return_rate,
+            'status': '已卖出' if sell_reason != '未卖出' else '未卖出'
+        })
+    
+    if progress_callback:
+        progress_callback(98, "正在计算回测结果...")
+    
+    # 3. 计算总摘要
+    total_stocks = len(buy_records)
+    total_investment = sum(record['buyAmount'] for record in buy_records)
+    total_profit = sum(detail['profit'] for detail in stock_details)
+    total_return_rate = (total_profit / total_investment * 100) if total_investment > 0 else 0
+    profitable_stocks = sum(1 for detail in stock_details if detail['profit'] > 0)
+    loss_stocks = sum(1 for detail in stock_details if detail['profit'] < 0)
+    
+    if progress_callback:
+        progress_callback(100, "回测完成！")
+    
+    # 构建响应
+    response = BacktestResponse(
+        summary=BacktestSummary(
+            totalStocks=total_stocks,
+            totalInvestment=total_investment,
+            totalProfit=total_profit,
+            totalReturnRate=total_return_rate,
+            profitableStocks=profitable_stocks,
+            lossStocks=loss_stocks
+        ),
+        buyRecords=[BuyRecord(**record) for record in buy_records],
+        sellRecords=[SellRecord(**record) for record in sell_records],
+        stockDetails=[StockDetail(**detail) for detail in stock_details]
+    )
+    
+    print(f"{Fore.GREEN}回测完成: 总股票数={total_stocks}, 总投入={total_investment:.2f}, 总收益={total_profit:.2f}, 总收益率={total_return_rate:.2f}%{Style.RESET_ALL}")
+    
+    return response
+
+
+@app.post("/api/backtest", response_model=BacktestResponse)
+async def run_backtest(request: BacktestRequest):
+    """
+    执行回测（同步版本，不支持进度推送）
+    """
+    try:
+        return run_backtest_with_progress(request, progress_callback=None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}回测失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"回测执行失败: {str(e)}"
+        )
+
+
+@app.post("/api/backtest/stream")
+async def run_backtest_stream(request: BacktestRequest):
+    """
+    执行回测（流式版本，支持进度推送）
+    使用 Server-Sent Events (SSE) 推送进度更新
+    """
+    import queue
+    import concurrent.futures
+    
+    # 使用队列来传递进度更新
+    progress_queue = queue.Queue()
+    result_container = {'result': None, 'error': None}
+    
+    def progress_callback(progress, message):
+        # 将进度更新放入队列
+        progress_queue.put({
+            'type': 'progress',
+            'progress': progress,
+            'message': message
+        })
+    
+    def run_backtest_task():
+        try:
+            result = run_backtest_with_progress(request, progress_callback=progress_callback)
+            result_container['result'] = result
+            progress_queue.put({'type': 'done'})  # 标记完成
+        except Exception as e:
+            result_container['error'] = str(e)
+            progress_queue.put({'type': 'done'})  # 标记完成
+    
+    async def generate():
+        try:
+            # 在线程池中启动回测任务
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_backtest_task)
+                
+                # 持续发送进度更新
+                while True:
+                    try:
+                        # 从队列获取进度更新（非阻塞）
+                        try:
+                            update = progress_queue.get_nowait()
+                            if update['type'] == 'done':
+                                break
+                            
+                            # 发送进度更新
+                            yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+                        except queue.Empty:
+                            # 队列为空，检查任务是否完成
+                            if future.done():
+                                break
+                            await asyncio.sleep(0.1)
+                    except Exception as e:
+                        print(f"Error in progress loop: {e}")
+                        break
+                
+                # 等待任务完成
+                future.result()
+            
+            # 发送最终结果
+            if result_container['error']:
+                error_data = {
+                    'type': 'error',
+                    'message': result_container['error']
+                }
+                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+            else:
+                result = result_container['result']
+                result_dict = result.model_dump()
+                
+                # 自动保存回测历史
+                try:
+                    config_dict = {
+                        'backtest_date': request.backtest_date,
+                        'stat_date': request.stat_date,
+                        'buy_strategy': request.buy_strategy,
+                        'use_stop_loss': request.use_stop_loss,
+                        'use_take_profit': request.use_take_profit,
+                        'stop_loss_percent': request.stop_loss_percent,
+                        'take_profit_percent': request.take_profit_percent,
+                        'scan_config': request.scan_config
+                    }
+                    history_id = save_backtest_history(config_dict, result_dict)
+                    result_dict['historyId'] = history_id  # 将历史ID添加到结果中
+                except Exception as e:
+                    print(f"Warning: Failed to save backtest history: {e}")
+                    # 不阻止返回结果，只是记录警告
+                
+                result_data = {
+                    'type': 'result',
+                    'data': result_dict
+                }
+                yield f"data: {json.dumps(result_data, ensure_ascii=False, default=str)}\n\n"
+                
+        except Exception as e:
+            error_data = {
+                'type': 'error',
+                'message': str(e)
+            }
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# =================================
+# Backtest History API
+# =================================
+
+@app.get("/api/backtest/history")
+async def get_backtest_history_list_endpoint():
+    """
+    获取回测历史记录列表
+    """
+    try:
+        records = get_backtest_history_list()
+        return {
+            "success": True,
+            "data": records,
+            "count": len(records)
+        }
+    except Exception as e:
+        print(f"{Fore.RED}获取回测历史列表失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取回测历史列表失败: {str(e)}"
+        )
+
+
+@app.get("/api/backtest/history/{history_id}")
+async def get_backtest_history_endpoint(history_id: str):
+    """
+    获取单个回测历史记录详情
+    """
+    try:
+        record = get_backtest_history(history_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"回测历史记录不存在: {history_id}"
+            )
+        return {
+            "success": True,
+            "data": record
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}获取回测历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取回测历史记录失败: {str(e)}"
+        )
+
+
+@app.delete("/api/backtest/history/{history_id}")
+async def delete_backtest_history_endpoint(history_id: str):
+    """
+    删除单个回测历史记录
+    """
+    try:
+        success = delete_backtest_history(history_id)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"回测历史记录不存在: {history_id}"
+            )
+        return {
+            "success": True,
+            "message": "回测历史记录已删除"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}删除回测历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除回测历史记录失败: {str(e)}"
+        )
+
+
+@app.delete("/api/backtest/history")
+async def clear_all_backtest_history_endpoint():
+    """
+    清空所有回测历史记录
+    """
+    try:
+        count = clear_all_backtest_history()
+        return {
+            "success": True,
+            "message": f"已清空 {count} 条回测历史记录",
+            "count": count
+        }
+    except Exception as e:
+        print(f"{Fore.RED}清空回测历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"清空回测历史记录失败: {str(e)}"
+        )

@@ -1,6 +1,6 @@
 """
 Data Fetcher module for retrieving stock data from Baostock.
-Implements robust connection handling and retry logic.
+Implements robust connection handling and retry logic with caching support.
 """
 import baostock as bs
 import pandas as pd
@@ -9,6 +9,12 @@ import threading
 from typing import List, Dict, Any, Optional
 from colorama import Fore, Style
 import traceback
+
+# Import cache decorators
+try:
+    from .cache_manager import cache_stock_basics, cache_industry_data, cache_kline_data
+except ImportError:
+    from api.cache_manager import cache_stock_basics, cache_industry_data, cache_kline_data
 
 # Thread-local storage for Baostock connections
 _thread_local = threading.local()
@@ -60,9 +66,11 @@ class BaostockConnectionManager:
         baostock_logout()
         return False  # Don't suppress exceptions
 
+@cache_stock_basics
 def fetch_stock_basics() -> pd.DataFrame:
     """
     Fetch basic information for all stocks.
+    Results are cached for 1 hour to improve performance.
     
     Returns:
         pd.DataFrame: DataFrame containing stock basic information
@@ -87,9 +95,11 @@ def fetch_stock_basics() -> pd.DataFrame:
         
         return pd.DataFrame(stock_basics_list, columns=rs.fields)
 
+@cache_industry_data
 def fetch_industry_data() -> pd.DataFrame:
     """
     Fetch industry classification data for all stocks.
+    Results are cached for 1 hour to improve performance.
     
     Returns:
         pd.DataFrame: DataFrame containing industry classification
@@ -114,11 +124,13 @@ def fetch_industry_data() -> pd.DataFrame:
         
         return pd.DataFrame(industry_list, columns=rs.fields)
 
+@cache_kline_data
 def fetch_kline_data(code: str, start_date: str, end_date: str,
                      retry_attempts: int = 3,
                      retry_delay: int = 1) -> pd.DataFrame:
     """
     Fetch K-line data for a specific stock with retry logic.
+    Results are cached for 5 minutes based on stock code and date range.
     
     Args:
         code: Stock code (e.g., 'sh.600000')

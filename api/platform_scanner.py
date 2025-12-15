@@ -64,7 +64,8 @@ def prepare_stock_list(stock_basics_df: pd.DataFrame,
 
 def scan_stocks(stock_list: List[Dict[str, Any]],
                 config: ScanConfig,
-                update_progress: Optional[callable] = None) -> List[Dict[str, Any]]:
+                update_progress: Optional[callable] = None,
+                end_date: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Scan stocks for platform consolidation patterns.
 
@@ -72,15 +73,18 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         stock_list: List of stocks to scan
         config: Scan configuration
         update_progress: Optional callback for updating progress
+        end_date: Optional end date in 'YYYY-MM-DD' format. If not provided, uses current date.
 
     Returns:
         List of stocks that meet platform criteria
     """
     # Calculate date range
-    end_date = datetime.now().strftime('%Y-%m-%d')
+    if end_date is None:
+        end_date = datetime.now().strftime('%Y-%m-%d')
     # Use the maximum window size plus some buffer for the start date
     max_window = max(config.windows) if config.windows else 90
-    start_date = (datetime.now() - timedelta(days=max_window * 2)
+    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+    start_date = (end_date_obj - timedelta(days=max_window * 2)
                   ).strftime('%Y-%m-%d')
 
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")

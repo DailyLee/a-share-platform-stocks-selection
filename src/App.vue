@@ -18,12 +18,24 @@
           <span class="hidden sm:inline">单股检查</span>
         </router-link>
 
+        <!-- 回测数据入口 -->
+        <button @click="goToBacktest" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-purple-600 text-white hover:bg-purple-600/80 transition-colors">
+          <i class="fas fa-chart-line mr-1 sm:mr-2"></i>
+          <span class="hidden sm:inline">回测数据</span>
+        </button>
+
         <!-- 案例管理入口 -->
         <button @click="showCaseManager = true"
           class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors">
           <i class="fas fa-book mr-1 sm:mr-2"></i>
           <span class="hidden sm:inline">案例管理</span>
         </button>
+
+        <!-- 缓存管理入口 -->
+        <router-link to="/platform/cache" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-green-600 text-white hover:bg-green-600/80 transition-colors">
+          <i class="fas fa-database mr-1 sm:mr-2"></i>
+          <span class="hidden sm:inline">缓存管理</span>
+        </router-link>
 
         <!-- 主题切换 -->
         <ThemeToggle />
@@ -730,6 +742,17 @@
                               <line x1="15" y1="12" x2="3" y2="12"></line>
                             </svg>
                           </button>
+
+                          <!-- 回测数据按钮 -->
+                          <button @click="goToBacktest"
+                            class="bg-purple-500/30 hover:bg-purple-500 text-white rounded-md p-1.5 shadow-md backdrop-blur-sm transform hover:scale-110 transition-all"
+                            title="回测数据">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                              class="w-3.5 h-3.5">
+                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </td>
@@ -801,6 +824,11 @@
                         class="bg-green-500/20 hover:bg-green-500/30 text-green-600 dark:text-green-400 rounded-md p-1.5 transition-colors"
                         title="单股检查">
                         <i class="fas fa-search text-sm"></i>
+                      </button>
+                      <button @click="goToBacktest"
+                        class="bg-purple-500/20 hover:bg-purple-500/30 text-purple-600 dark:text-purple-400 rounded-md p-1.5 transition-colors"
+                        title="回测数据">
+                        <i class="fas fa-chart-line text-sm"></i>
                       </button>
                     </div>
                   </div>
@@ -946,7 +974,7 @@ const router = useRouter();
 
 const config = ref({
   // 基本参数
-  windowsInput: '80,100,120', // 标准窗口期设置
+  windowsInput: '30,60,90', // 中期窗口期设置（默认）
   expected_count: 10, // 期望返回的股票数量，默认为10
 
   // 价格参数
@@ -1417,6 +1445,67 @@ function goToStockCheck(stock) {
       code: stock.code
     }
   });
+}
+
+// 跳转到回测页面
+function goToBacktest() {
+  // 获取当前扫描配置
+  const currentScanConfig = {
+    windows: parsedWindows.value,
+    expected_count: config.value.expected_count || 10,
+    box_threshold: config.value.box_threshold,
+    ma_diff_threshold: config.value.ma_diff_threshold,
+    volatility_threshold: config.value.volatility_threshold,
+    use_volume_analysis: config.value.use_volume_analysis,
+    volume_change_threshold: config.value.volume_change_threshold,
+    volume_stability_threshold: config.value.volume_stability_threshold,
+    volume_increase_threshold: config.value.volume_increase_threshold,
+    use_technical_indicators: config.value.use_technical_indicators,
+    use_breakthrough_prediction: config.value.use_breakthrough_prediction,
+    use_low_position: config.value.use_low_position,
+    high_point_lookback_days: config.value.high_point_lookback_days,
+    decline_period_days: config.value.decline_period_days,
+    decline_threshold: config.value.decline_threshold,
+    use_rapid_decline_detection: config.value.use_rapid_decline_detection,
+    rapid_decline_days: config.value.rapid_decline_days,
+    rapid_decline_threshold: config.value.rapid_decline_threshold,
+    use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
+    breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
+    use_window_weights: config.value.use_window_weights,
+    window_weights: config.value.window_weights,
+    sort_by_breakthrough: config.value.sort_by_breakthrough,
+    use_box_detection: config.value.use_box_detection,
+    box_quality_threshold: config.value.box_quality_threshold,
+    use_fundamental_filter: config.value.use_fundamental_filter,
+    revenue_growth_percentile: config.value.revenue_growth_percentile,
+    profit_growth_percentile: config.value.profit_growth_percentile,
+    roe_percentile: config.value.roe_percentile,
+    liability_percentile: config.value.liability_percentile,
+    pe_percentile: config.value.pe_percentile,
+    pb_percentile: config.value.pb_percentile,
+    fundamental_years_to_check: config.value.fundamental_years_to_check
+  };
+  
+  console.log('准备跳转到回测页面，当前扫描配置:', currentScanConfig);
+  
+  // 直接使用 sessionStorage 保存配置（更可靠）
+  try {
+    const configJson = JSON.stringify(currentScanConfig);
+    console.log('配置 JSON 长度:', configJson.length);
+    sessionStorage.setItem('scanConfig', configJson);
+    console.log('配置已保存到 sessionStorage');
+    
+    // 同时保存到 localStorage 作为备份
+    localStorage.setItem('scanConfig', configJson);
+    console.log('配置已保存到 localStorage 作为备份');
+    
+    // 跳转到回测页面
+    router.push('/platform/backtest');
+  } catch (e) {
+    console.error('保存扫描配置失败:', e);
+    // 即使保存失败，也跳转页面，让用户看到错误提示
+    router.push('/platform/backtest');
+  }
 }
 
 async function exportToCase (stock) {
@@ -2019,6 +2108,50 @@ async function fetchPlatformStocksLegacy () {
 
       platformStocks.value = processedResults;
       console.log('处理后的平台股票数据:', platformStocks.value);
+      
+      // 保存扫描配置到 localStorage，供回测使用
+      const currentScanConfig = {
+        windows: parsedWindows.value,
+        expected_count: config.value.expected_count || 10,
+        box_threshold: config.value.box_threshold,
+        ma_diff_threshold: config.value.ma_diff_threshold,
+        volatility_threshold: config.value.volatility_threshold,
+        use_volume_analysis: config.value.use_volume_analysis,
+        volume_change_threshold: config.value.volume_change_threshold,
+        volume_stability_threshold: config.value.volume_stability_threshold,
+        volume_increase_threshold: config.value.volume_increase_threshold,
+        use_technical_indicators: config.value.use_technical_indicators,
+        use_breakthrough_prediction: config.value.use_breakthrough_prediction,
+        use_low_position: config.value.use_low_position,
+        high_point_lookback_days: config.value.high_point_lookback_days,
+        decline_period_days: config.value.decline_period_days,
+        decline_threshold: config.value.decline_threshold,
+        use_rapid_decline_detection: config.value.use_rapid_decline_detection,
+        rapid_decline_days: config.value.rapid_decline_days,
+        rapid_decline_threshold: config.value.rapid_decline_threshold,
+        use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
+        breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
+        use_window_weights: config.value.use_window_weights,
+        window_weights: config.value.window_weights,
+        sort_by_breakthrough: config.value.sort_by_breakthrough,
+        use_box_detection: config.value.use_box_detection,
+        box_quality_threshold: config.value.box_quality_threshold,
+        use_fundamental_filter: config.value.use_fundamental_filter,
+        revenue_growth_percentile: config.value.revenue_growth_percentile,
+        profit_growth_percentile: config.value.profit_growth_percentile,
+        roe_percentile: config.value.roe_percentile,
+        liability_percentile: config.value.liability_percentile,
+        pe_percentile: config.value.pe_percentile,
+        pb_percentile: config.value.pb_percentile,
+        fundamental_years_to_check: config.value.fundamental_years_to_check
+      };
+      
+      try {
+        localStorage.setItem('scanConfig', JSON.stringify(currentScanConfig));
+        console.log('扫描配置已保存到 localStorage');
+      } catch (e) {
+        console.error('保存扫描配置失败:', e);
+      }
     } else {
       error.value = "API返回的数据格式不正确";
     }

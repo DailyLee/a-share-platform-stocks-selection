@@ -15,6 +15,18 @@ const routes = [
     meta: { keepAlive: true }
   },
   {
+    path: '/platform/backtest',
+    name: 'Backtest',
+    component: () => import('./components/Backtest.vue'),
+    meta: { keepAlive: false }
+  },
+  {
+    path: '/platform/cache',
+    name: 'CacheManager',
+    component: () => import('./components/CacheManager.vue'),
+    meta: { keepAlive: false }
+  },
+  {
     path: '/platform',
     redirect: '/platform/'
   },
