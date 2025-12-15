@@ -12,7 +12,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import * as echarts from 'echarts/core';
 import { CandlestickChart, LineChart } from 'echarts/charts';
 import {
@@ -81,10 +81,41 @@ const props = defineProps({
   }
 });
 
+const emit = defineEmits(['daySelect']);
+
 const loading = ref(true); // 添加加载状态
 
 const chartRef = ref(null);
 let chartInstance = null;
+let isMounted = false; // 跟踪组件挂载状态
+
+// 安全地更新加载状态，防止在组件卸载后更新导致错误
+const safeSetLoading = (value) => {
+  // 快速检查：如果组件未挂载，直接返回
+  if (!isMounted) {
+    return;
+  }
+  
+  // 使用 nextTick 确保在 Vue 的下一个更新周期中执行
+  // 这样可以避免在 Vue 正在更新 DOM 时触发新的更新
+  nextTick(() => {
+    // 再次检查，因为可能在 nextTick 期间组件已卸载
+    if (!isMounted || !chartRef.value) {
+      return;
+    }
+    
+    try {
+      // 检查元素是否仍在 DOM 中（通过检查 parentNode）
+      // 如果 parentNode 为 null，说明元素已被移除
+      if (chartRef.value.parentNode) {
+        loading.value = value;
+      }
+    } catch (e) {
+      // 忽略所有更新错误
+      // Vue 可能在更新过程中抛出错误，这是正常的卸载流程
+    }
+  });
+};
 
 // Function to process raw data for ECharts candlestick
 const processData = (rawData) => {
@@ -116,38 +147,89 @@ const calculateMA = (dayCount, data) => {
 };
 
 const initChart = () => {
-  if (!chartRef.value) return;
+  if (!chartRef.value || !isMounted) return;
 
-  loading.value = true; // 显示加载状态
-
-  // 添加初始透明度为0
-  if (chartRef.value) {
-    chartRef.value.style.opacity = '0';
+  // 如果已经存在图表实例，先销毁
+  if (chartInstance) {
+    try {
+      chartInstance.dispose();
+    } catch (e) {
+      console.warn('销毁旧图表实例失败:', e);
+    }
+    chartInstance = null;
   }
 
-  try {
-    // 使用渲染器选项初始化图表，提高渲染质量
-    chartInstance = echarts.init(chartRef.value, props.isDarkMode ? 'dark' : null, {
-      renderer: 'canvas', // 使用 canvas 渲染器
-      useDirtyRect: false, // 禁用脏矩形优化，提高渲染质量
-      devicePixelRatio: window.devicePixelRatio // 使用设备像素比，提高清晰度
-    });
-    setOptions();
+  // 安全地设置加载状态
+  safeSetLoading(true);
 
-    // 使用GSAP添加淡入动画
-    gsap.to(chartRef.value, {
-      opacity: 1,
-      duration: 0.8,
-      ease: "power2.out"
-    });
+  // 使用 nextTick 确保 DOM 已更新
+  nextTick(() => {
+      if (!chartRef.value || !isMounted) {
+        safeSetLoading(false);
+        return;
+      }
 
-    // Optional: Resize chart with window resize
-    window.addEventListener('resize', resizeChart);
-  } catch (error) {
-    console.error('初始化图表失败:', error);
-  } finally {
-    loading.value = false; // 隐藏加载状态
-  }
+      // 添加初始透明度为0
+      if (chartRef.value) {
+        chartRef.value.style.opacity = '0';
+      }
+
+      try {
+        // 使用渲染器选项初始化图表，提高渲染质量
+        chartInstance = echarts.init(chartRef.value, props.isDarkMode ? 'dark' : null, {
+          renderer: 'canvas', // 使用 canvas 渲染器
+          useDirtyRect: false, // 禁用脏矩形优化，提高渲染质量
+          devicePixelRatio: window.devicePixelRatio // 使用设备像素比，提高清晰度
+        });
+        setOptions();
+
+        // 使用GSAP添加淡入动画
+        if (chartRef.value && isMounted) {
+          gsap.to(chartRef.value, {
+            opacity: 1,
+            duration: 0.8,
+            ease: "power2.out"
+          });
+        }
+
+        // 添加点击事件监听，支持选择某一天的数据
+        if (chartInstance && isMounted) {
+          chartInstance.off('click'); // 先移除旧的事件监听器
+          chartInstance.on('click', function (params) {
+            if (!isMounted) return; // 如果组件已卸载，不处理事件
+            if (params.seriesName === 'K线' && params.dataIndex !== undefined) {
+              const selectedData = props.klineData[params.dataIndex];
+              if (selectedData) {
+                const dayData = {
+                  date: selectedData.date,
+                  open: selectedData.open,
+                  close: selectedData.close,
+                  high: selectedData.high,
+                  low: selectedData.low,
+                  volume: selectedData.volume,
+                  pctChg: selectedData.pctChg, // 涨幅百分比
+                  preclose: selectedData.preclose, // 前一日收盘价
+                  index: params.dataIndex
+                };
+                console.log('发送 daySelect 事件:', dayData);
+                emit('daySelect', dayData);
+              }
+            }
+          });
+        }
+
+        // Optional: Resize chart with window resize
+        if (isMounted) {
+          window.removeEventListener('resize', resizeChart); // 先移除，避免重复添加
+          window.addEventListener('resize', resizeChart);
+        }
+      } catch (error) {
+        console.error('初始化图表失败:', error);
+      } finally {
+        // 只有在组件仍然挂载时才更新加载状态
+        safeSetLoading(false);
+      }
+    });
 };
 
 const setOptions = () => {
@@ -157,10 +239,10 @@ const setOptions = () => {
 
   // 处理标记线数据
   const markLines = [];
-  console.log('KlineChart: 处理标记线数据, 原始数据:', props.markLines);
-  console.log('KlineChart: 日期数据:', dates);
-  console.log('KlineChart: 支撑位数据:', props.supportLevels);
-  console.log('KlineChart: 阻力位数据:', props.resistanceLevels);
+  // console.log('KlineChart: 处理标记线数据, 原始数据:', props.markLines);
+  // console.log('KlineChart: 日期数据:', dates);
+  // console.log('KlineChart: 支撑位数据:', props.supportLevels);
+  // console.log('KlineChart: 阻力位数据:', props.resistanceLevels);
 
   // 检查日期格式
   if (dates.length > 0) {
@@ -191,7 +273,7 @@ const setOptions = () => {
     for (let i = 0; i < dateArray.length; i++) {
       const currentDate = dateArray[i].split(' ')[0]; // 只保留日期部分
       if (currentDate === dateStr) {
-        console.log(`KlineChart: 找到完全匹配日期 ${dateStr}`);
+        // console.log(`KlineChart: 找到完全匹配日期 ${dateStr}`);
         return i;
       }
     }
@@ -251,11 +333,11 @@ const setOptions = () => {
   if (props.markLines && props.markLines.length > 0) {
     // 将日期转换为x轴索引
     props.markLines.forEach(mark => {
-      console.log('KlineChart: 处理标记线:', mark);
+      // console.log('KlineChart: 处理标记线:', mark);
 
       // 处理水平标记线
       if (mark.type === 'horizontal' && mark.value !== undefined) {
-        console.log('KlineChart: 处理水平标记线:', mark);
+        // console.log('KlineChart: 处理水平标记线:', mark);
         markLines.push({
           name: mark.text,
           yAxis: mark.value,
@@ -285,7 +367,7 @@ const setOptions = () => {
       }
 
       const dateIndex = findDateIndex(mark.date, dates);
-      console.log('KlineChart: 日期索引:', dateIndex, '日期:', mark.date);
+      // console.log('KlineChart: 日期索引:', dateIndex, '日期:', mark.date);
 
       if (dateIndex !== -1) {
         markLines.push({
@@ -336,7 +418,7 @@ const setOptions = () => {
     console.log('KlineChart: 没有标记线数据或数组为空');
   }
 
-  console.log('KlineChart: 生成的标记线数据:', markLines);
+  // console.log('KlineChart: 生成的标记线数据:', markLines);
 
   // 简化版的K线图配置，作为缩略图使用
   const option = {
@@ -369,7 +451,45 @@ const setOptions = () => {
       }
     },
     tooltip: {
-      show: false // 禁用tooltip，简化交互
+      trigger: 'axis',
+      triggerOn: 'mousemove|click', // 支持鼠标移动和点击触发
+      axisPointer: {
+        type: 'cross'
+      },
+      borderWidth: 1,
+      borderColor: props.isDarkMode ? '#555' : '#ccc',
+      padding: 10,
+      backgroundColor: props.isDarkMode ? 'rgba(50, 50, 50, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+      textStyle: {
+        color: props.isDarkMode ? '#eee' : '#333'
+      },
+      formatter: function (params) {
+        if (!params || params.length === 0) return '';
+        const param = params[0];
+        const dataIndex = param.dataIndex;
+        const data = props.klineData[dataIndex];
+        if (!data) return '';
+        
+        let result = `<div style="margin-bottom: 4px; font-weight: bold;">${data.date}</div>`;
+        params.forEach(function(item) {
+          if (item.seriesName === 'K线') {
+            const value = item.value;
+            result += `<div>开盘: <span style="color: ${value[0] <= value[1] ? (props.isDarkMode ? '#a15c5c' : '#ec0000') : (props.isDarkMode ? '#5b7a9d' : '#60a5fa')}">${value[0]}</span></div>`;
+            result += `<div>收盘: <span style="color: ${value[0] <= value[1] ? (props.isDarkMode ? '#a15c5c' : '#ec0000') : (props.isDarkMode ? '#5b7a9d' : '#60a5fa')}">${value[1]}</span></div>`;
+            result += `<div>最低: ${value[2]}</div>`;
+            result += `<div>最高: ${value[3]}</div>`;
+            if (data.pctChg !== undefined && data.pctChg !== null) {
+              const pctChg = Number(data.pctChg);
+              if (!isNaN(pctChg)) {
+                result += `<div>涨幅: <span style="color: ${pctChg >= 0 ? (props.isDarkMode ? '#a15c5c' : '#ec0000') : (props.isDarkMode ? '#5b7a9d' : '#60a5fa')}">${pctChg >= 0 ? '+' : ''}${pctChg.toFixed(2)}%</span></div>`;
+              }
+            }
+          } else if (item.seriesName && item.seriesName.startsWith('MA')) {
+            result += `<div>${item.seriesName}: ${item.value}</div>`;
+          }
+        });
+        return result;
+      }
     },
     grid: {
       left: '5%', // 减少左侧空间，使图表左移
@@ -496,10 +616,12 @@ const setOptions = () => {
         barWidth: '60%', // 调整蜡烛宽度，与完整K线图保持一致
         large: true, // 优化大数据量渲染
         largeThreshold: 100, // 超过100个数据点时启用大数据量优化
+        silent: false, // 允许鼠标事件，确保点击事件能触发
         emphasis: {
           itemStyle: {
             borderWidth: 2 // 与完整K线图保持一致
-          }
+          },
+          focus: 'series' // 聚焦整个系列
         },
         // 添加标记线
         markLine: {
@@ -582,49 +704,117 @@ const resizeChart = () => {
 };
 
 onMounted(async () => {
+  isMounted = true;
   await nextTick(); // Ensure DOM element is ready
-  initChart();
+  if (isMounted) {
+    initChart();
+  }
 });
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
+  // 在卸载前设置标志，防止后续操作
+  isMounted = false;
+  
+  // 清理事件监听器
   window.removeEventListener('resize', resizeChart);
+  
+  // 清理图表实例
   if (chartInstance) {
-    chartInstance.dispose();
+    try {
+      chartInstance.dispose();
+    } catch (e) {
+      console.warn('清理图表实例失败:', e);
+    }
+    chartInstance = null;
+  }
+  
+  // 清理 GSAP 动画
+  if (chartRef.value) {
+    try {
+      gsap.killTweensOf(chartRef.value);
+    } catch (e) {
+      // 忽略 GSAP 清理错误
+    }
   }
 });
 
 // 监听数据变化
 watch(() => props.klineData, (newData) => {
-  loading.value = true; // 显示加载状态
+  if (!chartRef.value || !isMounted) return;
+  
+  // 安全地设置加载状态
+  safeSetLoading(true);
 
-  try {
-    if (chartInstance && newData) {
-      setOptions(); // Re-render with new data
-    } else if (chartInstance && !newData) {
-      chartInstance.clear(); // Clear chart if data becomes null/empty
-    } else if (!chartInstance && newData) {
-      initChart(); // Initialize if chart wasn't ready but data arrived
-    }
-  } catch (error) {
-    console.error('更新图表失败:', error);
-  } finally {
-    loading.value = false; // 隐藏加载状态
-  }
+  nextTick(() => {
+    // 使用 requestAnimationFrame 延迟状态更新
+    requestAnimationFrame(() => {
+      if (!chartRef.value || !isMounted) {
+        safeSetLoading(false);
+        return;
+      }
+
+      try {
+        if (chartInstance && newData && newData.length > 0) {
+          setOptions(); // Re-render with new data
+          // 重新绑定点击事件，确保事件监听器存在
+          if (chartInstance && isMounted) {
+            chartInstance.off('click');
+            chartInstance.on('click', function (params) {
+              if (!isMounted) return; // 如果组件已卸载，不处理事件
+              if (params.seriesName === 'K线' && params.dataIndex !== undefined) {
+                const selectedData = props.klineData[params.dataIndex];
+                if (selectedData) {
+                  const dayData = {
+                    date: selectedData.date,
+                    open: selectedData.open,
+                    close: selectedData.close,
+                    high: selectedData.high,
+                    low: selectedData.low,
+                    volume: selectedData.volume,
+                    pctChg: selectedData.pctChg,
+                    preclose: selectedData.preclose,
+                    index: params.dataIndex
+                  };
+                  emit('daySelect', dayData);
+                }
+              }
+            });
+          }
+        } else if (chartInstance && (!newData || newData.length === 0)) {
+          chartInstance.clear(); // Clear chart if data becomes null/empty
+        } else if (!chartInstance && newData && newData.length > 0 && isMounted) {
+          initChart(); // Initialize if chart wasn't ready but data arrived
+        }
+      } catch (error) {
+        console.error('更新图表失败:', error);
+      } finally {
+        // 只有在组件仍然挂载时才更新加载状态
+        safeSetLoading(false);
+      }
+    });
+  });
 }, { deep: true }); // Use deep watch if klineData structure might change internally
 
 // 监听暗色模式变化
 watch(() => props.isDarkMode, () => {
+  if (!isMounted) return;
+  
   if (chartInstance) {
-    loading.value = true;
+    safeSetLoading(true);
     try {
       // 销毁旧实例并重新创建
       chartInstance.dispose();
+      chartInstance = null;
       nextTick(() => {
-        initChart();
+        if (isMounted) {
+          initChart();
+        } else {
+          safeSetLoading(false);
+        }
       });
     } catch (error) {
       console.error('切换主题失败:', error);
-      loading.value = false;
+      safeSetLoading(false);
     }
   }
 });

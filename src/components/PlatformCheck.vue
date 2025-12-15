@@ -492,9 +492,57 @@
                   width="100%"
                   :title="`${result.name} (${result.code})`"
                   :isDarkMode="isDarkMode"
-                  :markLines="result.mark_lines || []"
+                  :markLines="generateMarkLines(result)"
+                  :supportLevels="getSupportLevels(result)"
+                  :resistanceLevels="getResistanceLevels(result)"
+                  @daySelect="handleDaySelect"
                   class="rounded-md overflow-hidden"
                 />
+              </div>
+              
+              <!-- 选中日期数据显示 -->
+              <div v-if="selectedDay" class="mt-4 p-4 bg-muted/30 rounded-md">
+                <h3 class="text-sm font-medium mb-2 flex items-center">
+                  <i class="fas fa-calendar-day mr-2 text-primary"></i>
+                  选中日期数据: {{ selectedDay.date }}
+                </h3>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <span class="text-muted-foreground">开盘:</span>
+                    <span class="ml-2 font-medium">{{ selectedDay.open }}</span>
+                  </div>
+                  <div>
+                    <span class="text-muted-foreground">收盘:</span>
+                    <span class="ml-2 font-medium" :class="selectedDay.close >= selectedDay.open ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ selectedDay.close }}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="text-muted-foreground">最高:</span>
+                    <span class="ml-2 font-medium">{{ selectedDay.high }}</span>
+                  </div>
+                  <div>
+                    <span class="text-muted-foreground">最低:</span>
+                    <span class="ml-2 font-medium">{{ selectedDay.low }}</span>
+                  </div>
+                  <!-- 涨幅显示 -->
+                  <div class="sm:col-span-2">
+                    <span class="text-muted-foreground">单日涨幅:</span>
+                    <template v-if="hasValidChangePercent">
+                      <span class="ml-2 font-medium font-semibold" :class="selectedDay.changePercent >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                        {{ selectedDay.changePercent >= 0 ? '+' : '' }}{{ formatChangePercent(selectedDay.changePercent) }}%
+                      </span>
+                      <span v-if="hasValidChange" class="ml-1 text-xs" :class="selectedDay.changePercent >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                        ({{ selectedDay.change >= 0 ? '+' : '' }}{{ formatChange(selectedDay.change) }})
+                      </span>
+                    </template>
+                    <span v-else class="ml-2 text-gray-500 dark:text-gray-400">暂无数据</span>
+                  </div>
+                  <div v-if="selectedDay.volume" class="sm:col-span-2">
+                    <span class="text-muted-foreground">成交量:</span>
+                    <span class="ml-2 font-medium">{{ selectedDay.volume }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -634,7 +682,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import KlineChart from './KlineChart.vue'
@@ -646,6 +694,33 @@ const loading = ref(false)
 const error = ref(null)
 const result = ref(null)
 const isDarkMode = ref(false)
+const selectedDay = ref(null)
+
+// 计算属性：检查是否有有效的涨幅百分比
+const hasValidChangePercent = computed(() => {
+  if (!selectedDay.value) return false
+  const cp = selectedDay.value.changePercent
+  return cp !== undefined && cp !== null && !isNaN(cp) && cp !== ''
+})
+
+// 计算属性：检查是否有有效的涨跌金额
+const hasValidChange = computed(() => {
+  if (!selectedDay.value) return false
+  const c = selectedDay.value.change
+  return c !== undefined && c !== null && !isNaN(c) && c !== ''
+})
+
+// 格式化涨幅百分比
+function formatChangePercent(value) {
+  const num = Number(value)
+  return isNaN(num) ? '0.00' : num.toFixed(2)
+}
+
+// 格式化涨跌金额
+function formatChange(value) {
+  const num = Number(value)
+  return isNaN(num) ? '0.00' : num.toFixed(2)
+}
 
 // 辅助函数：从选择理由中提取值（用于数字值）
 function extractValue(reason, key) {
@@ -695,6 +770,126 @@ function extractBreakthroughInfo(reason) {
   return ''
 }
 
+// 生成标记线数据（与首页相同的方法）
+function generateMarkLines(result) {
+  if (!result) return [];
+  
+  // 首先检查后端是否直接提供了标记线数据
+  if (result.mark_lines && result.mark_lines.length > 0) {
+    return result.mark_lines;
+  }
+
+  const markLines = [];
+
+  // 如果有突破确认分析，添加突破标记
+  if (result.explanation && result.explanation.breakthrough_confirmation && result.explanation.breakthrough_confirmation.details) {
+    const details = result.explanation.breakthrough_confirmation.details;
+    if (details.breakthrough_date) {
+      markLines.push({
+        date: details.breakthrough_date,
+        text: '突破',
+        color: '#10b981' // 绿色
+      });
+    }
+  }
+
+  // 如果有平台期窗口信息，可以添加平台期开始标记
+  if (result.platform_windows && result.platform_windows.length > 0) {
+    // 这里可以根据实际数据结构添加平台期开始日期标记
+    // 如果后端提供了平台期开始日期，可以添加
+  }
+
+  return markLines;
+}
+
+// 获取支撑位数据（与首页相同的方法）
+function getSupportLevels(result) {
+  if (!result) return [];
+
+  // 检查是否有箱体分析结果
+  if (result.box_analysis && result.box_analysis.support_levels) {
+    return result.box_analysis.support_levels;
+  }
+
+  // 检查explanation中是否有箱体分析
+  if (result.explanation && result.explanation.analysis_details) {
+    // 尝试从分析详情中获取支撑位
+    // 根据实际数据结构调整
+  }
+
+  return [];
+}
+
+// 获取阻力位数据（与首页相同的方法）
+function getResistanceLevels(result) {
+  if (!result) return [];
+
+  // 检查是否有箱体分析结果
+  if (result.box_analysis && result.box_analysis.resistance_levels) {
+    return result.box_analysis.resistance_levels;
+  }
+
+  // 检查explanation中是否有箱体分析
+  if (result.explanation && result.explanation.analysis_details) {
+    // 尝试从分析详情中获取阻力位
+    // 根据实际数据结构调整
+  }
+
+  return [];
+}
+
+// 处理日期选择事件
+function handleDaySelect(dayData) {
+  console.log('handleDaySelect 接收到数据:', dayData);
+  console.log('result.value:', result.value);
+  console.log('kline_data 长度:', result.value?.kline_data?.length);
+  
+  // 计算单日涨幅（相对于前一日收盘价）
+  let changePercent = null;
+  let change = null;
+  
+  // 优先使用后端提供的 pctChg 字段
+  if (dayData.pctChg !== undefined && dayData.pctChg !== null && !isNaN(dayData.pctChg)) {
+    changePercent = Number(dayData.pctChg);
+    console.log('使用 pctChg:', changePercent);
+    // 如果有前一日收盘价，计算涨跌金额
+    if (dayData.preclose !== undefined && dayData.preclose !== null && !isNaN(dayData.preclose)) {
+      change = dayData.close - dayData.preclose;
+      console.log('使用 preclose 计算 change:', change);
+    }
+  }
+  
+  // 如果没有 pctChg 或计算失败，尝试从前一日数据计算
+  if ((changePercent === null || isNaN(changePercent)) && result.value && result.value.kline_data && dayData.index > 0) {
+    console.log('尝试从前一日数据计算涨幅, index:', dayData.index);
+    const prevDay = result.value.kline_data[dayData.index - 1];
+    console.log('前一日数据:', prevDay);
+    if (prevDay && prevDay.close !== undefined && prevDay.close !== null) {
+      // 计算涨幅 = (当日收盘价 - 前一日收盘价) / 前一日收盘价 * 100%
+      change = dayData.close - prevDay.close;
+      changePercent = (change / prevDay.close) * 100;
+      console.log('计算得到的涨幅:', changePercent, '涨跌金额:', change);
+    }
+  }
+  
+  // 如果还是没有，尝试从 index=0 的情况（第一天，可能没有前一天数据）
+  if ((changePercent === null || isNaN(changePercent)) && dayData.index === 0) {
+    console.log('第一天数据，无法计算涨幅');
+  }
+  
+  selectedDay.value = {
+    ...dayData,
+    changePercent: changePercent,
+    change: change
+  };
+  
+  console.log('最终 selectedDay.value:', selectedDay.value);
+  console.log('changePercent 类型:', typeof changePercent, '值:', changePercent);
+  console.log('changePercent 是否为 null:', changePercent === null);
+  console.log('changePercent 是否为 undefined:', changePercent === undefined);
+  console.log('changePercent 是否为 NaN:', isNaN(changePercent));
+}
+
 async function checkStock() {
   if (!stockCode.value.trim()) {
     error.value = '请输入股票代码'
@@ -704,6 +899,7 @@ async function checkStock() {
   loading.value = true
   error.value = null
   result.value = null
+  selectedDay.value = null
 
   try {
     const response = await axios.post('/platform/api/platform/check', {
@@ -722,6 +918,22 @@ async function checkStock() {
     loading.value = false
   }
 }
+
+// 切换暗色模式
+function toggleDarkMode() {
+  isDarkMode.value = !isDarkMode.value
+  if (isDarkMode.value) {
+    document.documentElement.classList.add('dark')
+    localStorage.setItem('theme', 'dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+    localStorage.setItem('theme', 'light')
+  }
+}
+
+// 提供 isDarkMode 和 toggleDarkMode 给子组件
+provide('isDarkMode', isDarkMode)
+provide('toggleDarkMode', toggleDarkMode)
 
 onMounted(() => {
   // 检查本地存储中的主题设置
