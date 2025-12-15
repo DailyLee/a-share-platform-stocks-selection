@@ -5,6 +5,53 @@ import pandas as pd
 import numpy as np
 from typing import Tuple, Dict, Any, List, Optional
 
+def quick_price_check(df: pd.DataFrame, window: int, 
+                     box_threshold: float, 
+                     volatility_threshold: float) -> Tuple[bool, Dict[str, float]]:
+    """
+    Quick price check that only calculates box_range and volatility (fast checks).
+    This is used for early filtering before expensive computations.
+    
+    Args:
+        df: DataFrame containing stock price data
+        window: Window size in days
+        box_threshold: Maximum allowed price range
+        volatility_threshold: Maximum allowed volatility
+    
+    Returns:
+        Tuple of (passes_quick_check, features_dict)
+        features_dict contains: box_range, volatility
+    """
+    if len(df) < window:
+        return False, {
+            'box_range': float('inf'),
+            'volatility': float('inf')
+        }
+    
+    # Get the most recent window of data
+    recent_df = df.iloc[-window:].copy()
+    
+    # Calculate price range (box) - fast operation
+    price_high = recent_df['high'].max()
+    price_low = recent_df['low'].min()
+    price_range = price_high - price_low
+    box_range = price_range / price_low if price_low > 0 else float('inf')
+    
+    # Calculate volatility (standard deviation of daily returns) - fast operation
+    if len(recent_df) >= 3:
+        daily_returns = recent_df['close'].pct_change().dropna()
+        volatility = daily_returns.std()
+    else:
+        volatility = float('inf')
+    
+    # Quick check: only check box_range and volatility (skip MA calculation)
+    passes = (box_range <= box_threshold and volatility <= volatility_threshold)
+    
+    return passes, {
+        'box_range': box_range,
+        'volatility': volatility
+    }
+
 def calculate_price_features(df: pd.DataFrame, window: int) -> Dict[str, float]:
     """
     Calculate price-related features for platform identification based on a specific window.

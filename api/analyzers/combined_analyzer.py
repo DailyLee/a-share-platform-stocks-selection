@@ -137,64 +137,81 @@ def analyze_stock(df: pd.DataFrame,
             "selection_reasons": {}
         }
 
-    # Check each window
+    # ============================================================
+    # STEP 1: Quick Price Check (Fast Failure)
+    # ============================================================
+    # Perform quick price checks on all windows first to filter out
+    # stocks that don't meet basic criteria before expensive computations
+    from .price_analyzer import quick_price_check
+    
+    quick_check_results = {}
+    candidate_windows = []  # Windows that pass quick check
+    
+    for window in windows:
+        passes_quick, quick_features = quick_price_check(
+            df, window, box_threshold, volatility_threshold
+        )
+        quick_check_results[window] = {
+            'passes': passes_quick,
+            'features': quick_features
+        }
+        
+        if passes_quick:
+            candidate_windows.append(window)
+    
+    # Early exit: if no windows pass quick check, return immediately
+    if not candidate_windows:
+        return {
+            "is_platform": False,
+            "windows_checked": windows,
+            "platform_windows": [],
+            "details": {w: {
+                "status": "快速检查未通过",
+                "quick_check": {
+                    "box_range": quick_check_results[w]["features"]["box_range"],
+                    "volatility": quick_check_results[w]["features"]["volatility"],
+                    "box_threshold": box_threshold,
+                    "volatility_threshold": volatility_threshold
+                }
+            } for w in windows},
+            "selection_reasons": {},
+            "early_exit": True,
+            "early_exit_reason": "快速价格检查未通过"
+        }
+
+    # ============================================================
+    # STEP 2: Full Price Analysis (only for candidate windows)
+    # ============================================================
+    # Now perform full price analysis including MA calculation
+    # only for windows that passed quick check
     platform_windows = []
     details = {}
     selection_reasons = {}
     volume_analysis_results = {}
     breakthrough_results = {}
 
-    # Perform position analysis if requested
+    # ============================================================
+    # STEP 3: Expensive Analyses (only if basic platform found)
+    # ============================================================
+    # These are deferred until we know there's at least a basic platform
     position_result = None
     decline_result = None
     has_decline_pattern = False
-
-    if use_low_position:
-        if use_rapid_decline_detection:
-            # Use enhanced decline analysis with rapid decline detection
-            has_decline_pattern, decline_result = check_decline_pattern(
-                df,
-                high_point_lookback_days,
-                decline_period_days,
-                decline_threshold,
-                rapid_decline_days,
-                rapid_decline_threshold
-            )
-
-            # Create position result from decline result for compatibility
-            position_result = {
-                "is_low_position": decline_result.get("is_low_position", False),
-                "details": decline_result.get("details", {})
-            }
-        else:
-            # Use traditional position analysis
-            from .position_analyzer import analyze_position
-            position_result = analyze_position(
-                df,
-                high_point_lookback_days,
-                decline_period_days,
-                decline_threshold
-            )
-
-    # Perform breakthrough prediction if requested
-    if use_breakthrough_prediction:
-        breakthrough_analysis = analyze_breakthrough(df)
-        breakthrough_results = breakthrough_analysis
-
-    # Perform breakthrough confirmation if requested
+    box_analysis_results = {}
     confirmation_result = None
-    if use_breakthrough_confirmation:
-        confirmation_result = check_breakthrough_confirmation(
-            df,
-            breakthrough_confirmation_days
-        )
 
-    # Use enhanced platform analysis if box detection is enabled
+    # Note: Position analysis and other expensive operations will be
+    # performed only after we confirm there's a basic platform period
+
+    # ============================================================
+    # STEP 4: Full Analysis for Candidate Windows Only
+    # ============================================================
+    # Only analyze windows that passed quick check
     if use_box_detection:
-        # Perform enhanced platform analysis
+        # Perform enhanced platform analysis (only on candidate windows)
         enhanced_result = analyze_enhanced_platform(
             df,
-            windows,
+            candidate_windows,  # Only analyze candidate windows
             box_threshold,
             ma_diff_threshold,
             volatility_threshold,
@@ -210,7 +227,7 @@ def analyze_stock(df: pd.DataFrame,
         selection_reasons = enhanced_result["selection_reasons"]
 
         # Store volume analysis results for later use
-        for window in windows:
+        for window in candidate_windows:
             if window in details and "volume_analysis" in details[window]:
                 volume_analysis_results[window] = {
                     "has_consolidation_volume": True,  # Assume true if included in platform windows
@@ -220,8 +237,9 @@ def analyze_stock(df: pd.DataFrame,
                 }
     else:
         # Use traditional analysis method
-        for window in windows:
-            # Price analysis
+        # Only analyze candidate windows (those that passed quick check)
+        for window in candidate_windows:
+            # Price analysis (full analysis including MA)
             price_analysis = analyze_price(
                 df, window, box_threshold, ma_diff_threshold, volatility_threshold
             )
@@ -284,22 +302,78 @@ def analyze_stock(df: pd.DataFrame,
 
                 selection_reasons[window] = reason
 
+    # ============================================================
+    # STEP 5: Basic Platform Judgment
+    # ============================================================
     # 基本平台期判断 - 至少有一个窗口满足价格模式和成交量条件
     is_basic_platform = len(platform_windows) > 0
+    
+    # Initialize platform judgment variables
+    is_platform = is_basic_platform  # Start with basic platform result
+    platform_judgment_log = []  # Track judgment process
+    if is_basic_platform:
+        platform_judgment_log.append(f"基本平台期判断: {is_basic_platform}")
 
-    # 初始化平台期判断结果
-    is_platform = is_basic_platform
+    # Early exit: if no basic platform found, skip expensive analyses
+    if not is_basic_platform:
+        # Add quick check details for failed windows
+        for window in windows:
+            if window not in details:
+                details[window] = {
+                    "status": "快速检查未通过",
+                    "quick_check": {
+                        "box_range": quick_check_results[window]["features"]["box_range"],
+                        "volatility": quick_check_results[window]["features"]["volatility"]
+                    }
+                }
+        
+        return {
+            "is_platform": False,
+            "windows_checked": windows,
+            "platform_windows": [],
+            "details": details,
+            "selection_reasons": {},
+            "early_exit": True,
+            "early_exit_reason": "基本平台期条件未满足"
+        }
 
-    # 记录判断过程
-    platform_judgment_log = []
-    platform_judgment_log.append(
-        f"基本平台期判断: {is_basic_platform} (窗口: {platform_windows})")
+    # ============================================================
+    # STEP 6: Expensive Analyses (only if basic platform exists)
+    # ============================================================
+    # Now perform expensive analyses only if we have a basic platform
+    
+    # Perform position analysis if requested (expensive operation)
+    if use_low_position:
+        if use_rapid_decline_detection:
+            # Use enhanced decline analysis with rapid decline detection
+            has_decline_pattern, decline_result = check_decline_pattern(
+                df,
+                high_point_lookback_days,
+                decline_period_days,
+                decline_threshold,
+                rapid_decline_days,
+                rapid_decline_threshold
+            )
 
-    # 如果启用了低位分析，还需要满足低位条件
-    if use_low_position and position_result:
-        is_low_position = position_result["is_low_position"]
-        is_platform = is_platform and is_low_position
-        platform_judgment_log.append(f"低位判断: {is_low_position}")
+            # Create position result from decline result for compatibility
+            position_result = {
+                "is_low_position": decline_result.get("is_low_position", False),
+                "details": decline_result.get("details", {})
+            }
+        else:
+            # Use traditional position analysis
+            from .position_analyzer import analyze_position
+            position_result = analyze_position(
+                df,
+                high_point_lookback_days,
+                decline_period_days,
+                decline_threshold
+            )
+        
+        if position_result:
+            is_low_position = position_result["is_low_position"]
+            is_platform = is_platform and is_low_position
+            platform_judgment_log.append(f"低位判断: {is_low_position}")
 
     # 如果启用了快速下跌检测，还需要满足快速下跌条件
     if use_rapid_decline_detection and decline_result:
@@ -307,9 +381,8 @@ def analyze_stock(df: pd.DataFrame,
         is_platform = is_platform and is_rapid_decline
         platform_judgment_log.append(f"快速下跌判断: {is_rapid_decline}")
 
-    # 添加箱体检测结果
-    box_analysis_results = {}
-    if use_box_detection:
+    # 添加箱体检测结果（expensive operation, only if basic platform exists)
+    if use_box_detection and is_basic_platform:
         # 使用最大窗口进行箱体检测，以获取更稳定的支撑位和阻力位
         max_window = max(windows) if windows else 90
         box_analysis = analyze_box_pattern(df, max_window, box_quality_threshold=box_quality_threshold)
@@ -404,9 +477,11 @@ def analyze_stock(df: pd.DataFrame,
         "details": details,
         "selection_reasons": selection_reasons,
         "volume_analysis": volume_analysis_results if use_volume_analysis else {},
-        "box_analysis": box_analysis_results if use_box_detection else {},
+        "box_analysis": box_analysis_results if (use_box_detection and is_basic_platform) else {},
         "mark_lines": mark_lines,  # 直接添加标记线数据
-        "platform_judgment_log": platform_judgment_log  # 添加判断过程日志
+        "platform_judgment_log": platform_judgment_log,  # 添加判断过程日志
+        "candidate_windows": candidate_windows,  # 通过快速检查的窗口
+        "quick_check_performed": True  # 标记已执行快速检查
     }
 
     # Add position analysis results if available
