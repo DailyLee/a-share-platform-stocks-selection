@@ -249,10 +249,28 @@ class CacheManager:
         # If data is a list of dicts and looks like DataFrame records, convert back
         if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
             # Check if it has DataFrame-like structure
-            if 'date' in data[0] or any(col in data[0] for col in ['open', 'high', 'low', 'close', 'volume']):
+            # Look for common DataFrame indicators: date column or financial data columns
+            first_dict = data[0]
+            has_date = 'date' in first_dict
+            has_financial_cols = any(col in first_dict for col in ['open', 'high', 'low', 'close', 'volume', 'turn', 'preclose', 'pctChg'])
+            has_stock_cols = any(col in first_dict for col in ['code', 'name', 'industry', 'area'])
+            
+            # If it looks like tabular data (has consistent structure), convert to DataFrame
+            if has_date or has_financial_cols or has_stock_cols:
                 try:
-                    return pd.DataFrame(data)
-                except Exception:
+                    df = pd.DataFrame(data)
+                    # Convert date column to datetime if it exists
+                    if 'date' in df.columns:
+                        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                    # Convert numeric columns
+                    numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'turn', 'preclose', 'pctChg', 'peTTM', 'pbMRQ']
+                    for col in numeric_cols:
+                        if col in df.columns:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                    return df
+                except Exception as e:
+                    # If conversion fails, return original data
+                    print(f"Warning: Failed to restore DataFrame from JSON: {e}")
                     pass
         
         return data
@@ -273,7 +291,11 @@ class CacheManager:
                 entry = self._memory_cache[key]
                 if not entry.is_expired() and entry.is_valid_for_today():
                     self._stats['hits'] += 1
-                    return entry.data.copy() if hasattr(entry.data, 'copy') else entry.data
+                    # Restore DataFrame if needed (data might be a list from JSON)
+                    data = entry.data
+                    if isinstance(data, list) and len(data) > 0:
+                        data = self._restore_data_from_json(data)
+                    return data.copy() if hasattr(data, 'copy') else data
                 else:
                     # Remove expired entry from memory
                     del self._memory_cache[key]
@@ -285,13 +307,15 @@ class CacheManager:
                 self._stats['misses'] += 1
                 return None
             
-            # Store in memory cache for faster access
-            self._memory_cache[key] = entry
-            
-            # Restore DataFrame if needed
+            # Restore DataFrame if needed before storing in memory
             data = entry.data
             if isinstance(data, list) and len(data) > 0:
                 data = self._restore_data_from_json(data)
+                # Update entry with restored DataFrame
+                entry.data = data
+            
+            # Store in memory cache for faster access
+            self._memory_cache[key] = entry
             
             self._stats['hits'] += 1
             return data.copy() if hasattr(data, 'copy') else data
