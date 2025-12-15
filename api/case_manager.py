@@ -9,6 +9,17 @@ from typing import Dict, List, Any, Optional
 import pandas as pd
 
 from .json_utils import sanitize_float_for_json, sanitize_kline_data
+from .config import (
+    DEFAULT_WINDOWS, DEFAULT_BOX_THRESHOLD, DEFAULT_MA_DIFF_THRESHOLD,
+    DEFAULT_VOLATILITY_THRESHOLD, DEFAULT_VOLUME_CHANGE_THRESHOLD,
+    DEFAULT_VOLUME_STABILITY_THRESHOLD, DEFAULT_VOLUME_INCREASE_THRESHOLD,
+    DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_USE_VOLUME_ANALYSIS,
+    DEFAULT_USE_BOX_DETECTION, DEFAULT_USE_LOW_POSITION,
+    DEFAULT_HIGH_POINT_LOOKBACK_DAYS, DEFAULT_DECLINE_PERIOD_DAYS,
+    DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
+    DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
+    DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+)
 
 # Define the case directory
 CASE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cases')
@@ -449,28 +460,28 @@ def create_anjishi_case():
         'name': '安记食品'
     }
 
-    # Analysis result
+    # Analysis result - use default values from config for consistency
     analysis_result = {
         'parameters': {
-            'windows': [30, 60, 90],
-            'box_threshold': 0.5,
-            'ma_diff_threshold': 0.03,
-            'volatility_threshold': 0.09,
-            'use_volume_analysis': True,
-            'volume_change_threshold': 0.8,
-            'volume_stability_threshold': 0.5,
-            'volume_increase_threshold': 1.5,
-            'use_breakthrough_prediction': False,
-            'use_window_weights': False,
-            'use_low_position': True,
-            'high_point_lookback_days': 365,
-            'decline_period_days': 180,
-            'decline_threshold': 0.3,
-            'use_rapid_decline_detection': True,
-            'rapid_decline_days': 30,
-            'rapid_decline_threshold': 0.15,
-            'use_box_detection': True,
-            'box_quality_threshold': 0.6
+            'windows': [30, 60, 90],  # Using different windows for this example case
+            'box_threshold': DEFAULT_BOX_THRESHOLD,
+            'ma_diff_threshold': DEFAULT_MA_DIFF_THRESHOLD,
+            'volatility_threshold': DEFAULT_VOLATILITY_THRESHOLD,
+            'use_volume_analysis': DEFAULT_USE_VOLUME_ANALYSIS,
+            'volume_change_threshold': DEFAULT_VOLUME_CHANGE_THRESHOLD,
+            'volume_stability_threshold': DEFAULT_VOLUME_STABILITY_THRESHOLD,
+            'volume_increase_threshold': DEFAULT_VOLUME_INCREASE_THRESHOLD,
+            'use_breakthrough_prediction': DEFAULT_USE_BREAKTHROUGH_PREDICTION,
+            'use_window_weights': DEFAULT_USE_WINDOW_WEIGHTS,
+            'use_low_position': DEFAULT_USE_LOW_POSITION,
+            'high_point_lookback_days': DEFAULT_HIGH_POINT_LOOKBACK_DAYS,
+            'decline_period_days': DEFAULT_DECLINE_PERIOD_DAYS,
+            'decline_threshold': DEFAULT_DECLINE_THRESHOLD,
+            'use_rapid_decline_detection': DEFAULT_USE_RAPID_DECLINE_DETECTION,
+            'rapid_decline_days': DEFAULT_RAPID_DECLINE_DAYS,
+            'rapid_decline_threshold': DEFAULT_RAPID_DECLINE_THRESHOLD,
+            'use_box_detection': DEFAULT_USE_BOX_DETECTION,
+            'box_quality_threshold': DEFAULT_BOX_QUALITY_THRESHOLD
         },
         'is_platform': True,
         'platform_windows': [60],

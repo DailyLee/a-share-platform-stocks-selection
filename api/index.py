@@ -29,58 +29,93 @@ except ImportError:
     from .platform_scanner import prepare_stock_list, scan_stocks
     from .case_api import router as case_router
 
+# Import default values from config to ensure consistency
+try:
+    from api.config import (
+        DEFAULT_WINDOWS, DEFAULT_BOX_THRESHOLD, DEFAULT_MA_DIFF_THRESHOLD,
+        DEFAULT_VOLATILITY_THRESHOLD, DEFAULT_VOLUME_CHANGE_THRESHOLD,
+        DEFAULT_VOLUME_STABILITY_THRESHOLD, DEFAULT_VOLUME_INCREASE_THRESHOLD,
+        DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_USE_VOLUME_ANALYSIS,
+        DEFAULT_USE_BOX_DETECTION, DEFAULT_USE_LOW_POSITION,
+        DEFAULT_HIGH_POINT_LOOKBACK_DAYS, DEFAULT_DECLINE_PERIOD_DAYS,
+        DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
+        DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
+        DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+    )
+except ImportError:
+    # 如果绝对导入失败，尝试相对导入（本地开发环境）
+    from .config import (
+        DEFAULT_WINDOWS, DEFAULT_BOX_THRESHOLD, DEFAULT_MA_DIFF_THRESHOLD,
+        DEFAULT_VOLATILITY_THRESHOLD, DEFAULT_VOLUME_CHANGE_THRESHOLD,
+        DEFAULT_VOLUME_STABILITY_THRESHOLD, DEFAULT_VOLUME_INCREASE_THRESHOLD,
+        DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_USE_VOLUME_ANALYSIS,
+        DEFAULT_USE_BOX_DETECTION, DEFAULT_USE_LOW_POSITION,
+        DEFAULT_HIGH_POINT_LOOKBACK_DAYS, DEFAULT_DECLINE_PERIOD_DAYS,
+        DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
+        DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
+        DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+    )
+
 
 # Define request body model using Pydantic
+
+
 class ScanConfigRequest(BaseModel):
-    """Request model for stock platform scan configuration."""
+    """Request model for stock platform scan configuration.
+    
+    All default values are imported from config.py to ensure consistency
+    across the entire codebase.
+    """
     # Window settings - 基于平台期分析的最佳参数组合
-    windows: List[int] = Field(default_factory=lambda: [20, 30, 60])
+    windows: List[int] = Field(default_factory=lambda: DEFAULT_WINDOWS.copy())
 
     # Price pattern thresholds - 适合识别安记食品类型的平台期
-    box_threshold: float = 0.5
-    ma_diff_threshold: float = 0.03
-    volatility_threshold: float = 0.09  # 从0.04调整到0.09，以便更好地识别平台期
+    box_threshold: float = DEFAULT_BOX_THRESHOLD
+    ma_diff_threshold: float = DEFAULT_MA_DIFF_THRESHOLD
+    volatility_threshold: float = DEFAULT_VOLATILITY_THRESHOLD
 
     # Volume analysis settings - 适合平台期
-    use_volume_analysis: bool = True
+    use_volume_analysis: bool = DEFAULT_USE_VOLUME_ANALYSIS
     # Maximum volume change ratio for consolidation
-    volume_change_threshold: float = 0.9
+    volume_change_threshold: float = DEFAULT_VOLUME_CHANGE_THRESHOLD
     # Maximum volume stability for consolidation
-    volume_stability_threshold: float = 0.75  # 从0.7调整到0.75，以便在20天窗口也能识别出平台期
+    volume_stability_threshold: float = DEFAULT_VOLUME_STABILITY_THRESHOLD
     # Minimum volume increase ratio for breakthrough
-    volume_increase_threshold: float = 1.5
+    volume_increase_threshold: float = DEFAULT_VOLUME_INCREASE_THRESHOLD
 
     # Technical indicators
     use_technical_indicators: bool = False  # Whether to use technical indicators
     # Whether to use breakthrough prediction
-    use_breakthrough_prediction: bool = False
+    use_breakthrough_prediction: bool = DEFAULT_USE_BREAKTHROUGH_PREDICTION
 
     # Position analysis settings
-    use_low_position: bool = True  # Whether to use low position analysis
+    use_low_position: bool = DEFAULT_USE_LOW_POSITION  # Whether to use low position analysis
     # Number of days to look back for finding the high point
-    high_point_lookback_days: int = 365
+    high_point_lookback_days: int = DEFAULT_HIGH_POINT_LOOKBACK_DAYS
     # Number of days within which the decline should have occurred
-    decline_period_days: int = 180
+    decline_period_days: int = DEFAULT_DECLINE_PERIOD_DAYS
     # Minimum decline percentage from high to be considered at low position
-    decline_threshold: float = 0.3  # 从0.5降低到0.3，更符合实际情况
+    decline_threshold: float = DEFAULT_DECLINE_THRESHOLD
 
     # Rapid decline detection settings
     # Whether to use rapid decline detection
-    use_rapid_decline_detection: bool = True
-    rapid_decline_days: int = 30  # Number of days to define a rapid decline period
+    use_rapid_decline_detection: bool = DEFAULT_USE_RAPID_DECLINE_DETECTION
+    rapid_decline_days: int = DEFAULT_RAPID_DECLINE_DAYS  # Number of days to define a rapid decline period
     # Minimum decline percentage within rapid_decline_days to be considered rapid
-    rapid_decline_threshold: float = 0.15
+    rapid_decline_threshold: float = DEFAULT_RAPID_DECLINE_THRESHOLD
 
     # Breakthrough confirmation settings
     # Whether to use breakthrough confirmation
-    use_breakthrough_confirmation: bool = False
+    use_breakthrough_confirmation: bool = DEFAULT_USE_BREAKTHROUGH_CONFIRMATION
     # Number of days to look for confirmation
-    breakthrough_confirmation_days: int = 1
+    breakthrough_confirmation_days: int = DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS
 
     # Box pattern detection settings
-    use_box_detection: bool = True  # Whether to use box pattern detection
+    use_box_detection: bool = DEFAULT_USE_BOX_DETECTION  # Whether to use box pattern detection
     # Minimum quality score for a valid box pattern
-    box_quality_threshold: float = 0.6
+    box_quality_threshold: float = DEFAULT_BOX_QUALITY_THRESHOLD
 
     # Fundamental analysis settings
     use_fundamental_filter: bool = False  # 是否启用基本面筛选

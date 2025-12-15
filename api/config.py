@@ -89,6 +89,30 @@ class ScanConfig(BaseModel):
 # Default configuration
 DEFAULT_CONFIG = ScanConfig()
 
+# Export default values as constants for use in other modules
+# This ensures all modules use the same default values from a single source
+DEFAULT_WINDOWS = DEFAULT_CONFIG.windows
+DEFAULT_BOX_THRESHOLD = DEFAULT_CONFIG.box_threshold
+DEFAULT_MA_DIFF_THRESHOLD = DEFAULT_CONFIG.ma_diff_threshold
+DEFAULT_VOLATILITY_THRESHOLD = DEFAULT_CONFIG.volatility_threshold
+DEFAULT_VOLUME_CHANGE_THRESHOLD = DEFAULT_CONFIG.volume_change_threshold
+DEFAULT_VOLUME_STABILITY_THRESHOLD = DEFAULT_CONFIG.volume_stability_threshold
+DEFAULT_VOLUME_INCREASE_THRESHOLD = DEFAULT_CONFIG.volume_increase_threshold
+DEFAULT_BOX_QUALITY_THRESHOLD = DEFAULT_CONFIG.box_quality_threshold
+DEFAULT_USE_VOLUME_ANALYSIS = DEFAULT_CONFIG.use_volume_analysis
+DEFAULT_USE_BOX_DETECTION = DEFAULT_CONFIG.use_box_detection
+DEFAULT_USE_LOW_POSITION = DEFAULT_CONFIG.use_low_position
+DEFAULT_HIGH_POINT_LOOKBACK_DAYS = DEFAULT_CONFIG.high_point_lookback_days
+DEFAULT_DECLINE_PERIOD_DAYS = DEFAULT_CONFIG.decline_period_days
+DEFAULT_DECLINE_THRESHOLD = DEFAULT_CONFIG.decline_threshold
+DEFAULT_USE_RAPID_DECLINE_DETECTION = DEFAULT_CONFIG.use_rapid_decline_detection
+DEFAULT_RAPID_DECLINE_DAYS = DEFAULT_CONFIG.rapid_decline_days
+DEFAULT_RAPID_DECLINE_THRESHOLD = DEFAULT_CONFIG.rapid_decline_threshold
+DEFAULT_USE_BREAKTHROUGH_CONFIRMATION = DEFAULT_CONFIG.use_breakthrough_confirmation
+DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS = DEFAULT_CONFIG.breakthrough_confirmation_days
+DEFAULT_USE_BREAKTHROUGH_PREDICTION = DEFAULT_CONFIG.use_breakthrough_prediction
+DEFAULT_USE_WINDOW_WEIGHTS = DEFAULT_CONFIG.use_window_weights
+
 
 def merge_config(user_config: Dict[str, Any]) -> ScanConfig:
     """

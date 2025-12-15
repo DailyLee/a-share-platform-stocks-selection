@@ -13,14 +13,20 @@ from .price_analyzer import analyze_price, check_price_pattern
 from .volume_analyzer import analyze_volume
 from .box_detector import check_box_pattern
 
+# Import default values from config to ensure consistency
+from ..config import (
+    DEFAULT_VOLUME_CHANGE_THRESHOLD, DEFAULT_VOLUME_STABILITY_THRESHOLD,
+    DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_USE_BOX_DETECTION
+)
+
 
 def check_enhanced_platform(df: pd.DataFrame, window: int,
                             box_threshold: float, ma_diff_threshold: float,
                             volatility_threshold: float,
-                            volume_change_threshold: float = 0.9,
-                            volume_stability_threshold: float = 0.75,
-                            box_quality_threshold: float = 0.6,
-                            use_box_detection: bool = True) -> Tuple[bool, Dict[str, Any]]:
+                            volume_change_threshold: float = None,
+                            volume_stability_threshold: float = None,
+                            box_quality_threshold: float = None,
+                            use_box_detection: bool = None) -> Tuple[bool, Dict[str, Any]]:
     """
     Check if a stock is in a platform consolidation period using enhanced detection.
 
@@ -38,6 +44,16 @@ def check_enhanced_platform(df: pd.DataFrame, window: int,
     Returns:
         Tuple of (is_platform, details)
     """
+    # Apply default values from config if not provided
+    if volume_change_threshold is None:
+        volume_change_threshold = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    if volume_stability_threshold is None:
+        volume_stability_threshold = DEFAULT_VOLUME_STABILITY_THRESHOLD
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+    if use_box_detection is None:
+        use_box_detection = DEFAULT_USE_BOX_DETECTION
+
     if len(df) < window:
         return False, {
             "status": "数据不足",
@@ -110,10 +126,10 @@ def analyze_enhanced_platform(df: pd.DataFrame,
                               box_threshold: float,
                               ma_diff_threshold: float,
                               volatility_threshold: float,
-                              volume_change_threshold: float = 0.9,
-                              volume_stability_threshold: float = 0.75,
-                              box_quality_threshold: float = 0.6,
-                              use_box_detection: bool = True) -> Dict[str, Any]:
+                              volume_change_threshold: float = None,
+                              volume_stability_threshold: float = None,
+                              box_quality_threshold: float = None,
+                              use_box_detection: bool = None) -> Dict[str, Any]:
     """
     Analyze a stock for platform periods across multiple time windows using enhanced detection.
 
@@ -131,6 +147,16 @@ def analyze_enhanced_platform(df: pd.DataFrame,
     Returns:
         Dict containing analysis results
     """
+    # Apply default values from config if not provided
+    if volume_change_threshold is None:
+        volume_change_threshold = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    if volume_stability_threshold is None:
+        volume_stability_threshold = DEFAULT_VOLUME_STABILITY_THRESHOLD
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+    if use_box_detection is None:
+        use_box_detection = DEFAULT_USE_BOX_DETECTION
+
     if df.empty:
         return {
             "is_platform": False,

@@ -13,30 +13,44 @@ from .enhanced_platform_analyzer import analyze_enhanced_platform, check_enhance
 from .box_detector import analyze_box_pattern, check_box_pattern
 from .decline_analyzer import analyze_decline_speed, check_decline_pattern
 
+# Import default values from config to ensure consistency
+from ..config import (
+    DEFAULT_WINDOWS, DEFAULT_BOX_THRESHOLD, DEFAULT_MA_DIFF_THRESHOLD,
+    DEFAULT_VOLATILITY_THRESHOLD, DEFAULT_VOLUME_CHANGE_THRESHOLD,
+    DEFAULT_VOLUME_STABILITY_THRESHOLD, DEFAULT_VOLUME_INCREASE_THRESHOLD,
+    DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_USE_VOLUME_ANALYSIS,
+    DEFAULT_USE_BOX_DETECTION, DEFAULT_USE_LOW_POSITION,
+    DEFAULT_HIGH_POINT_LOOKBACK_DAYS, DEFAULT_DECLINE_PERIOD_DAYS,
+    DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
+    DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
+    DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
+    DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+)
+
 
 def analyze_stock(df: pd.DataFrame,
-                  windows: List[int] = [80, 100, 120],  # 使用安记食品平台期的最佳参数
-                  box_threshold: float = 0.3,  # 降低箱体阈值
-                  ma_diff_threshold: float = 0.25,  # 增加MA差异阈值
-                  volatility_threshold: float = 0.4,  # 增加波动率阈值
-                  volume_change_threshold: float = 0.5,  # 降低成交量变化阈值
-                  volume_stability_threshold: float = 0.5,  # 降低成交量稳定性要求
-                  volume_increase_threshold: float = 1.5,
-                  use_volume_analysis: bool = True,  # 使用成交量分析
-                  use_breakthrough_prediction: bool = False,
-                  use_window_weights: bool = False,
+                  windows: List[int] = None,
+                  box_threshold: float = None,
+                  ma_diff_threshold: float = None,
+                  volatility_threshold: float = None,
+                  volume_change_threshold: float = None,
+                  volume_stability_threshold: float = None,
+                  volume_increase_threshold: float = None,
+                  use_volume_analysis: bool = None,
+                  use_breakthrough_prediction: bool = None,
+                  use_window_weights: bool = None,
                   window_weights: Dict[int, float] = None,
-                  use_low_position: bool = True,
-                  high_point_lookback_days: int = 365,
-                  decline_period_days: int = 180,
-                  decline_threshold: float = 0.4,  # 适中的下跌阈值
-                  use_rapid_decline_detection: bool = True,
-                  rapid_decline_days: int = 30,  # 适中的快速下跌窗口
-                  rapid_decline_threshold: float = 0.15,  # 适中的快速下跌阈值
-                  use_breakthrough_confirmation: bool = False,
-                  breakthrough_confirmation_days: int = 1,
-                  use_box_detection: bool = True,
-                  box_quality_threshold: float = 0.3) -> Dict[str, Any]:
+                  use_low_position: bool = None,
+                  high_point_lookback_days: int = None,
+                  decline_period_days: int = None,
+                  decline_threshold: float = None,
+                  use_rapid_decline_detection: bool = None,
+                  rapid_decline_days: int = None,
+                  rapid_decline_threshold: float = None,
+                  use_breakthrough_confirmation: bool = None,
+                  breakthrough_confirmation_days: int = None,
+                  use_box_detection: bool = None,
+                  box_quality_threshold: float = None) -> Dict[str, Any]:
     """
     Analyze a stock for platform periods across multiple time windows,
     including price analysis, volume analysis, breakthrough prediction, position analysis,
@@ -70,6 +84,50 @@ def analyze_stock(df: pd.DataFrame,
     Returns:
         Dict containing comprehensive analysis results
     """
+    # Apply default values from config if not provided
+    if windows is None:
+        windows = DEFAULT_WINDOWS.copy()
+    if box_threshold is None:
+        box_threshold = DEFAULT_BOX_THRESHOLD
+    if ma_diff_threshold is None:
+        ma_diff_threshold = DEFAULT_MA_DIFF_THRESHOLD
+    if volatility_threshold is None:
+        volatility_threshold = DEFAULT_VOLATILITY_THRESHOLD
+    if volume_change_threshold is None:
+        volume_change_threshold = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    if volume_stability_threshold is None:
+        volume_stability_threshold = DEFAULT_VOLUME_STABILITY_THRESHOLD
+    if volume_increase_threshold is None:
+        volume_increase_threshold = DEFAULT_VOLUME_INCREASE_THRESHOLD
+    if use_volume_analysis is None:
+        use_volume_analysis = DEFAULT_USE_VOLUME_ANALYSIS
+    if use_breakthrough_prediction is None:
+        use_breakthrough_prediction = DEFAULT_USE_BREAKTHROUGH_PREDICTION
+    if use_window_weights is None:
+        use_window_weights = DEFAULT_USE_WINDOW_WEIGHTS
+    if use_low_position is None:
+        use_low_position = DEFAULT_USE_LOW_POSITION
+    if high_point_lookback_days is None:
+        high_point_lookback_days = DEFAULT_HIGH_POINT_LOOKBACK_DAYS
+    if decline_period_days is None:
+        decline_period_days = DEFAULT_DECLINE_PERIOD_DAYS
+    if decline_threshold is None:
+        decline_threshold = DEFAULT_DECLINE_THRESHOLD
+    if use_rapid_decline_detection is None:
+        use_rapid_decline_detection = DEFAULT_USE_RAPID_DECLINE_DETECTION
+    if rapid_decline_days is None:
+        rapid_decline_days = DEFAULT_RAPID_DECLINE_DAYS
+    if rapid_decline_threshold is None:
+        rapid_decline_threshold = DEFAULT_RAPID_DECLINE_THRESHOLD
+    if use_breakthrough_confirmation is None:
+        use_breakthrough_confirmation = DEFAULT_USE_BREAKTHROUGH_CONFIRMATION
+    if breakthrough_confirmation_days is None:
+        breakthrough_confirmation_days = DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS
+    if use_box_detection is None:
+        use_box_detection = DEFAULT_USE_BOX_DETECTION
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+
     if df.empty:
         return {
             "is_platform": False,
@@ -254,7 +312,7 @@ def analyze_stock(df: pd.DataFrame,
     if use_box_detection:
         # 使用最大窗口进行箱体检测，以获取更稳定的支撑位和阻力位
         max_window = max(windows) if windows else 90
-        box_analysis = analyze_box_pattern(df, max_window)
+        box_analysis = analyze_box_pattern(df, max_window, box_quality_threshold=box_quality_threshold)
         box_analysis_results = box_analysis
 
         # 如果启用了箱体检测，还需要满足箱体条件

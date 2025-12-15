@@ -11,6 +11,9 @@ from typing import Dict, Any, Tuple, List, Optional
 from scipy.signal import argrelextrema
 from scipy.stats import linregress
 
+# Import default values from config to ensure consistency
+from ..config import DEFAULT_BOX_QUALITY_THRESHOLD, DEFAULT_VOLATILITY_THRESHOLD
+
 
 def detect_local_extrema(prices: np.ndarray, order: int = 5) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -33,7 +36,8 @@ def detect_local_extrema(prices: np.ndarray, order: int = 5) -> Tuple[np.ndarray
 
 
 def identify_support_resistance(df: pd.DataFrame, window: int,
-                                extrema_order: int = 5) -> Dict[str, Any]:
+                                extrema_order: int = 5,
+                                box_quality_threshold: float = None) -> Dict[str, Any]:
     """
     Identify support and resistance levels in the given window.
 
@@ -41,10 +45,14 @@ def identify_support_resistance(df: pd.DataFrame, window: int,
         df: DataFrame with price data
         window: Window size to analyze
         extrema_order: Order parameter for extrema detection
+        box_quality_threshold: Minimum quality score for a valid box pattern
 
     Returns:
         Dict with support and resistance information
     """
+    # Apply default value from config if not provided
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
     if len(df) < window:
         return {
             "status": "insufficient_data",
@@ -138,7 +146,7 @@ def identify_support_resistance(df: pd.DataFrame, window: int,
                            height_factor * 0.15)
 
             # Determine if this is a box pattern based on quality score
-            is_box_pattern = box_quality >= 0.6  # Threshold for box pattern
+            is_box_pattern = box_quality >= box_quality_threshold
 
     return {
         "status": "analyzed",
@@ -228,19 +236,25 @@ def calculate_level_strength(prices: np.ndarray, levels: np.ndarray,
     return touches
 
 
-def analyze_box_pattern(df: pd.DataFrame, window: int) -> Dict[str, Any]:
+def analyze_box_pattern(df: pd.DataFrame, window: int,
+                        box_quality_threshold: float = None) -> Dict[str, Any]:
     """
     Analyze if the stock is forming a box/consolidation pattern.
 
     Args:
         df: DataFrame with price data
         window: Window size to analyze
+        box_quality_threshold: Minimum quality score for a valid box pattern
 
     Returns:
         Dict with box pattern analysis results
     """
+    # Apply default value from config if not provided
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+
     # Identify support and resistance
-    sr_analysis = identify_support_resistance(df, window)
+    sr_analysis = identify_support_resistance(df, window, box_quality_threshold=box_quality_threshold)
 
     # Calculate additional box pattern metrics
     if len(df) >= window:
@@ -272,8 +286,8 @@ def analyze_box_pattern(df: pd.DataFrame, window: int) -> Dict[str, Any]:
 
 
 def check_box_pattern(df: pd.DataFrame, window: int,
-                      box_quality_threshold: float = 0.6,
-                      volatility_threshold: float = 0.09) -> Tuple[bool, Dict[str, Any]]:
+                      box_quality_threshold: float = None,
+                      volatility_threshold: float = None) -> Tuple[bool, Dict[str, Any]]:
     """
     Check if a stock is forming a box/consolidation pattern.
 
@@ -286,6 +300,12 @@ def check_box_pattern(df: pd.DataFrame, window: int,
     Returns:
         Tuple of (is_box_pattern, details)
     """
+    # Apply default values from config if not provided
+    if box_quality_threshold is None:
+        box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+    if volatility_threshold is None:
+        volatility_threshold = DEFAULT_VOLATILITY_THRESHOLD
+
     # Analyze box pattern
     analysis = analyze_box_pattern(df, window)
 

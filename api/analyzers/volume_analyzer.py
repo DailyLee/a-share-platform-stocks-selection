@@ -5,6 +5,12 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Tuple, Optional
 
+# Import default values from config to ensure consistency
+from ..config import (
+    DEFAULT_VOLUME_CHANGE_THRESHOLD, DEFAULT_VOLUME_STABILITY_THRESHOLD,
+    DEFAULT_VOLUME_INCREASE_THRESHOLD
+)
+
 def calculate_volume_features(df: pd.DataFrame, window: int) -> Dict[str, float]:
     """
     Calculate volume-related features for a given window.
@@ -62,8 +68,8 @@ def calculate_volume_features(df: pd.DataFrame, window: int) -> Dict[str, float]
     }
 
 def check_volume_pattern(df: pd.DataFrame, window: int, 
-                         volume_change_threshold: float = 0.8,
-                         volume_stability_threshold: float = 0.5) -> Tuple[bool, Dict[str, Any]]:
+                         volume_change_threshold: float = None,
+                         volume_stability_threshold: float = None) -> Tuple[bool, Dict[str, Any]]:
     """
     Check if a stock has a consolidation volume pattern (typically decreasing or stable volume).
     
@@ -76,6 +82,12 @@ def check_volume_pattern(df: pd.DataFrame, window: int,
     Returns:
         Tuple of (is_consolidation_volume, details)
     """
+    # Apply default values from config if not provided
+    if volume_change_threshold is None:
+        volume_change_threshold = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    if volume_stability_threshold is None:
+        volume_stability_threshold = DEFAULT_VOLUME_STABILITY_THRESHOLD
+
     if len(df) < window + 10:
         return False, {
             "status": "数据不足",
@@ -117,7 +129,7 @@ def check_volume_pattern(df: pd.DataFrame, window: int,
     return is_consolidation_volume, details
 
 def check_volume_breakthrough(df: pd.DataFrame, window: int = 5, 
-                             volume_increase_threshold: float = 1.5) -> Tuple[bool, Dict[str, Any]]:
+                             volume_increase_threshold: float = None) -> Tuple[bool, Dict[str, Any]]:
     """
     Check if a stock has a volume breakthrough pattern (typically increasing volume).
     
@@ -129,6 +141,10 @@ def check_volume_breakthrough(df: pd.DataFrame, window: int = 5,
     Returns:
         Tuple of (is_breakthrough, details)
     """
+    # Apply default values from config if not provided
+    if volume_increase_threshold is None:
+        volume_increase_threshold = DEFAULT_VOLUME_INCREASE_THRESHOLD
+
     if len(df) < window + 10:
         return False, {
             "status": "数据不足",
@@ -170,9 +186,9 @@ def check_volume_breakthrough(df: pd.DataFrame, window: int = 5,
     return is_breakthrough, details
 
 def analyze_volume(df: pd.DataFrame, window: int, 
-                  volume_change_threshold: float = 0.8,
-                  volume_stability_threshold: float = 0.5,
-                  volume_increase_threshold: float = 1.5) -> Dict[str, Any]:
+                  volume_change_threshold: float = None,
+                  volume_stability_threshold: float = None,
+                  volume_increase_threshold: float = None) -> Dict[str, Any]:
     """
     Analyze volume patterns for a stock.
     
@@ -186,6 +202,14 @@ def analyze_volume(df: pd.DataFrame, window: int,
     Returns:
         Dict containing volume analysis results
     """
+    # Apply default values from config if not provided
+    if volume_change_threshold is None:
+        volume_change_threshold = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    if volume_stability_threshold is None:
+        volume_stability_threshold = DEFAULT_VOLUME_STABILITY_THRESHOLD
+    if volume_increase_threshold is None:
+        volume_increase_threshold = DEFAULT_VOLUME_INCREASE_THRESHOLD
+
     if df.empty or 'volume' not in df.columns:
         return {
             "has_consolidation_volume": False,
