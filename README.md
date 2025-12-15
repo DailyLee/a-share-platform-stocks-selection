@@ -285,6 +285,103 @@ uvicorn index:app --reload --port 8001
    - 这种组合能够找出既处于低位又经历过快速下跌的股票
 
 <div align="center">
+<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%">
+</div>
+
+## 更新日志
+
+### feat/optimize 分支 (优化版本)
+
+#### 🎯 核心功能增强
+
+- **平台检查端点** (`/api/platform-check`)
+  - 新增独立的平台检查 API 端点
+  - 提供详细的股票分析解释和基本面数据
+  - 支持快速平台期验证，无需完整扫描
+
+- **快速价格检查优化**
+  - 实现早期股票过滤机制
+  - 在满足基本平台条件后再执行昂贵计算
+  - 显著提升扫描性能和响应速度
+
+- **突破分析增强**
+  - 分离平台整理和突破检测逻辑
+  - 引入近期天数排除机制，提高成交量特征分析准确性
+  - 启用突破预测和确认功能
+  - 调整箱体质量阈值，优化识别精度
+
+#### 📊 分析功能改进
+
+- **成交量分析优化**
+  - 重构成交量分析逻辑，提高准确性
+  - 分离平台整理期和突破期的成交量检测
+  - 引入近期天数排除，避免最新数据干扰
+
+- **案例分析参数重构**
+  - 统一使用配置文件中的默认值
+  - 提高分析器间的一致性
+  - 简化参数管理和维护
+
+- **窗口权重分析**
+  - 启用窗口权重配置
+  - 对不同窗口期的分析结果进行加权处理
+
+#### 🎨 用户界面改进
+
+- **工具提示样式优化**
+  - 更新工具提示样式，提高可见性
+  - 改善用户体验
+
+- **股票数据分页功能**
+  - 实现股票数据分页显示
+  - 添加分页控制器和相关状态管理
+  - 更新股票列表渲染逻辑，支持分页展示
+
+- **CSV 导出功能**
+  - 新增股票数据 CSV 导出功能
+  - 方便用户进行数据分析和处理
+
+#### 🔧 技术优化
+
+- **依赖管理**
+  - 更新 Vue 和 Vue Router 包依赖
+  - 调整 FastAPI、Uvicorn 和 NumPy 版本
+  - 添加 colorama 用于控制台输出
+
+- **代码重构**
+  - 新增 `price_analyzer.py` 模块，实现快速价格检查
+  - 增强 `combined_analyzer.py`，优化分析流程
+  - 改进 `volume_analyzer.py` 和 `breakthrough_analyzer.py`
+  - 新增 `json_utils.py` 工具模块
+
+- **配置管理**
+  - 增强 `config.py`，集中管理默认参数
+  - 更新 `index.py`，添加新端点和功能
+
+#### 🚀 部署和运维
+
+- **服务器部署脚本增强**
+  - 添加关键命令的超时功能
+  - 添加 coreutils 安装逻辑
+  - 改进 pip 版本检查和升级逻辑
+  - 更新服务器部署脚本，提示手动配置 Nginx
+
+- **项目结构优化**
+  - 移除过时的诊断、依赖修复、Nginx 配置和模块安装脚本
+  - 移除 NGINX 调试和快速修复文档文件
+  - 更新 `.gitignore`，包含部署配置
+
+#### 📝 其他改进
+
+- 更新 `vite.config.js` 以支持环境变量 `VITE_API_URL`
+- 将服务器主机设置为 `0.0.0.0`
+- 移除重复导入，优化代码结构
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%">
+</div>
+
+<div align="center">
 <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12,15,20,24&section=footer&height=100&animation=fadeIn" />
 </div>
 
