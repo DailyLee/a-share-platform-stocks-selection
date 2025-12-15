@@ -45,7 +45,8 @@ try:
         DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
-        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
+        DEFAULT_SORT_BY_BREAKTHROUGH
     )
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
@@ -59,7 +60,8 @@ except ImportError:
         DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
-        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
+        DEFAULT_SORT_BY_BREAKTHROUGH
     )
 
 
@@ -142,6 +144,10 @@ class ScanConfigRequest(BaseModel):
     use_window_weights: bool = False  # Whether to use window weights
     window_weights: Dict[int, float] = Field(
         default_factory=dict)  # Weights for different windows
+
+    # Sorting settings
+    # Whether to sort by breakthrough & breakthrough precursor signals
+    sort_by_breakthrough: bool = DEFAULT_SORT_BY_BREAKTHROUGH  # Default enabled
 
     # System settings
     max_workers: int = 5  # Keep concurrency reasonable for serverless

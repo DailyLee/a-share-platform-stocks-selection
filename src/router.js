@@ -5,12 +5,14 @@ const routes = [
   {
     path: '/platform/',
     name: 'Home',
-    component: App
+    component: App,
+    meta: { keepAlive: true }
   },
   {
     path: '/platform/check',
     name: 'PlatformCheck',
-    component: () => import('./components/PlatformCheck.vue')
+    component: () => import('./components/PlatformCheck.vue'),
+    meta: { keepAlive: true }
   },
   {
     path: '/platform',

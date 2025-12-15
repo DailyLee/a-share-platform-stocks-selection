@@ -232,6 +232,15 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                     if config.use_breakthrough_prediction and "breakthrough_prediction" in analysis_result:
                         platform_stock['breakthrough_prediction'] = analysis_result["breakthrough_prediction"]
 
+                    # Add breakthrough confirmation results if available
+                    if config.use_breakthrough_confirmation:
+                        if "has_breakthrough_confirmation" in analysis_result:
+                            platform_stock['has_breakthrough_confirmation'] = analysis_result["has_breakthrough_confirmation"]
+                        if "has_breakthrough" in analysis_result:
+                            platform_stock['has_breakthrough'] = analysis_result["has_breakthrough"]
+                        if "breakthrough_confirmation_details" in analysis_result:
+                            platform_stock['breakthrough_confirmation_details'] = analysis_result["breakthrough_confirmation_details"]
+
                     # Add window weight results if available
                     if config.use_window_weights and "weighted_score" in analysis_result:
                         platform_stock['weighted_score'] = analysis_result["weighted_score"]
@@ -289,6 +298,47 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         fundamental_filtered_stocks,
         expected_count=config.expected_count
     )
+
+    # Sort by breakthrough & breakthrough precursor signals if enabled
+    # Note: This should happen before industry diversity filter to prioritize stocks with breakthrough signals
+    # But we apply it after to maintain industry diversity while still sorting within the filtered set
+    if config.sort_by_breakthrough:
+        print(f"{Fore.CYAN}Sorting stocks by breakthrough & breakthrough precursor signals...{Style.RESET_ALL}")
+        
+        def calculate_breakthrough_score(stock: Dict[str, Any]) -> Tuple[int, int]:
+            """
+            Calculate a score for sorting stocks by breakthrough signals.
+            Returns: (has_confirmation, signal_count)
+            - has_confirmation: 1 if has breakthrough confirmation, 0 otherwise
+            - signal_count: number of breakthrough precursor indicators
+            Higher scores (has_confirmation first, then signal_count) should be sorted first.
+            """
+            has_confirmation = 0
+            signal_count = 0
+            
+            # Check for breakthrough confirmation (highest priority)
+            if config.use_breakthrough_confirmation:
+                if stock.get('has_breakthrough_confirmation', False):
+                    has_confirmation = 1
+            
+            # Check for breakthrough prediction signals
+            if config.use_breakthrough_prediction and 'breakthrough_prediction' in stock:
+                breakthrough_pred = stock['breakthrough_prediction']
+                if isinstance(breakthrough_pred, dict):
+                    signal_count = breakthrough_pred.get('signal_count', 0)
+            
+            return (has_confirmation, signal_count)
+        
+        # Sort stocks: first by has_confirmation (descending), then by signal_count (descending)
+        filtered_stocks.sort(
+            key=lambda stock: calculate_breakthrough_score(stock),
+            reverse=True
+        )
+        
+        sorted_count = len(filtered_stocks)
+        print(f"{Fore.GREEN}Sorted {sorted_count} stocks by breakthrough signals.{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.YELLOW}Breakthrough sorting disabled.{Style.RESET_ALL}")
 
     # Print summary
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")

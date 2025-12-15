@@ -154,6 +154,14 @@
                   <span class="text-sm font-medium">启用窗口权重</span>
                 </ParameterLabel>
               </label>
+              <label for="sortByBreakthrough"
+                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
+                <input type="checkbox" v-model="config.sort_by_breakthrough" id="sortByBreakthrough" class="checkbox">
+                <ParameterLabel for-id="sortByBreakthrough" parameter-id="sort_by_breakthrough"
+                  @show-tutorial="showParameterTutorial">
+                  <span class="text-sm font-medium">根据突破&突破前兆排序</span>
+                </ParameterLabel>
+              </label>
             </div>
           </div>
 
@@ -709,6 +717,19 @@
                               </path>
                             </svg>
                           </button>
+
+                          <!-- 单股检查按钮 -->
+                          <button @click="goToStockCheck(stock)"
+                            class="bg-green-500/30 hover:bg-green-500 text-white rounded-md p-1.5 shadow-md backdrop-blur-sm transform hover:scale-110 transition-all"
+                            title="单股检查">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                              class="w-3.5 h-3.5">
+                              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                              <polyline points="10 17 15 12 10 7"></polyline>
+                              <line x1="15" y1="12" x2="3" y2="12"></line>
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </td>
@@ -775,6 +796,11 @@
                         class="bg-gundam-yellow/20 hover:bg-gundam-yellow/30 text-gundam-yellow rounded-md p-1.5 transition-colors"
                         title="导出到案例库">
                         <i class="fas fa-download text-sm"></i>
+                      </button>
+                      <button @click="goToStockCheck(stock)"
+                        class="bg-green-500/20 hover:bg-green-500/30 text-green-600 dark:text-green-400 rounded-md p-1.5 transition-colors"
+                        title="单股检查">
+                        <i class="fas fa-search text-sm"></i>
                       </button>
                     </div>
                   </div>
@@ -906,6 +932,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, inject, provide, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import axios from 'axios';
 import KlineChart from './components/KlineChart.vue'; // 缩略图K线图组件
 import FullKlineChart from './components/FullKlineChart.vue'; // 完整K线图组件
@@ -914,6 +941,8 @@ import { ParameterHelpManager, ParameterLabel } from './components/parameter-hel
 import CaseManager from './components/case-management/CaseManager.vue'; // 案例管理组件
 import ThemeToggle from './components/ThemeToggle.vue'; // 主题切换组件
 import { gsap } from 'gsap';
+
+const router = useRouter();
 
 const config = ref({
   // 基本参数
@@ -966,7 +995,10 @@ const config = ref({
 
   // 窗口权重参数
   use_window_weights: true, // 是否使用窗口权重
-  window_weights: {} // 窗口权重
+  window_weights: {}, // 窗口权重
+
+  // 排序参数
+  sort_by_breakthrough: true // 根据突破&突破前兆排序，默认开启
 });
 
 const platformStocks = ref([]);
@@ -1377,6 +1409,16 @@ function toggleReasonExpand (stockCode) {
 }
 
 // 导出股票到案例库
+// 跳转到单股检查页面
+function goToStockCheck(stock) {
+  router.push({
+    path: '/platform/check',
+    query: {
+      code: stock.code
+    }
+  });
+}
+
 async function exportToCase (stock) {
   try {
     // 显示加载状态
@@ -1414,6 +1456,7 @@ async function exportToCase (stock) {
           volume_increase_threshold: config.value.volume_increase_threshold,
           use_breakthrough_prediction: config.value.use_breakthrough_prediction,
           use_window_weights: config.value.use_window_weights,
+          sort_by_breakthrough: config.value.sort_by_breakthrough,
           use_low_position: config.value.use_low_position,
           high_point_lookback_days: config.value.high_point_lookback_days,
           decline_period_days: config.value.decline_period_days,
@@ -1838,6 +1881,9 @@ async function fetchPlatformStocks () {
       use_window_weights: config.value.use_window_weights,
       window_weights: config.value.window_weights,
 
+      // 排序参数
+      sort_by_breakthrough: config.value.sort_by_breakthrough,
+
       // 箱体检测参数
       use_box_detection: config.value.use_box_detection,
       box_quality_threshold: config.value.box_quality_threshold,
@@ -1936,6 +1982,9 @@ async function fetchPlatformStocksLegacy () {
       // 窗口权重参数
       use_window_weights: config.value.use_window_weights,
       window_weights: config.value.window_weights,
+
+      // 排序参数
+      sort_by_breakthrough: config.value.sort_by_breakthrough,
 
       // 箱体检测参数
       use_box_detection: config.value.use_box_detection,

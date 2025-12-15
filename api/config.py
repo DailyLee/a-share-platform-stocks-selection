@@ -79,6 +79,10 @@ class ScanConfig(BaseModel):
     window_weights: Dict[int, float] = Field(
         default_factory=dict)  # Weights for different windows
 
+    # Sorting settings
+    # Whether to sort by breakthrough & breakthrough precursor signals
+    sort_by_breakthrough: bool = True  # Default enabled
+
     # System settings
     max_workers: int = 5
     retry_attempts: int = 2
@@ -112,6 +116,7 @@ DEFAULT_USE_BREAKTHROUGH_CONFIRMATION = DEFAULT_CONFIG.use_breakthrough_confirma
 DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS = DEFAULT_CONFIG.breakthrough_confirmation_days
 DEFAULT_USE_BREAKTHROUGH_PREDICTION = DEFAULT_CONFIG.use_breakthrough_prediction
 DEFAULT_USE_WINDOW_WEIGHTS = DEFAULT_CONFIG.use_window_weights
+DEFAULT_SORT_BY_BREAKTHROUGH = DEFAULT_CONFIG.sort_by_breakthrough
 
 
 def merge_config(user_config: Dict[str, Any]) -> ScanConfig:
