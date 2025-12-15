@@ -3,7 +3,7 @@ from colorama import Fore, Style
 import colorama  # For colored console output
 import traceback
 import pandas as pd
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field, RootModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -21,6 +21,8 @@ try:
     from api.data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager
     from api.platform_scanner import prepare_stock_list, scan_stocks
     from api.case_api import router as case_router
+    from api.json_utils import convert_numpy_types
+    from api.analyzers.fundamental_analyzer import get_stock_fundamentals
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
     from .config import ScanConfig
@@ -28,6 +30,8 @@ except ImportError:
     from .data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager
     from .platform_scanner import prepare_stock_list, scan_stocks
     from .case_api import router as case_router
+    from .json_utils import convert_numpy_types
+    from .analyzers.fundamental_analyzer import get_stock_fundamentals
 
 # Import default values from config to ensure consistency
 try:
@@ -226,6 +230,16 @@ app.add_middleware(
 
 # Include case management router
 app.include_router(case_router, prefix="/api")
+
+# Import for platform check endpoint
+try:
+    from api.data_fetcher import fetch_kline_data
+    from api.analyzers.combined_analyzer import analyze_stock
+except ImportError:
+    from .data_fetcher import fetch_kline_data
+    from .analyzers.combined_analyzer import analyze_stock
+
+from datetime import datetime, timedelta
 
 # --- API Endpoints ---
 
@@ -597,5 +611,206 @@ async def test_scan(config_request: ScanConfigRequest):
     )
 
     return [result_stock]
+
+# Platform check endpoint
+class PlatformCheckRequest(BaseModel):
+    """Request model for single stock platform check."""
+    code: str = Field(..., description="Stock code (e.g., 'sh.600000')")
+
+
+class PlatformCheckResponse(BaseModel):
+    """Response model for platform check."""
+    code: str
+    name: str
+    is_platform: bool
+    has_breakthrough_signal: bool
+    has_breakthrough_confirmation: bool
+    platform_windows: List[int]
+    explanation: Dict[str, Any]
+    kline_data: List[KlineDataPoint]
+    mark_lines: Optional[List[MarkLine]] = None
+    fundamental_analysis: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/platform/check", response_model=PlatformCheckResponse)
+async def check_platform(request: PlatformCheckRequest):
+    """
+    Check if a single stock is in a platform period, has breakthrough signals, and confirmed breakthrough.
+    Returns detailed analysis with explanations.
+    """
+    try:
+        code = request.code.strip()
+        
+        # Validate stock code format
+        if not code or '.' not in code:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid stock code format. Expected format: 'sh.600000' or 'sz.000001'"
+            )
+        
+        # Fetch stock basic information to get name
+        with BaostockConnectionManager():
+            stock_basics_df = fetch_stock_basics()
+            stock_info = stock_basics_df[stock_basics_df['code'] == code]
+            
+            if stock_info.empty:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Stock code {code} not found"
+                )
+            
+            stock_name = stock_info.iloc[0]['code_name']
+            
+            # Calculate date range (use comprehensive windows for single stock check)
+            # Include common windows: 30, 60, 90, 80, 100, 120 to match scan results
+            comprehensive_windows = sorted(list(set([30, 60, 90, 80, 100, 120])))
+            max_window = max(comprehensive_windows)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=max_window * 2)).strftime('%Y-%m-%d')
+            
+            # Fetch K-line data
+            df = fetch_kline_data(code, start_date, end_date)
+            
+            if df.empty:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No K-line data available for {code}"
+                )
+            
+            # Prepare analysis config (use comprehensive windows for single stock check)
+            analysis_config = {
+                'windows': comprehensive_windows,
+                'box_threshold': DEFAULT_BOX_THRESHOLD,
+                'ma_diff_threshold': DEFAULT_MA_DIFF_THRESHOLD,
+                'volatility_threshold': DEFAULT_VOLATILITY_THRESHOLD,
+                'volume_change_threshold': DEFAULT_VOLUME_CHANGE_THRESHOLD,
+                'volume_stability_threshold': DEFAULT_VOLUME_STABILITY_THRESHOLD,
+                'volume_increase_threshold': DEFAULT_VOLUME_INCREASE_THRESHOLD,
+                'use_volume_analysis': DEFAULT_USE_VOLUME_ANALYSIS,
+                'use_breakthrough_prediction': True,  # Always enable for single stock check
+                'use_breakthrough_confirmation': True,  # Always enable for single stock check
+                'breakthrough_confirmation_days': DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
+                'use_low_position': DEFAULT_USE_LOW_POSITION,
+                'high_point_lookback_days': DEFAULT_HIGH_POINT_LOOKBACK_DAYS,
+                'decline_period_days': DEFAULT_DECLINE_PERIOD_DAYS,
+                'decline_threshold': DEFAULT_DECLINE_THRESHOLD,
+                'use_rapid_decline_detection': DEFAULT_USE_RAPID_DECLINE_DETECTION,
+                'rapid_decline_days': DEFAULT_RAPID_DECLINE_DAYS,
+                'rapid_decline_threshold': DEFAULT_RAPID_DECLINE_THRESHOLD,
+                'use_box_detection': DEFAULT_USE_BOX_DETECTION,
+                'box_quality_threshold': DEFAULT_BOX_QUALITY_THRESHOLD,
+                'use_window_weights': False,  # Not needed for single stock check
+            }
+            
+            # Perform comprehensive analysis
+            analysis_result = analyze_stock(df, **analysis_config)
+            
+            # Extract results and convert NumPy types to Python native types
+            is_platform = convert_numpy_types(analysis_result.get('is_platform', False))
+            platform_windows = convert_numpy_types(analysis_result.get('platform_windows', []))
+            
+            # Check for breakthrough signals
+            breakthrough_prediction = convert_numpy_types(analysis_result.get('breakthrough_prediction', {}))
+            has_breakthrough_signal = convert_numpy_types(breakthrough_prediction.get('has_breakthrough_signal', False))
+            
+            # Check for breakthrough confirmation
+            has_breakthrough_confirmation = convert_numpy_types(analysis_result.get('has_breakthrough_confirmation', False))
+            has_breakthrough = convert_numpy_types(analysis_result.get('has_breakthrough', False))
+            
+            # Build explanation (convert NumPy types in nested structures)
+            explanation = convert_numpy_types({
+                'platform_status': '是平台期' if is_platform else '不是平台期',
+                'platform_windows': platform_windows,
+                'breakthrough_signal': {
+                    'has_signal': has_breakthrough_signal,
+                    'signal_count': breakthrough_prediction.get('signal_count', 0),
+                    'signals': breakthrough_prediction.get('signals', {}),
+                    'details': breakthrough_prediction.get('details', {})
+                },
+                'breakthrough_confirmation': {
+                    'has_breakthrough': has_breakthrough,
+                    'has_confirmation': has_breakthrough_confirmation,
+                    'details': analysis_result.get('breakthrough_confirmation_details', {})
+                },
+                'analysis_details': {
+                    'windows_checked': analysis_result.get('windows_checked', []),
+                    'details': analysis_result.get('details', {}),
+                    'selection_reasons': analysis_result.get('selection_reasons', {})
+                }
+            })
+            
+            # Convert K-line data to response format
+            kline_data = []
+            for _, row in df.iterrows():
+                kline_point = {
+                    'date': str(row.get('date', '')),
+                    'open': float(row['open']) if pd.notna(row.get('open')) else None,
+                    'high': float(row['high']) if pd.notna(row.get('high')) else None,
+                    'low': float(row['low']) if pd.notna(row.get('low')) else None,
+                    'close': float(row['close']) if pd.notna(row.get('close')) else None,
+                    'volume': float(row['volume']) if pd.notna(row.get('volume')) else None,
+                    'turn': float(row['turn']) if pd.notna(row.get('turn')) else None,
+                    'preclose': float(row['preclose']) if pd.notna(row.get('preclose')) else None,
+                    'pctChg': float(row['pctChg']) if pd.notna(row.get('pctChg')) else None,
+                    'peTTM': float(row['peTTM']) if pd.notna(row.get('peTTM')) else None,
+                    'pbMRQ': float(row['pbMRQ']) if pd.notna(row.get('pbMRQ')) else None,
+                }
+                kline_data.append(KlineDataPoint(**kline_point))
+            
+            # Get mark lines from analysis result
+            mark_lines = []
+            if 'mark_lines' in analysis_result:
+                for mark in analysis_result['mark_lines']:
+                    try:
+                        mark_lines.append(MarkLine(**mark))
+                    except Exception as e:
+                        print(f"Warning: Failed to process mark line: {e}")
+                        continue
+            
+            # Get fundamental analysis data
+            fundamental_analysis = None
+            try:
+                fundamental_data = get_stock_fundamentals(code, years_to_check=3)
+                if fundamental_data:
+                    # Convert NumPy types and format the data
+                    fundamental_analysis = convert_numpy_types({
+                        'avg_revenue_growth': fundamental_data.get('avg_revenue_growth'),
+                        'revenue_growth_consistent': fundamental_data.get('revenue_growth_consistent', False),
+                        'avg_profit_growth': fundamental_data.get('avg_profit_growth'),
+                        'profit_growth_consistent': fundamental_data.get('profit_growth_consistent', False),
+                        'avg_roe': fundamental_data.get('avg_roe'),
+                        'roe_consistent': fundamental_data.get('roe_consistent', False),
+                        'avg_liability_ratio': fundamental_data.get('avg_liability_ratio'),
+                        'liability_ratio_consistent': fundamental_data.get('liability_ratio_consistent', False),
+                        'pe_ttm': fundamental_data.get('pe_ttm'),
+                        'pb_mrq': fundamental_data.get('pb_mrq')
+                    })
+            except Exception as e:
+                print(f"Warning: Failed to get fundamental analysis for {code}: {e}")
+                fundamental_analysis = None
+            
+            return PlatformCheckResponse(
+                code=code,
+                name=stock_name,
+                is_platform=is_platform,
+                has_breakthrough_signal=has_breakthrough_signal,
+                has_breakthrough_confirmation=has_breakthrough_confirmation,
+                platform_windows=platform_windows,
+                explanation=explanation,
+                kline_data=kline_data,
+                mark_lines=mark_lines if mark_lines else None,
+                fundamental_analysis=fundamental_analysis
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error checking platform for {request.code}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing stock: {str(e)}"
+        )
 
 # 注意：我们已经有了根端点 (/), 不需要额外的 /api 端点

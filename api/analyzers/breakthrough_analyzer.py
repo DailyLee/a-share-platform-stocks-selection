@@ -341,12 +341,19 @@ def check_breakthrough_confirmation(df: pd.DataFrame,
     has_breakthrough = volume_increase and price_increase
     has_confirmation = has_breakthrough and confirmed
 
-    # Prepare details
+    # Prepare details - always include diagnostic information
     details = {
         "breakthrough_date": breakthrough_day['date'],
         "breakthrough_close": round(float(breakthrough_day['close']), 2),
+        "breakthrough_open": round(float(breakthrough_day['open']), 2),
+        "breakthrough_volume": round(float(breakthrough_day['volume']), 2),
+        "volume_avg": round(float(volume_avg), 2),
         "breakthrough_volume_increase": round(float(breakthrough_day['volume'] / volume_avg), 2),
         "breakthrough_price_change_pct": round(float((breakthrough_day['close'] - breakthrough_day['open']) / breakthrough_day['open'] * 100), 2),
+        "volume_increase_required": 1.5,  # 成交量放大要求
+        "volume_increase_met": volume_increase,  # 是否满足成交量要求
+        "price_increase_required": 0.02,  # 价格上涨要求（2%）
+        "price_increase_met": price_increase,  # 是否满足价格上涨要求
         "has_breakthrough": has_breakthrough,
         "confirmation_days": confirmation_days,
         "confirmation_details": confirmation_details,

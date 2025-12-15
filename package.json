@@ -13,7 +13,8 @@
     "echarts": "^5.5.0",
     "gsap": "^3.12.7",
     "marked": "^15.0.11",
-    "vue": "^3.4.27"
+    "vue": "^3.4.27",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.5",

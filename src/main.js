@@ -1,9 +1,11 @@
 import { createApp } from "vue";
-import App from "./App.vue";
+import AppRoot from "./AppRoot.vue";
+import router from "./router";
 import "./assets/main.css"; // Import Tailwind entry
 import { parameterTooltips, parameterTutorials } from "./data/parameterHelp";
 
-const app = createApp(App);
+const app = createApp(AppRoot);
+app.use(router);
 
 // 提供全局参数帮助数据
 app.provide("parameterTooltips", parameterTooltips);

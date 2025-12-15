@@ -5,6 +5,12 @@ import json
 import math
 from typing import Any, Dict, List, Union
 
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
 
 def sanitize_float_for_json(value: Any) -> Any:
     """
@@ -61,6 +67,47 @@ def sanitize_kline_data(kline_data: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return sanitized_data
 
 
+def convert_numpy_types(value: Any) -> Any:
+    """
+    Convert NumPy types to Python native types for JSON serialization.
+    
+    Args:
+        value: The value to convert
+        
+    Returns:
+        The converted value with Python native types
+    """
+    if not HAS_NUMPY:
+        return value
+    
+    # Convert NumPy bool_ to Python bool
+    if isinstance(value, np.bool_):
+        return bool(value)
+    # Convert NumPy int types to Python int
+    # Use np.integer base class and specific types (avoid np.int_ which was removed in NumPy 2.0)
+    elif isinstance(value, (np.integer, np.intc, np.intp, np.int8,
+                           np.int16, np.int32, np.int64, np.uint8, np.uint16,
+                           np.uint32, np.uint64)):
+        return int(value)
+    # Convert NumPy float types to Python float
+    # Use np.floating base class and specific types (avoid np.float_ which was removed in NumPy 2.0)
+    elif isinstance(value, (np.floating, np.float16, np.float32, np.float64)):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return float(value)
+    # Convert NumPy arrays to lists
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    # Recursively handle dictionaries
+    elif isinstance(value, dict):
+        return {k: convert_numpy_types(v) for k, v in value.items()}
+    # Recursively handle lists
+    elif isinstance(value, (list, tuple)):
+        return [convert_numpy_types(item) for item in value]
+    
+    return value
+
+
 def sanitize_task_result(task_result: Union[List[Dict[str, Any]], None]) -> Union[List[Dict[str, Any]], None]:
     """
     Sanitize task result for JSON serialization.
@@ -77,6 +124,8 @@ def sanitize_task_result(task_result: Union[List[Dict[str, Any]], None]) -> Unio
     sanitized_result = []
     for stock in task_result:
         sanitized_stock = sanitize_float_for_json(stock)
+        # Also convert NumPy types
+        sanitized_stock = convert_numpy_types(sanitized_stock)
 
         # 特别处理K线数据
         if 'kline_data' in sanitized_stock and sanitized_stock['kline_data']:

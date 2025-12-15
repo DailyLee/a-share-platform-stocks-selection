@@ -12,6 +12,12 @@
       </div>
 
       <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- 平台期检查入口 -->
+        <router-link to="/platform/check" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-yellow text-white hover:bg-gundam-yellow/80 transition-colors">
+          <i class="fas fa-search mr-1 sm:mr-2"></i>
+          <span class="hidden sm:inline">单股检查</span>
+        </router-link>
+
         <!-- 案例管理入口 -->
         <button @click="showCaseManager = true"
           class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors">
