@@ -342,6 +342,20 @@ def analyze_stock(df: pd.DataFrame,
     # ============================================================
     # Now perform expensive analyses only if we have a basic platform
     
+    # Perform breakthrough prediction if requested (expensive operation)
+    # This uses technical indicators (MACD, RSI, KDJ, Bollinger Bands) and is independent of volume analysis
+    if use_breakthrough_prediction:
+        breakthrough_analysis = analyze_breakthrough(df)
+        breakthrough_results = breakthrough_analysis
+
+    # Perform breakthrough confirmation if requested (expensive operation)
+    # This checks if a breakthrough has been confirmed by recent price and volume action
+    if use_breakthrough_confirmation:
+        confirmation_result = check_breakthrough_confirmation(
+            df,
+            breakthrough_confirmation_days
+        )
+    
     # Perform position analysis if requested (expensive operation)
     if use_low_position:
         if use_rapid_decline_detection:
