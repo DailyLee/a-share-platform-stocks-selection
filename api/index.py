@@ -881,6 +881,7 @@ class BuyRecord(BaseModel):
     buyPrice: float
     quantity: int
     buyAmount: float
+    selection_reasons: Optional[Dict[int, str]] = None  # 筛选理由
 
 
 class SellRecord(BaseModel):
@@ -1052,7 +1053,8 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             'buyDate': buy_date,
             'buyPrice': buy_price,
             'quantity': quantity,
-            'buyAmount': actual_buy_amount
+            'buyAmount': actual_buy_amount,
+            'selection_reasons': stock.get('selection_reasons', {})  # 包含筛选理由
         })
         
         # 从买入日的下一天开始检查卖出条件

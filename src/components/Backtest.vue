@@ -291,17 +291,58 @@
                       <th class="text-right p-2">买入价格</th>
                       <th class="text-right p-2">买入数量</th>
                       <th class="text-right p-2">买入金额</th>
+                      <th class="text-left p-2">筛选理由</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="record in backtestResult.buyRecords" :key="record.code" class="border-b border-border/50 hover:bg-muted/30">
-                      <td class="p-2">{{ record.code }}</td>
-                      <td class="p-2">{{ record.name }}</td>
-                      <td class="p-2 text-right">{{ record.buyDate }}</td>
-                      <td class="p-2 text-right">¥{{ formatNumber(record.buyPrice, 2) }}</td>
-                      <td class="p-2 text-right">{{ record.quantity }}</td>
-                      <td class="p-2 text-right">¥{{ formatNumber(record.buyAmount) }}</td>
-                    </tr>
+                    <template v-for="record in backtestResult.buyRecords" :key="record.code">
+                      <tr class="border-b border-border/50 hover:bg-muted/30">
+                        <td class="p-2">{{ record.code }}</td>
+                        <td class="p-2">{{ record.name }}</td>
+                        <td class="p-2 text-right">{{ record.buyDate }}</td>
+                        <td class="p-2 text-right">¥{{ formatNumber(record.buyPrice, 2) }}</td>
+                        <td class="p-2 text-right">{{ record.quantity }}</td>
+                        <td class="p-2 text-right">¥{{ formatNumber(record.buyAmount) }}</td>
+                        <td class="p-2">
+                          <!-- 筛选理由标题栏（可点击） -->
+                          <div v-if="record.selection_reasons && Object.keys(record.selection_reasons).length > 0"
+                            @click="toggleReasonExpand(record.code)"
+                            class="flex items-center justify-between cursor-pointer p-1.5 rounded hover:bg-muted/50 transition-colors">
+                            <div class="flex items-center">
+                              <i class="fas fa-info-circle text-primary mr-1.5"></i>
+                              <span class="font-medium text-xs">查看理由</span>
+                              <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                                {{ Object.keys(record.selection_reasons).length }}
+                              </span>
+                            </div>
+                            <i :class="[
+                              'fas transition-transform duration-300 text-xs',
+                              expandedReasons[record.code] ? 'fa-chevron-up' : 'fa-chevron-down'
+                            ]"></i>
+                          </div>
+                          <span v-else class="text-xs text-muted-foreground">无</span>
+                        </td>
+                      </tr>
+                      <!-- 筛选理由详情行（可折叠） -->
+                      <tr v-if="record.selection_reasons && Object.keys(record.selection_reasons).length > 0"
+                        :key="`reason-${record.code}`"
+                        class="border-b border-border/50">
+                        <td colspan="7" class="p-2">
+                          <div :class="[
+                            'overflow-hidden transition-all duration-300',
+                            expandedReasons[record.code] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+                          ]">
+                            <div class="p-3 bg-muted/10 rounded">
+                              <div v-for="(reason, window) in record.selection_reasons" :key="window"
+                                class="mb-2 text-xs text-muted-foreground">
+                                <span class="font-medium text-primary">{{ window }}天:</span>
+                                {{ reason }}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -650,6 +691,9 @@ const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
 const selectedHistoryRecord = ref(null)
 
+// 筛选理由展开状态
+const expandedReasons = ref({})
+
 // 计算最大日期（今天）
 const maxDate = computed(() => {
   const today = new Date()
@@ -855,6 +899,11 @@ function getSellReasonClass(reason) {
     return 'bg-gray-500/20 text-gray-700 dark:text-gray-400'
   }
   return 'bg-gray-500/20 text-gray-700 dark:text-gray-400'
+}
+
+// 切换筛选理由展开/折叠
+function toggleReasonExpand(code) {
+  expandedReasons.value[code] = !expandedReasons.value[code]
 }
 
 // 加载回测历史记录列表

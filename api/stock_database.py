@@ -5,6 +5,7 @@ Implements SQLite-based storage with thread-safe operations.
 import os
 import sqlite3
 import pandas as pd
+import json
 from typing import Optional, List, Tuple, Dict, Any
 from datetime import datetime, timedelta, date
 from threading import Lock
@@ -130,6 +131,49 @@ class StockDatabase:
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_kline_date 
                 ON kline_data(date)
+            ''')
+            
+            # Create cases table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS cases (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    stock_code TEXT NOT NULL,
+                    stock_name TEXT NOT NULL,
+                    tags TEXT,
+                    description TEXT,
+                    analysis TEXT,
+                    kline_data TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create backtest_history table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS backtest_history (
+                    id TEXT PRIMARY KEY,
+                    config TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create indexes for cases
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cases_stock_code 
+                ON cases(stock_code)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cases_created_at 
+                ON cases(created_at)
+            ''')
+            
+            # Create index for backtest_history
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_backtest_created_at 
+                ON backtest_history(created_at)
             ''')
             
             conn.commit()
@@ -405,6 +449,347 @@ class StockDatabase:
                     'max_date': date_range[1] if date_range[1] else None
                 }
             }
+    
+    # ==================== Case Management Methods ====================
+    
+    def get_cases(self) -> List[Dict[str, Any]]:
+        """
+        Get all cases from database.
+        
+        Returns:
+            List of case metadata
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, title, stock_code, stock_name, tags, created_at, updated_at
+                FROM cases
+                ORDER BY created_at DESC
+            ''')
+            rows = cursor.fetchall()
+            
+            cases = []
+            for row in rows:
+                case = {
+                    'id': row[0],
+                    'title': row[1],
+                    'stockCode': row[2],
+                    'stockName': row[3],
+                    'tags': json.loads(row[4]) if row[4] else [],
+                    'createdAt': row[5],
+                    'updatedAt': row[6]
+                }
+                cases.append(case)
+            
+            return cases
+    
+    def get_case(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific case by ID.
+        
+        Args:
+            case_id: The ID of the case
+        
+        Returns:
+            Case data if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, title, stock_code, stock_name, tags, description, 
+                       analysis, kline_data, created_at, updated_at
+                FROM cases
+                WHERE id = ?
+            ''', (case_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            case = {
+                'id': row[0],
+                'title': row[1],
+                'stockCode': row[2],
+                'stockName': row[3],
+                'tags': json.loads(row[4]) if row[4] else [],
+                'createdAt': row[8],
+                'updatedAt': row[9]
+            }
+            
+            if row[5]:  # description
+                case['description'] = row[5]
+            if row[6]:  # analysis
+                case['analysis'] = json.loads(row[6])
+            if row[7]:  # kline_data
+                case['kline_data'] = json.loads(row[7])
+            
+            return case
+    
+    def create_case(self, case_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new case.
+        
+        Args:
+            case_data: The case data to create
+        
+        Returns:
+            The created case data
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                
+                # Generate case ID if not provided
+                if 'id' not in case_data:
+                    case_data['id'] = f"case_{int(datetime.now().timestamp())}"
+                
+                # Set timestamps
+                now = datetime.now().isoformat()
+                case_data['createdAt'] = now
+                case_data['updatedAt'] = now
+                
+                # Ensure tags is a list
+                if 'tags' not in case_data:
+                    case_data['tags'] = []
+                
+                # Insert case
+                cursor.execute('''
+                    INSERT INTO cases 
+                    (id, title, stock_code, stock_name, tags, description, analysis, kline_data, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    case_data['id'],
+                    case_data['title'],
+                    case_data['stockCode'],
+                    case_data['stockName'],
+                    json.dumps(case_data['tags'], ensure_ascii=False),
+                    case_data.get('description'),
+                    json.dumps(case_data.get('analysis'), ensure_ascii=False) if case_data.get('analysis') else None,
+                    json.dumps(case_data.get('kline_data'), ensure_ascii=False) if case_data.get('kline_data') else None,
+                    now,
+                    now
+                ))
+                
+                return case_data
+    
+    def update_case(self, case_id: str, case_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Update an existing case.
+        
+        Args:
+            case_id: The ID of the case to update
+            case_data: The new case data
+        
+        Returns:
+            The updated case data if successful, None otherwise
+        """
+        with self._lock:
+            # Check if case exists
+            existing = self.get_case(case_id)
+            if not existing:
+                return None
+            
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Build update query dynamically
+                updates = []
+                values = []
+                
+                if 'title' in case_data:
+                    updates.append('title = ?')
+                    values.append(case_data['title'])
+                
+                if 'stockCode' in case_data:
+                    updates.append('stock_code = ?')
+                    values.append(case_data['stockCode'])
+                
+                if 'stockName' in case_data:
+                    updates.append('stock_name = ?')
+                    values.append(case_data['stockName'])
+                
+                if 'tags' in case_data:
+                    updates.append('tags = ?')
+                    values.append(json.dumps(case_data['tags'], ensure_ascii=False))
+                
+                if 'description' in case_data:
+                    updates.append('description = ?')
+                    values.append(case_data['description'])
+                
+                if 'analysis' in case_data:
+                    updates.append('analysis = ?')
+                    values.append(json.dumps(case_data['analysis'], ensure_ascii=False))
+                
+                if 'kline_data' in case_data:
+                    updates.append('kline_data = ?')
+                    values.append(json.dumps(case_data['kline_data'], ensure_ascii=False))
+                
+                updates.append('updated_at = ?')
+                values.append(now)
+                values.append(case_id)
+                
+                cursor.execute(f'''
+                    UPDATE cases
+                    SET {', '.join(updates)}
+                    WHERE id = ?
+                ''', values)
+                
+                return self.get_case(case_id)
+    
+    def delete_case(self, case_id: str) -> bool:
+        """
+        Delete a case.
+        
+        Args:
+            case_id: The ID of the case to delete
+        
+        Returns:
+            True if deleted, False otherwise
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM cases WHERE id = ?', (case_id,))
+                return cursor.rowcount > 0
+    
+    # ==================== Backtest History Methods ====================
+    
+    def save_backtest_history(self, config: Dict[str, Any], result: Dict[str, Any]) -> str:
+        """
+        Save a backtest history record.
+        
+        Args:
+            config: Backtest configuration
+            result: Backtest result
+        
+        Returns:
+            The ID of the saved history record
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                
+                # Generate a unique ID
+                history_id = f"backtest_{int(datetime.now().timestamp() * 1000)}"
+                now = datetime.now().isoformat()
+                
+                # Insert history record
+                cursor.execute('''
+                    INSERT INTO backtest_history (id, config, result, created_at)
+                    VALUES (?, ?, ?, ?)
+                ''', (
+                    history_id,
+                    json.dumps(config, ensure_ascii=False),
+                    json.dumps(result, ensure_ascii=False),
+                    now
+                ))
+                
+                return history_id
+    
+    def get_backtest_history_list(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get list of all backtest history records (metadata only).
+        
+        Args:
+            limit: Maximum number of records to return
+        
+        Returns:
+            List of history record metadata
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, config, result, created_at
+                FROM backtest_history
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+            rows = cursor.fetchall()
+            
+            records = []
+            for row in rows:
+                config = json.loads(row[1])
+                result = json.loads(row[2])
+                
+                record = {
+                    'id': row[0],
+                    'createdAt': row[3],
+                    'backtestDate': config.get('backtest_date', ''),
+                    'statDate': config.get('stat_date', ''),
+                    'useStopLoss': config.get('use_stop_loss', False),
+                    'useTakeProfit': config.get('use_take_profit', False),
+                    'stopLossPercent': config.get('stop_loss_percent', -3.0),
+                    'takeProfitPercent': config.get('take_profit_percent', 10.0),
+                    'summary': result.get('summary', {})
+                }
+                records.append(record)
+            
+            return records
+    
+    def get_backtest_history(self, history_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific backtest history record by ID.
+        
+        Args:
+            history_id: The ID of the history record
+        
+        Returns:
+            Full history record if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, config, result, created_at
+                FROM backtest_history
+                WHERE id = ?
+            ''', (history_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return {
+                'id': row[0],
+                'createdAt': row[3],
+                'config': json.loads(row[1]),
+                'result': json.loads(row[2])
+            }
+    
+    def delete_backtest_history(self, history_id: str) -> bool:
+        """
+        Delete a backtest history record.
+        
+        Args:
+            history_id: The ID of the history record to delete
+        
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM backtest_history WHERE id = ?', (history_id,))
+                return cursor.rowcount > 0
+    
+    def clear_all_backtest_history(self) -> int:
+        """
+        Clear all backtest history records.
+        
+        Returns:
+            Number of records deleted
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM backtest_history')
+                count = cursor.fetchone()[0]
+                cursor.execute('DELETE FROM backtest_history')
+                return count
     
     def close(self):
         """
