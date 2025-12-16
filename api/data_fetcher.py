@@ -1,6 +1,6 @@
 """
 Data Fetcher module for retrieving stock data from Baostock.
-Implements robust connection handling and retry logic with caching support.
+Implements robust connection handling and retry logic with database-first strategy.
 """
 import baostock as bs
 import pandas as pd
@@ -9,12 +9,13 @@ import threading
 from typing import List, Dict, Any, Optional
 from colorama import Fore, Style
 import traceback
+from datetime import datetime, timedelta
 
-# Import cache decorators
+# Import database manager
 try:
-    from .cache_manager import cache_stock_basics, cache_industry_data, cache_kline_data
+    from .stock_database import get_stock_database
 except ImportError:
-    from api.cache_manager import cache_stock_basics, cache_industry_data, cache_kline_data
+    from api.stock_database import get_stock_database
 
 # Thread-local storage for Baostock connections
 _thread_local = threading.local()
@@ -66,11 +67,10 @@ class BaostockConnectionManager:
         baostock_logout()
         return False  # Don't suppress exceptions
 
-@cache_stock_basics
 def fetch_stock_basics() -> pd.DataFrame:
     """
     Fetch basic information for all stocks.
-    Results are cached for 1 hour to improve performance.
+    First checks database, then fetches from API if needed.
     
     Returns:
         pd.DataFrame: DataFrame containing stock basic information
@@ -79,8 +79,17 @@ def fetch_stock_basics() -> pd.DataFrame:
         ConnectionError: If Baostock connection fails
         ValueError: If no data is returned
     """
+    db = get_stock_database()
+    
+    # Try to get from database first
+    df = db.get_stock_basics()
+    if df is not None and not df.empty:
+        print(f"{Fore.GREEN}Loaded stock basics from database ({len(df)} stocks){Style.RESET_ALL}")
+        return df
+    
+    # Database is empty or doesn't have data, fetch from API
+    print(f"{Fore.CYAN}Database is empty, fetching stock basic information from API...{Style.RESET_ALL}")
     with BaostockConnectionManager():
-        print(f"{Fore.CYAN}Fetching stock basic information...{Style.RESET_ALL}")
         rs = bs.query_stock_basic()
         
         if rs.error_code != '0':
@@ -93,13 +102,18 @@ def fetch_stock_basics() -> pd.DataFrame:
         if not stock_basics_list:
             raise ValueError("No stock basic information retrieved")
         
-        return pd.DataFrame(stock_basics_list, columns=rs.fields)
+        df = pd.DataFrame(stock_basics_list, columns=rs.fields)
+        
+        # Save to database
+        db.save_stock_basics(df)
+        print(f"{Fore.GREEN}Saved {len(df)} stocks to database{Style.RESET_ALL}")
+        
+        return df
 
-@cache_industry_data
 def fetch_industry_data() -> pd.DataFrame:
     """
     Fetch industry classification data for all stocks.
-    Results are cached for 1 hour to improve performance.
+    First checks database, then fetches from API if needed.
     
     Returns:
         pd.DataFrame: DataFrame containing industry classification
@@ -108,8 +122,17 @@ def fetch_industry_data() -> pd.DataFrame:
         ConnectionError: If Baostock connection fails
         ValueError: If no data is returned
     """
+    db = get_stock_database()
+    
+    # Try to get from database first
+    df = db.get_industry_data()
+    if df is not None and not df.empty:
+        print(f"{Fore.GREEN}Loaded industry data from database ({len(df)} stocks){Style.RESET_ALL}")
+        return df
+    
+    # Database is empty or doesn't have data, fetch from API
+    print(f"{Fore.CYAN}Database is empty, fetching industry classification data from API...{Style.RESET_ALL}")
     with BaostockConnectionManager():
-        print(f"{Fore.CYAN}Fetching industry classification data...{Style.RESET_ALL}")
         rs = bs.query_stock_industry()
         
         if rs.error_code != '0':
@@ -122,15 +145,114 @@ def fetch_industry_data() -> pd.DataFrame:
         if not industry_list:
             raise ValueError("No industry classification data retrieved")
         
-        return pd.DataFrame(industry_list, columns=rs.fields)
+        df = pd.DataFrame(industry_list, columns=rs.fields)
+        
+        # Save to database
+        db.save_industry_data(df)
+        print(f"{Fore.GREEN}Saved industry data to database{Style.RESET_ALL}")
+        
+        return df
 
-@cache_kline_data
 def fetch_kline_data(code: str, start_date: str, end_date: str,
                      retry_attempts: int = 3,
                      retry_delay: int = 1) -> pd.DataFrame:
     """
     Fetch K-line data for a specific stock with retry logic.
-    Results are cached for 5 minutes based on stock code and date range.
+    First checks database, then fetches missing data from API.
+    
+    Args:
+        code: Stock code (e.g., 'sh.600000')
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+        retry_attempts: Maximum number of retry attempts
+        retry_delay: Delay between retries in seconds
+    
+    Returns:
+        pd.DataFrame: DataFrame containing K-line data
+    """
+    db = get_stock_database()
+    
+    # Try to get from database first
+    df = db.get_kline_data(code, start_date, end_date)
+    
+    # Check if we have all the data we need
+    if not df.empty:
+        # Check if we have data for the full date range
+        df_dates = pd.to_datetime(df['date'])
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date)
+        
+        min_date = df_dates.min()
+        max_date = df_dates.max()
+        
+        # Check if we need to fetch additional data
+        # Use a small tolerance (1 day) to account for date comparison edge cases
+        need_earlier = (min_date - start_dt).days > 1
+        need_later = (end_dt - max_date).days > 1
+        
+        if not need_earlier and not need_later:
+            # We have all the data we need
+            print(f"{Fore.GREEN}Loaded K-line data for {code} from database ({len(df)} records){Style.RESET_ALL}")
+            return df
+        
+        # We need to fetch additional data
+        missing_ranges = []
+        if need_earlier:
+            # Fetch from start_date to one day before min_date
+            earlier_end = (min_date - timedelta(days=1)).strftime('%Y-%m-%d')
+            missing_ranges.append((start_date, earlier_end))
+        if need_later:
+            # Fetch from one day after max_date to end_date
+            later_start = (max_date + timedelta(days=1)).strftime('%Y-%m-%d')
+            missing_ranges.append((later_start, end_date))
+    else:
+        # No data in database, need to fetch all
+        missing_ranges = [(start_date, end_date)]
+    
+    # Fetch missing data from API
+    all_data = []
+    
+    for range_start, range_end in missing_ranges:
+        print(f"{Fore.CYAN}Fetching missing K-line data for {code} from {range_start} to {range_end}...{Style.RESET_ALL}")
+        
+        fetched_df = _fetch_kline_data_from_api(
+            code, range_start, range_end, retry_attempts, retry_delay
+        )
+        
+        if not fetched_df.empty:
+            # Save to database
+            db.save_kline_data(code, fetched_df)
+            all_data.append(fetched_df)
+            print(f"{Fore.GREEN}Saved {len(fetched_df)} records to database{Style.RESET_ALL}")
+    
+    # Combine all data
+    if all_data:
+        if not df.empty:
+            # Combine database data with newly fetched data
+            combined_df = pd.concat([df] + all_data, ignore_index=True)
+            # Remove duplicates and sort by date
+            combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
+            combined_df = combined_df.sort_values('date').reset_index(drop=True)
+            return combined_df
+        else:
+            # Only newly fetched data
+            combined_df = pd.concat(all_data, ignore_index=True)
+            combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
+            combined_df = combined_df.sort_values('date').reset_index(drop=True)
+            return combined_df
+    
+    # If we couldn't fetch new data but have database data, return it
+    if not df.empty:
+        return df
+    
+    return pd.DataFrame()
+
+
+def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
+                               retry_attempts: int = 3,
+                               retry_delay: int = 1) -> pd.DataFrame:
+    """
+    Internal function to fetch K-line data from Baostock API.
     
     Args:
         code: Stock code (e.g., 'sh.600000')
@@ -185,6 +307,9 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
             
             df = pd.DataFrame(data_list, columns=rs.fields)
             
+            # Convert date column to datetime
+            df['date'] = pd.to_datetime(df['date'])
+            
             # Convert numeric columns
             numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'turn', 'preclose', 'pctChg', 'peTTM', 'pbMRQ']
             for col in numeric_cols:
@@ -204,3 +329,61 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
             # Retry with re-login
             time.sleep(retry_delay * (1 + retries * 0.5))
             baostock_relogin()
+
+
+def build_historical_data(stock_codes: Optional[List[str]] = None,
+                          start_date: Optional[str] = None,
+                          end_date: Optional[str] = None,
+                          progress_callback: Optional[callable] = None) -> None:
+    """
+    Build historical data for all stocks or specified stocks.
+    This function is called when the database is empty on first access.
+    
+    Args:
+        stock_codes: Optional list of stock codes to build data for. If None, uses all stocks.
+        start_date: Optional start date in 'YYYY-MM-DD' format. If None, uses 5 years ago.
+        end_date: Optional end date in 'YYYY-MM-DD' format. If None, uses today.
+        progress_callback: Optional callback function(progress, message) for progress updates.
+    """
+    db = get_stock_database()
+    
+    # Check if database is already populated
+    if not db.is_empty():
+        print(f"{Fore.YELLOW}Database is not empty, skipping historical data build{Style.RESET_ALL}")
+        return
+    
+    print(f"{Fore.CYAN}Building historical data for stocks...{Style.RESET_ALL}")
+    
+    # Get stock list
+    if stock_codes is None:
+        stock_basics_df = fetch_stock_basics()
+        stock_codes = stock_basics_df['code'].tolist()
+    
+    # Set date range
+    if end_date is None:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    if start_date is None:
+        start_date = (datetime.now() - timedelta(days=5*365)).strftime('%Y-%m-%d')
+    
+    total_stocks = len(stock_codes)
+    print(f"{Fore.CYAN}Building historical data for {total_stocks} stocks from {start_date} to {end_date}{Style.RESET_ALL}")
+    
+    # Fetch data for each stock
+    with BaostockConnectionManager():
+        for idx, code in enumerate(stock_codes):
+            if progress_callback:
+                progress = int((idx + 1) / total_stocks * 100)
+                progress_callback(progress, f"Building data for {code} ({idx+1}/{total_stocks})...")
+            
+            try:
+                df = _fetch_kline_data_from_api(code, start_date, end_date)
+                if not df.empty:
+                    db.save_kline_data(code, df)
+                    print(f"{Fore.GREEN}Saved {len(df)} records for {code}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}No data for {code}{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.RED}Error building data for {code}: {e}{Style.RESET_ALL}")
+                continue
+    
+    print(f"{Fore.GREEN}Historical data build completed{Style.RESET_ALL}")

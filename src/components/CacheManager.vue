@@ -4,7 +4,7 @@
     <header class="bg-card border-b border-border p-4 flex justify-between items-center sticky top-0 z-30">
       <div class="flex items-center">
         <img src="/gundam-logo.svg" alt="Gundam Logo" class="w-8 h-8 mr-2" />
-        <h1 class="text-xl font-semibold">缓存管理</h1>
+        <h1 class="text-xl font-semibold">数据库管理</h1>
       </div>
 
       <div class="flex items-center space-x-2 sm:space-x-3">
@@ -24,28 +24,20 @@
       <div class="max-w-4xl mx-auto">
         <!-- 操作卡片 -->
         <div class="card p-4 sm:p-6 mb-6">
-          <h2 class="text-lg font-semibold mb-4 flex items-center">
-            <i class="fas fa-cog mr-2 text-primary"></i>
-            缓存操作
-          </h2>
-          <div class="flex flex-col sm:flex-row gap-4">
-            <button
-              @click="refreshStats"
-              :disabled="loading"
-              class="btn btn-primary flex items-center justify-center px-4 sm:px-6 py-2 h-10"
-            >
-              <i class="fas fa-sync-alt mr-2" :class="{ 'fa-spin': loading }"></i>
-              刷新统计
-            </button>
-            <button
-              @click="showClearConfirm = true"
-              :disabled="loading || clearing"
-              class="btn bg-destructive hover:bg-destructive/80 text-destructive-foreground flex items-center justify-center px-4 sm:px-6 py-2 h-10"
-            >
-              <i class="fas fa-trash-alt mr-2"></i>
-              清除所有缓存
-            </button>
-          </div>
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+              <i class="fas fa-cog mr-2 text-primary"></i>
+              数据库操作
+            </h2>
+            <div class="flex flex-col sm:flex-row gap-4">
+              <button
+                @click="refreshStats"
+                :disabled="loading"
+                class="btn btn-primary flex items-center justify-center px-4 sm:px-6 py-2 h-10"
+              >
+                <i class="fas fa-sync-alt mr-2" :class="{ 'fa-spin': loading }"></i>
+                刷新统计
+              </button>
+            </div>
         </div>
 
         <!-- 错误提示 -->
@@ -75,52 +67,48 @@
           <div class="card p-4 sm:p-6">
             <h2 class="text-lg font-semibold mb-4 flex items-center">
               <i class="fas fa-chart-bar mr-2 text-primary"></i>
-              缓存统计
+              数据库统计
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <!-- 缓存命中率 -->
+              <!-- 股票数量 -->
               <div class="bg-muted/30 p-4 rounded-lg">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm text-muted-foreground">缓存命中率</span>
-                  <i class="fas fa-bullseye text-primary"></i>
-                </div>
-                <div class="text-2xl font-bold text-primary">
-                  {{ stats.cache_stats.hit_rate }}%
-                </div>
-                <div class="text-xs text-muted-foreground mt-1">
-                  {{ stats.cache_stats.hits }} 次命中 / {{ stats.cache_stats.total_requests }} 次请求
-                </div>
-              </div>
-
-              <!-- 缓存大小 -->
-              <div class="bg-muted/30 p-4 rounded-lg">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm text-muted-foreground">缓存条目数</span>
-                  <i class="fas fa-database text-primary"></i>
-                </div>
-                <div class="text-2xl font-bold text-primary">
-                  {{ stats.cache_stats.size }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1">
-                  <span v-if="stats.cache_stats.file_cache_size !== undefined">
-                    文件: {{ stats.cache_stats.file_cache_size }} / 
-                    内存: {{ stats.cache_stats.memory_cache_size }}
-                  </span>
-                  <span v-else>当前缓存的条目数量</span>
-                </div>
-              </div>
-
-              <!-- 总请求数 -->
-              <div class="bg-muted/30 p-4 rounded-lg">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm text-muted-foreground">总请求数</span>
+                  <span class="text-sm text-muted-foreground">股票数量</span>
                   <i class="fas fa-chart-line text-primary"></i>
                 </div>
                 <div class="text-2xl font-bold text-primary">
-                  {{ stats.cache_stats.total_requests }}
+                  {{ stats.stock_count }}
                 </div>
                 <div class="text-xs text-muted-foreground mt-1">
-                  累计请求次数
+                  基本信息记录数
+                </div>
+              </div>
+
+              <!-- K线记录数 -->
+              <div class="bg-muted/30 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm text-muted-foreground">K线记录数</span>
+                  <i class="fas fa-database text-primary"></i>
+                </div>
+                <div class="text-2xl font-bold text-primary">
+                  {{ stats.kline_records }}
+                </div>
+                <div class="text-xs text-muted-foreground mt-1">
+                  历史K线数据记录
+                </div>
+              </div>
+
+              <!-- 有数据的股票数 -->
+              <div class="bg-muted/30 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm text-muted-foreground">有数据的股票</span>
+                  <i class="fas fa-check-circle text-primary"></i>
+                </div>
+                <div class="text-2xl font-bold text-primary">
+                  {{ stats.stocks_with_data }}
+                </div>
+                <div class="text-xs text-muted-foreground mt-1">
+                  已存储K线数据的股票数
                 </div>
               </div>
             </div>
@@ -133,109 +121,71 @@
               详细统计
             </h2>
             <div class="space-y-4">
-              <!-- 命中次数 -->
+              <!-- 行业数据记录数 -->
               <div class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                 <div class="flex items-center">
-                  <i class="fas fa-check-circle text-green-500 mr-3"></i>
-                  <span class="font-medium">缓存命中次数</span>
+                  <i class="fas fa-industry text-green-500 mr-3"></i>
+                  <span class="font-medium">行业数据记录数</span>
                 </div>
-                <span class="text-lg font-semibold text-green-500">{{ stats.cache_stats.hits }}</span>
+                <span class="text-lg font-semibold text-green-500">{{ stats.industry_count }}</span>
               </div>
 
-              <!-- 未命中次数 -->
-              <div class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+              <!-- 日期范围 -->
+              <div v-if="stats.date_range && stats.date_range.min_date" class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                 <div class="flex items-center">
-                  <i class="fas fa-times-circle text-orange-500 mr-3"></i>
-                  <span class="font-medium">缓存未命中次数</span>
+                  <i class="fas fa-calendar text-blue-500 mr-3"></i>
+                  <span class="font-medium">数据日期范围</span>
                 </div>
-                <span class="text-lg font-semibold text-orange-500">{{ stats.cache_stats.misses }}</span>
-              </div>
-
-              <!-- 过期清理次数 -->
-              <div class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div class="flex items-center">
-                  <i class="fas fa-broom text-blue-500 mr-3"></i>
-                  <span class="font-medium">过期条目清理次数</span>
+                <div class="text-right">
+                  <div class="text-sm font-semibold text-blue-500">{{ stats.date_range.min_date }}</div>
+                  <div class="text-xs text-muted-foreground">至</div>
+                  <div class="text-sm font-semibold text-blue-500">{{ stats.date_range.max_date }}</div>
                 </div>
-                <span class="text-lg font-semibold text-blue-500">{{ stats.cache_stats.evictions }}</span>
-              </div>
-
-              <!-- 本次清理的过期条目 -->
-              <div v-if="stats.expired_entries_cleaned > 0" class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div class="flex items-center">
-                  <i class="fas fa-trash text-red-500 mr-3"></i>
-                  <span class="font-medium">本次清理的过期条目</span>
-                </div>
-                <span class="text-lg font-semibold text-red-500">{{ stats.expired_entries_cleaned }}</span>
-              </div>
-
-              <!-- 文件读取次数 -->
-              <div v-if="stats.cache_stats.file_reads !== undefined" class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div class="flex items-center">
-                  <i class="fas fa-file-alt text-purple-500 mr-3"></i>
-                  <span class="font-medium">文件读取次数</span>
-                </div>
-                <span class="text-lg font-semibold text-purple-500">{{ stats.cache_stats.file_reads }}</span>
-              </div>
-
-              <!-- 文件写入次数 -->
-              <div v-if="stats.cache_stats.file_writes !== undefined" class="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div class="flex items-center">
-                  <i class="fas fa-save text-indigo-500 mr-3"></i>
-                  <span class="font-medium">文件写入次数</span>
-                </div>
-                <span class="text-lg font-semibold text-indigo-500">{{ stats.cache_stats.file_writes }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 缓存说明 -->
+          <!-- 数据库说明 -->
           <div class="card p-4 sm:p-6">
             <h2 class="text-lg font-semibold mb-4 flex items-center">
               <i class="fas fa-question-circle mr-2 text-primary"></i>
-              缓存说明
+              数据库说明
             </h2>
             <div class="space-y-3 text-sm text-muted-foreground">
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">存储方式:</span> 缓存数据以JSON文件形式存储在服务器的 <code class="px-1 py-0.5 bg-muted rounded text-xs">cache/</code> 目录中，支持持久化和跨进程共享
+                  <span class="font-medium text-foreground">存储方式:</span> 历史股票数据存储在SQLite数据库中，位于服务器的 <code class="px-1 py-0.5 bg-muted rounded text-xs">data/stocks.db</code> 文件
                 </div>
               </div>
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">有效期:</span> 由于数据来自昨天，所有缓存条目在<strong class="text-foreground">当天都有效</strong>（直到当天23:59:59），跨天后自动失效
+                  <span class="font-medium text-foreground">数据持久化:</span> 所有历史数据永久保存，不会自动过期或删除
                 </div>
               </div>
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">股票基本信息:</span> 当天有效，因为股票基本信息变化不频繁
+                  <span class="font-medium text-foreground">首次访问:</span> 如果数据库为空，系统会在首次访问时自动从API获取并构建历史数据
                 </div>
               </div>
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">行业数据:</span> 当天有效，因为行业分类数据变化不频繁
+                  <span class="font-medium text-foreground">查询策略:</span> 优先从本地数据库获取数据，如果缺失则从API获取差量数据并更新到数据库
                 </div>
               </div>
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">K线数据:</span> 当天有效，基于股票代码和日期范围缓存
+                  <span class="font-medium text-foreground">线程安全:</span> 数据库操作是线程安全的，支持多线程并发访问
                 </div>
               </div>
               <div class="flex items-start">
                 <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
                 <div>
-                  <span class="font-medium text-foreground">自动清理:</span> 过期条目（跨天或过期）会在查询时自动清理，无需手动操作
-                </div>
-              </div>
-              <div class="flex items-start">
-                <i class="fas fa-circle text-primary mr-2 mt-1 text-xs"></i>
-                <div>
-                  <span class="font-medium text-foreground">服务器重启:</span> 文件缓存会保留，服务器重启后仍可使用（当天有效）
+                  <span class="font-medium text-foreground">数据更新:</span> 当获取的数据本地数据库缺失时，系统会自动从API获取差量数据并更新到数据库
                 </div>
               </div>
             </div>
@@ -245,48 +195,17 @@
         <!-- 加载状态 -->
         <div v-else-if="loading" class="card p-8 text-center">
           <i class="fas fa-spinner fa-spin text-4xl text-primary mb-4"></i>
-          <p class="text-muted-foreground">正在加载缓存统计...</p>
+          <p class="text-muted-foreground">正在加载数据库统计...</p>
         </div>
 
         <!-- 空状态 -->
         <div v-else class="card p-8 text-center">
           <i class="fas fa-database text-4xl text-muted-foreground mb-4"></i>
-          <p class="text-muted-foreground">暂无缓存数据，请点击"刷新统计"按钮</p>
+          <p class="text-muted-foreground">暂无数据库数据，请点击"刷新统计"按钮</p>
         </div>
       </div>
     </main>
 
-    <!-- 清除确认对话框 -->
-    <transition name="fade">
-      <div v-if="showClearConfirm" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-card rounded-lg shadow-xl max-w-md w-full p-6">
-          <h3 class="text-lg font-semibold mb-4 flex items-center">
-            <i class="fas fa-exclamation-triangle text-yellow-500 mr-2"></i>
-            确认清除缓存
-          </h3>
-          <p class="text-muted-foreground mb-6">
-            确定要清除所有缓存吗？这将删除所有已缓存的JSON文件（包括内存和文件缓存），下次请求将重新从数据源获取并缓存。
-          </p>
-          <div class="flex gap-3 justify-end">
-            <button
-              @click="showClearConfirm = false"
-              :disabled="clearing"
-              class="btn bg-muted hover:bg-muted/80 text-muted-foreground px-4 py-2 h-10"
-            >
-              取消
-            </button>
-            <button
-              @click="clearCache"
-              :disabled="clearing"
-              class="btn bg-destructive hover:bg-destructive/80 text-destructive-foreground px-4 py-2 h-10 flex items-center justify-center"
-            >
-              <i class="fas fa-spinner fa-spin mr-2" v-if="clearing"></i>
-              {{ clearing ? '清除中...' : '确认清除' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
   </div>
 </template>
 
@@ -297,46 +216,23 @@ import ThemeToggle from './ThemeToggle.vue'
 
 const stats = ref(null)
 const loading = ref(false)
-const clearing = ref(false)
 const error = ref(null)
 const successMessage = ref(null)
-const showClearConfirm = ref(false)
 
-// 获取缓存统计
+// 获取数据库统计
 const refreshStats = async () => {
   loading.value = true
   error.value = null
   successMessage.value = null
 
   try {
-    const response = await axios.get('/platform/api/cache/stats')
+    const response = await axios.get('/platform/api/database/stats')
     stats.value = response.data
   } catch (err) {
-    error.value = err.response?.data?.detail || err.message || '获取缓存统计失败'
-    console.error('Error fetching cache stats:', err)
+    error.value = err.response?.data?.detail || err.message || '获取数据库统计失败'
+    console.error('Error fetching database stats:', err)
   } finally {
     loading.value = false
-  }
-}
-
-// 清除缓存
-const clearCache = async () => {
-  clearing.value = true
-  error.value = null
-  successMessage.value = null
-
-  try {
-    const response = await axios.post('/platform/api/cache/clear')
-    successMessage.value = response.data.message || '缓存已成功清除'
-    showClearConfirm.value = false
-    
-    // 清除后刷新统计
-    await refreshStats()
-  } catch (err) {
-    error.value = err.response?.data?.detail || err.message || '清除缓存失败'
-    console.error('Error clearing cache:', err)
-  } finally {
-    clearing.value = false
   }
 }
 

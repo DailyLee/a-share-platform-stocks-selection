@@ -132,3 +132,7 @@ ref/
 cases/
 backtest_history/
 cache/
+
+*.db
+*.db-shm
+*.db-wal

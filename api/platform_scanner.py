@@ -41,9 +41,12 @@ def prepare_stock_list(stock_basics_df: pd.DataFrame,
         if row['type'] == '2' or row['status'] == '0':
             continue
 
+        # Support both 'code_name' (from API) and 'name' (from database)
+        stock_name = row.get('code_name') or row.get('name', '')
+
         stock_info = {
             'code': row['code'],
-            'name': row['code_name'],
+            'name': stock_name,
             'type': row['type'],
             'status': row['status'],
             'industry': 'Unknown'  # Default value

@@ -250,13 +250,13 @@ app.include_router(case_router, prefix="/api")
 
 # Import for platform check endpoint
 try:
-    from api.data_fetcher import fetch_kline_data
+    from api.data_fetcher import fetch_kline_data, build_historical_data
     from api.analyzers.combined_analyzer import analyze_stock
-    from api.cache_manager import get_cache_manager
+    from api.stock_database import get_stock_database
 except ImportError:
-    from .data_fetcher import fetch_kline_data
+    from .data_fetcher import fetch_kline_data, build_historical_data
     from .analyzers.combined_analyzer import analyze_stock
-    from .cache_manager import get_cache_manager
+    from .stock_database import get_stock_database
 
 from datetime import datetime, timedelta
 
@@ -275,37 +275,14 @@ async def root():
     }
 
 
-@app.get("/api/cache/stats")
-async def get_cache_stats():
+@app.get("/api/database/stats")
+async def get_database_stats():
     """
-    Get cache statistics including hit rate, cache size, etc.
-    Useful for monitoring cache performance.
+    Get database statistics.
     """
-    cache_manager = get_cache_manager()
-    stats = cache_manager.get_stats()
-    
-    # Cleanup expired entries
-    evicted = cache_manager.cleanup_expired()
-    
-    return {
-        "cache_stats": stats,
-        "expired_entries_cleaned": evicted
-    }
-
-
-@app.post("/api/cache/clear")
-async def clear_cache():
-    """
-    Clear all cache entries.
-    Useful for forcing fresh data fetch or troubleshooting.
-    """
-    cache_manager = get_cache_manager()
-    cache_manager.clear()
-    
-    return {
-        "message": "Cache cleared successfully",
-        "status": "ok"
-    }
+    db = get_stock_database()
+    stats = db.get_stats()
+    return stats
 
 
 @app.post("/api/scan/start", response_model=TaskCreationResponse)
@@ -333,6 +310,18 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
     # Start the scan in the background
     def run_scan_task():
         try:
+            # Check if database is empty and build historical data if needed
+            db = get_stock_database()
+            if db.is_empty():
+                task_manager.update_task(
+                    task_id,
+                    progress=5,
+                    message="Database is empty, building historical data (this may take a while)..."
+                )
+                # Build historical data in background (non-blocking for first access)
+                # For now, we'll just fetch stock basics and let individual queries build data
+                print(f"{Fore.YELLOW}Database is empty, will build data on first access{Style.RESET_ALL}")
+            
             # Fetch stock basics
             with BaostockConnectionManager():
                 stock_basics_df = fetch_stock_basics()
@@ -711,7 +700,8 @@ async def check_platform(request: PlatformCheckRequest):
                     detail=f"Stock code {code} not found"
                 )
             
-            stock_name = stock_info.iloc[0]['code_name']
+            # Support both 'code_name' (from API) and 'name' (from database)
+            stock_name = stock_info.iloc[0].get('code_name') or stock_info.iloc[0].get('name', '')
             
             # Calculate date range (use comprehensive windows for single stock check)
             # Include common windows: 30, 60, 90, 80, 100, 120 to match scan results
