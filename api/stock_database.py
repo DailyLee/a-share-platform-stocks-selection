@@ -189,6 +189,29 @@ class StockDatabase:
                 ON backtest_history(created_at)
             ''')
             
+            # Create scan_cache table for storing scan results
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS scan_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    scan_config TEXT NOT NULL,
+                    backtest_date TEXT NOT NULL,
+                    scanned_stocks TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create index for scan_cache
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_scan_cache_backtest_date 
+                ON scan_cache(backtest_date)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_scan_cache_created_at 
+                ON scan_cache(created_at)
+            ''')
+            
             conn.commit()
     
     def is_empty(self) -> bool:
@@ -826,6 +849,86 @@ class StockDatabase:
                 count = cursor.fetchone()[0]
                 cursor.execute('DELETE FROM backtest_history')
                 return count
+    
+    def save_scan_cache(self, cache_key: str, scan_config: Dict[str, Any], 
+                       backtest_date: str, scanned_stocks: List[Dict[str, Any]]) -> None:
+        """
+        Save scan results to cache.
+        
+        Args:
+            cache_key: Unique cache key (hash of scan_config + backtest_date)
+            scan_config: Scan configuration dictionary
+            backtest_date: Backtest date string (YYYY-MM-DD)
+            scanned_stocks: List of scanned stock dictionaries
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO scan_cache 
+                    (cache_key, scan_config, backtest_date, scanned_stocks, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    cache_key,
+                    json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
+                    backtest_date,
+                    json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                    datetime.now()
+                ))
+    
+    def get_scan_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get scan results from cache.
+        
+        Args:
+            cache_key: Unique cache key (hash of scan_config + backtest_date)
+        
+        Returns:
+            Dictionary containing scan_config, backtest_date, and scanned_stocks,
+            or None if not found
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT scan_config, backtest_date, scanned_stocks, created_at
+                FROM scan_cache
+                WHERE cache_key = ?
+            ''', (cache_key,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return {
+                'scan_config': json.loads(row[0]),
+                'backtest_date': row[1],
+                'scanned_stocks': json.loads(row[2]),
+                'created_at': row[3]
+            }
+    
+    def clear_scan_cache(self, cache_key: Optional[str] = None) -> int:
+        """
+        Clear scan cache. If cache_key is provided, clear only that entry.
+        Otherwise, clear all cache entries.
+        
+        Args:
+            cache_key: Optional cache key to clear specific entry
+        
+        Returns:
+            Number of records deleted
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                if cache_key:
+                    cursor.execute('DELETE FROM scan_cache WHERE cache_key = ?', (cache_key,))
+                else:
+                    cursor.execute('SELECT COUNT(*) FROM scan_cache')
+                    count = cursor.fetchone()[0]
+                    cursor.execute('DELETE FROM scan_cache')
+                    return count
+                return cursor.rowcount
     
     def close(self):
         """

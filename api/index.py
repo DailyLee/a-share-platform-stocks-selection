@@ -12,6 +12,7 @@ import json
 import asyncio
 import sys
 import os
+import hashlib
 
 # 添加当前目录到 Python 路径，以便导入模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -260,6 +261,26 @@ except ImportError:
 
 from datetime import datetime, timedelta
 
+
+def generate_scan_cache_key(scan_config: Dict[str, Any], backtest_date: str) -> str:
+    """
+    Generate a unique cache key for scan results based on scan config and backtest date.
+    
+    Args:
+        scan_config: Scan configuration dictionary
+        backtest_date: Backtest date string (YYYY-MM-DD)
+    
+    Returns:
+        MD5 hash string as cache key
+    """
+    # Sort config keys and convert to JSON string for consistent hashing
+    config_str = json.dumps(scan_config, sort_keys=True, ensure_ascii=False)
+    # Combine config and backtest_date
+    cache_string = f"{config_str}:{backtest_date}"
+    # Generate MD5 hash
+    return hashlib.md5(cache_string.encode('utf-8')).hexdigest()
+
+
 # --- API Endpoints ---
 
 
@@ -361,41 +382,68 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
 
                 # Create scan config
                 scan_config = ScanConfig(**config_dict)
+                
+                # 使用当前日期作为截止日期（平台期扫描就是回测日为当天的回测扫描）
+                current_date = datetime.now().strftime('%Y-%m-%d')
+                
+                # 生成缓存键
+                cache_key = generate_scan_cache_key(config_dict, current_date)
+                
+                # 检查缓存
+                db = get_stock_database()
+                cached_result = db.get_scan_cache(cache_key)
+                
+                if cached_result:
+                    print(f"{Fore.GREEN}找到缓存结果: 截止日期={current_date}, 扫描配置已缓存{Style.RESET_ALL}")
+                    platform_stocks = cached_result['scanned_stocks']
+                    task_manager.update_task(
+                        task_id,
+                        progress=100,
+                        message=f"使用缓存结果，找到 {len(platform_stocks)} 只符合条件的股票"
+                    )
+                else:
+                    # 缓存未命中，执行扫描
+                    # Define progress update callback
+                    def update_progress(progress=None, message=None):
+                        if progress is not None and message is not None:
+                            # Scale progress to 30-100 range (30% for preparation, 70% for scanning)
+                            # When progress=100 from scan_stocks, scale to 100 (not 90)
+                            if progress >= 100:
+                                scaled_progress = 100  # Full completion
+                                # NOTE: Don't mark as COMPLETED here - wait until result is processed
+                                # This prevents result from being None when status is COMPLETED
+                                task_manager.update_task(
+                                    task_id, 
+                                    progress=scaled_progress, 
+                                    message=message
+                                )
+                            else:
+                                scaled_progress = 30 + int(progress * 0.7)  # Scale 0-100 to 30-100
+                                task_manager.update_task(
+                                    task_id, progress=scaled_progress, message=message)
 
-                # Define progress update callback
-                def update_progress(progress=None, message=None):
-                    if progress is not None and message is not None:
-                        # Scale progress to 30-100 range (30% for preparation, 70% for scanning)
-                        # When progress=100 from scan_stocks, scale to 100 (not 90)
-                        if progress >= 100:
-                            scaled_progress = 100  # Full completion
-                            # NOTE: Don't mark as COMPLETED here - wait until result is processed
-                            # This prevents result from being None when status is COMPLETED
-                            task_manager.update_task(
-                                task_id, 
-                                progress=scaled_progress, 
-                                message=message
-                            )
-                        else:
-                            scaled_progress = 30 + int(progress * 0.7)  # Scale 0-100 to 30-100
-                            task_manager.update_task(
-                                task_id, progress=scaled_progress, message=message)
-
-                # Run the scan
-                try:
-                    print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks{Style.RESET_ALL}")
-                    platform_stocks = scan_stocks(
-                        stock_list, scan_config, update_progress)
-                    print(f"{Fore.GREEN}[INDEX] ✓ scan_stocks completed successfully, returned {len(platform_stocks)} stocks{Style.RESET_ALL}")
-                    print(f"{Fore.CYAN}[INDEX] First few stocks: {[s.get('code', 'unknown') for s in platform_stocks[:5]]}{Style.RESET_ALL}")
-                except Exception as scan_error:
-                    # Even if scan had errors, try to return partial results
-                    print(f"{Fore.RED}[INDEX] ✗ Scan encountered error: {scan_error}{Style.RESET_ALL}")
-                    import traceback
-                    traceback.print_exc()
-                    # Set empty list if scan completely failed
-                    platform_stocks = []
-                    print(f"{Fore.YELLOW}[INDEX] Continuing with empty platform_stocks list{Style.RESET_ALL}")
+                    # Run the scan
+                    try:
+                        print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks{Style.RESET_ALL}")
+                        platform_stocks = scan_stocks(
+                            stock_list, scan_config, update_progress)
+                        print(f"{Fore.GREEN}[INDEX] ✓ scan_stocks completed successfully, returned {len(platform_stocks)} stocks{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[INDEX] First few stocks: {[s.get('code', 'unknown') for s in platform_stocks[:5]]}{Style.RESET_ALL}")
+                        
+                        # 保存扫描结果到缓存
+                        try:
+                            db.save_scan_cache(cache_key, config_dict, current_date, platform_stocks)
+                            print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
+                        except Exception as cache_error:
+                            print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {cache_error}{Style.RESET_ALL}")
+                    except Exception as scan_error:
+                        # Even if scan had errors, try to return partial results
+                        print(f"{Fore.RED}[INDEX] ✗ Scan encountered error: {scan_error}{Style.RESET_ALL}")
+                        import traceback
+                        traceback.print_exc()
+                        # Set empty list if scan completely failed
+                        platform_stocks = []
+                        print(f"{Fore.YELLOW}[INDEX] Continuing with empty platform_stocks list{Style.RESET_ALL}")
 
                 # CRITICAL FIX: Process results first, then mark as COMPLETED with result
                 # This ensures result is never null when status is COMPLETED
@@ -578,24 +626,46 @@ async def run_scan(config_request: ScanConfigRequest):
 
     # Create scan config
     scan_config = ScanConfig(**config_dict)
+    
+    # 使用当前日期作为截止日期（平台期扫描就是回测日为当天的回测扫描）
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # 生成缓存键
+    cache_key = generate_scan_cache_key(config_dict, current_date)
+    
+    # 检查缓存
+    db = get_stock_database()
+    cached_result = db.get_scan_cache(cache_key)
+    
+    if cached_result:
+        print(f"{Fore.GREEN}找到缓存结果: 截止日期={current_date}, 扫描配置已缓存{Style.RESET_ALL}")
+        platform_stocks = cached_result['scanned_stocks']
+    else:
+        # 缓存未命中，执行扫描
+        # Fetch stock basics
+        with BaostockConnectionManager():
+            stock_basics_df = fetch_stock_basics()
 
-    # Fetch stock basics
-    with BaostockConnectionManager():
-        stock_basics_df = fetch_stock_basics()
+            # Fetch industry data
+            try:
+                industry_df = fetch_industry_data()
+            except Exception as e:
+                print(
+                    f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
+                industry_df = pd.DataFrame()
 
-        # Fetch industry data
-        try:
-            industry_df = fetch_industry_data()
-        except Exception as e:
-            print(
-                f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
-            industry_df = pd.DataFrame()
+            # Prepare stock list
+            stock_list = prepare_stock_list(stock_basics_df, industry_df)
 
-        # Prepare stock list
-        stock_list = prepare_stock_list(stock_basics_df, industry_df)
-
-        # Run the scan
-        platform_stocks = scan_stocks(stock_list, scan_config)
+            # Run the scan
+            platform_stocks = scan_stocks(stock_list, scan_config)
+            
+            # 保存扫描结果到缓存
+            try:
+                db.save_scan_cache(cache_key, config_dict, current_date, platform_stocks)
+                print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
 
     # Process results for API response
     result_stocks = []
@@ -1043,49 +1113,70 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     # 创建ScanConfig对象
     scan_config = ScanConfig(**scan_config_dict)
     
-    if progress_callback:
-        progress_callback(10, "正在获取股票基本信息...")
+    # 生成缓存键
+    cache_key = generate_scan_cache_key(scan_config_dict, request.backtest_date)
     
-    # 执行扫描（使用回测日作为截止日）
-    with BaostockConnectionManager():
-        # 获取股票基本信息
-        stock_basics_df = fetch_stock_basics()
-        
+    # 检查缓存
+    db = get_stock_database()
+    cached_result = db.get_scan_cache(cache_key)
+    
+    if cached_result:
+        print(f"{Fore.GREEN}找到缓存结果: 回测日={request.backtest_date}, 扫描配置已缓存{Style.RESET_ALL}")
+        scanned_stocks = cached_result['scanned_stocks']
         if progress_callback:
-            progress_callback(15, "正在获取行业数据...")
-        
-        # 获取行业数据
-        try:
-            industry_df = fetch_industry_data()
-        except Exception as e:
-            print(f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
-            industry_df = pd.DataFrame()
-        
+            progress_callback(60, f"使用缓存结果，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
+    else:
+        # 缓存未命中，执行扫描
         if progress_callback:
-            progress_callback(20, "正在准备股票列表...")
-        
-        # 准备股票列表
-        stock_list = prepare_stock_list(stock_basics_df, industry_df)
-        
-        if progress_callback:
-            progress_callback(25, f"开始扫描 {len(stock_list)} 只股票，查找符合条件的平台期股票...")
+            progress_callback(10, "正在获取股票基本信息...")
         
         # 执行扫描（使用回测日作为截止日）
-        end_date = backtest_date.strftime('%Y-%m-%d')
-        
-        # 定义进度更新回调
-        def scan_progress_update(progress, message):
+        with BaostockConnectionManager():
+            # 获取股票基本信息
+            stock_basics_df = fetch_stock_basics()
+            
             if progress_callback:
-                # 扫描阶段占30-60%
-                scaled_progress = 30 + int(progress * 0.3)
-                progress_callback(scaled_progress, message)
+                progress_callback(15, "正在获取行业数据...")
+            
+            # 获取行业数据
+            try:
+                industry_df = fetch_industry_data()
+            except Exception as e:
+                print(f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
+                industry_df = pd.DataFrame()
+            
+            if progress_callback:
+                progress_callback(20, "正在准备股票列表...")
+            
+            # 准备股票列表
+            stock_list = prepare_stock_list(stock_basics_df, industry_df)
+            
+            if progress_callback:
+                progress_callback(25, f"开始扫描 {len(stock_list)} 只股票，查找符合条件的平台期股票...")
+            
+            # 执行扫描（使用回测日作为截止日）
+            end_date = backtest_date.strftime('%Y-%m-%d')
+            
+            # 定义进度更新回调
+            def scan_progress_update(progress, message):
+                if progress_callback:
+                    # 扫描阶段占30-60%
+                    scaled_progress = 30 + int(progress * 0.3)
+                    progress_callback(scaled_progress, message)
+            
+            scanned_stocks = scan_stocks(stock_list, scan_config, update_progress=scan_progress_update, end_date=end_date)
+            
+            print(f"{Fore.GREEN}扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票{Style.RESET_ALL}")
+            
+            # 保存扫描结果到缓存
+            try:
+                db.save_scan_cache(cache_key, scan_config_dict, request.backtest_date, scanned_stocks)
+                print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
         
-        scanned_stocks = scan_stocks(stock_list, scan_config, update_progress=scan_progress_update, end_date=end_date)
-        
-        print(f"{Fore.GREEN}扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票{Style.RESET_ALL}")
-    
-    if progress_callback:
-        progress_callback(60, f"扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
+        if progress_callback:
+            progress_callback(60, f"扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
     
     # 2. 对于每只股票，执行买入和卖出逻辑
     buy_records = []

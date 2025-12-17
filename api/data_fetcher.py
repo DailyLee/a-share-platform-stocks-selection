@@ -209,21 +209,47 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         need_earlier = (min_date - start_dt).days > 1
         need_later = (end_dt - max_date).days > 1
         
+        # Check if data completeness is reasonable
+        # Estimate expected trading days: approximately 70% of calendar days (accounting for weekends and holidays)
+        date_range_days = (end_dt - start_dt).days + 1
+        expected_min_trading_days = max(1, int(date_range_days * 0.3))  # At least 30% should be trading days
+        actual_records = len(df)
+        
+        # If date range looks complete but record count is suspiciously low, re-fetch
+        # This handles cases where database has partial data (e.g., only 5 records for a month range)
+        data_seems_incomplete = False
         if not need_earlier and not need_later:
+            # Date range looks complete, but check if record count is reasonable
+            if date_range_days > 7 and actual_records < expected_min_trading_days:
+                # For ranges longer than a week, if records are less than expected minimum, likely incomplete
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Suspicious data completeness for {code}: {actual_records} records for {date_range_days} days (expected at least {expected_min_trading_days} trading days){Style.RESET_ALL}")
+                data_seems_incomplete = True
+            elif (max_date - min_date).days > 7 and actual_records < 10:
+                # If data spans more than a week but has very few records, likely incomplete
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Suspicious data completeness for {code}: {actual_records} records spanning {(max_date - min_date).days} days{Style.RESET_ALL}")
+                data_seems_incomplete = True
+        
+        if not need_earlier and not need_later and not data_seems_incomplete:
             # We have all the data we need
             print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Complete data for {code} from database ({len(df)} records){Style.RESET_ALL}")
             return df
         
         # We need to fetch additional data
         missing_ranges = []
-        if need_earlier:
-            # Fetch from start_date to one day before min_date
-            earlier_end = (min_date - timedelta(days=1)).strftime('%Y-%m-%d')
-            missing_ranges.append((start_date, earlier_end))
-        if need_later:
-            # Fetch from one day after max_date to end_date
-            later_start = (max_date + timedelta(days=1)).strftime('%Y-%m-%d')
-            missing_ranges.append((later_start, end_date))
+        if data_seems_incomplete:
+            # Data seems incomplete, re-fetch the entire range
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔄 Re-fetching data for {code} due to suspected incompleteness{Style.RESET_ALL}")
+            missing_ranges.append((start_date, end_date))
+        else:
+            # Fetch missing ranges at the edges
+            if need_earlier:
+                # Fetch from start_date to one day before min_date
+                earlier_end = (min_date - timedelta(days=1)).strftime('%Y-%m-%d')
+                missing_ranges.append((start_date, earlier_end))
+            if need_later:
+                # Fetch from one day after max_date to end_date
+                later_start = (max_date + timedelta(days=1)).strftime('%Y-%m-%d')
+                missing_ranges.append((later_start, end_date))
     else:
         # No data in database, need to fetch all
         missing_ranges = [(start_date, end_date)]
