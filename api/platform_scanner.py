@@ -6,9 +6,10 @@ import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
 import time
 from datetime import datetime, timedelta
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed, CancelledError
 from tqdm import tqdm
 from colorama import Fore, Style
+import platform as platform_module
 
 from .data_fetcher import fetch_kline_data, baostock_login
 from .industry_filter import apply_industry_diversity_filter
@@ -19,6 +20,24 @@ from .analyzers.price_analyzer import analyze_price
 from .analyzers.volume_analyzer import analyze_volume
 from .analyzers.combined_analyzer import analyze_stock
 from .analyzers.fundamental_analyzer import analyze_fundamentals
+
+
+def should_use_process_pool() -> bool:
+    """
+    Determine whether to use ProcessPoolExecutor or ThreadPoolExecutor.
+    Linux servers should use ThreadPoolExecutor to avoid SQLite connection issues.
+    
+    Returns:
+        True if ProcessPoolExecutor should be used, False for ThreadPoolExecutor
+    """
+    system = platform_module.system()
+    
+    # Use ThreadPoolExecutor on Linux to avoid fork-related database issues
+    # ProcessPoolExecutor is fine on macOS/Windows
+    if system == 'Linux':
+        return False  # Use ThreadPoolExecutor
+    else:
+        return True  # Use ProcessPoolExecutor
 
 
 def prepare_stock_list(stock_basics_df: pd.DataFrame,
@@ -91,7 +110,7 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                   ).strftime('%Y-%m-%d')
 
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Starting stock platform scan{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Starting stock platform scan{Style.RESET_ALL}")
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
     print(f"{Fore.YELLOW}Scan parameters:{Style.RESET_ALL}")
     print(
@@ -130,16 +149,15 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"  - Stock count: {Fore.GREEN}{len(stock_list)}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
 
-    # Try to use ProcessPoolExecutor, fall back to ThreadPoolExecutor if needed
-    try:
+    # Choose executor based on platform
+    if should_use_process_pool():
         executor_class = ProcessPoolExecutor
         print(
             f"{Fore.GREEN}Using ProcessPoolExecutor for concurrent data fetching{Style.RESET_ALL}")
-    except Exception as e:
-        print(
-            f"{Fore.RED}ProcessPoolExecutor initialization failed: {e}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}Falling back to ThreadPoolExecutor{Style.RESET_ALL}")
+    else:
         executor_class = ThreadPoolExecutor
+        print(
+            f"{Fore.GREEN}Using ThreadPoolExecutor for concurrent data fetching (better for Linux/SQLite){Style.RESET_ALL}")
 
     # Initialize counters
     success_count = 0
@@ -152,36 +170,157 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
 
     # Use executor for concurrent processing
     with executor_class(max_workers=config.max_workers, initializer=baostock_login) as executor:
+        # Track submitted tasks for debugging (thread-safe)
+        import threading as threading_module
+        submitted_stocks = {s['code']: s['name'] for s in stock_list}
+        started_stocks = set()
+        completed_stocks = set()
+        stocks_lock = threading_module.Lock()
+        
+        # Create a wrapper to track task execution
+        def fetch_with_tracking(code, name, start_date, end_date, retry_attempts, retry_delay):
+            """Wrapper to track when task actually starts executing in thread pool"""
+            import threading
+            with stocks_lock:
+                started_stocks.add(code)
+            print(f"{Fore.MAGENTA}[SCAN_CHECKPOINT] 🚀 TASK STARTED in thread {threading.current_thread().name} for {code} ({name}){Style.RESET_ALL}")
+            try:
+                result = fetch_kline_data(code, start_date, end_date, retry_attempts, retry_delay)
+                with stocks_lock:
+                    completed_stocks.add(code)
+                print(f"{Fore.MAGENTA}[SCAN_CHECKPOINT] ✅ TASK FINISHED for {code} ({name}), returning {len(result)} rows{Style.RESET_ALL}")
+                return result
+            except Exception as e:
+                with stocks_lock:
+                    completed_stocks.add(code)  # Mark as completed even if failed
+                print(f"{Fore.RED}[SCAN_CHECKPOINT] 💥 TASK EXCEPTION for {code} ({name}): {e}{Style.RESET_ALL}")
+                raise
+        
         # Submit tasks
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Submitting {len(stock_list)} tasks to executor{Style.RESET_ALL}")
         future_to_stock = {
-            executor.submit(fetch_kline_data, s['code'], start_date, end_date,
+            executor.submit(fetch_with_tracking, s['code'], s['name'], start_date, end_date,
                             config.retry_attempts, config.retry_delay): s
             for s in stock_list
         }
 
         # Create progress bar
         total_stocks = len(future_to_stock)
+        print(f"{Fore.GREEN}[SCAN_CHECKPOINT] All {total_stocks} tasks submitted, starting to process results{Style.RESET_ALL}")
+        
         pbar = tqdm(total=total_stocks, desc="Fetching stock data",
                     bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]")
 
-        # Process results as they complete
-        for i, future in enumerate(future_to_stock):
+        # Process results as they complete with timeout
+        import time as time_module
+        import threading
+        
+        processed_count = 0
+        hang_detected = [False]  # Use list to allow modification in thread
+        
+        def watchdog():
+            """Monitor progress and detect hangs"""
+            last_count = 0
+            no_progress_cycles = 0
+            max_wait_time = 900  # 15 minutes total timeout
+            start_time = time_module.time()
+            
+            while processed_count < total_stocks and not hang_detected[0]:
+                time_module.sleep(30)  # Check every 30 seconds
+                current_count = processed_count
+                completion_rate = current_count / total_stocks
+                elapsed = time_module.time() - start_time
+                
+                # Always log watchdog heartbeat
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🐕 Watchdog: {current_count}/{total_stocks} ({completion_rate*100:.1f}%), elapsed: {elapsed:.0f}s{Style.RESET_ALL}")
+                
+                # If no progress in 30s and 95%+ complete, consider it hung
+                if current_count == last_count:
+                    no_progress_cycles += 1
+                    if completion_rate >= 0.95 and no_progress_cycles >= 1:
+                        remaining = total_stocks - current_count
+                        print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Watchdog: No progress for {30*no_progress_cycles}s, {remaining} tasks stuck (95%+ done){Style.RESET_ALL}")
+                        
+                        # List stuck tasks (with lock for thread safety)
+                        with stocks_lock:
+                            not_started = [code for code in submitted_stocks.keys() if code not in started_stocks]
+                            started_not_completed = [code for code in started_stocks if code not in completed_stocks]
+                        
+                        if not_started:
+                            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Tasks NEVER STARTED ({len(not_started)}): {', '.join(not_started[:10])}{Style.RESET_ALL}")
+                        
+                        if started_not_completed:
+                            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Tasks STARTED but NOT COMPLETED ({len(started_not_completed)}): {', '.join(started_not_completed[:10])}{Style.RESET_ALL}")
+                        
+                        hang_detected[0] = True
+                        
+                        # Cancel all pending futures to unblock as_completed()
+                        print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] Watchdog cancelling {remaining} stuck futures...{Style.RESET_ALL}")
+                        cancelled_count = 0
+                        for future in future_to_stock:
+                            if not future.done():
+                                try:
+                                    if future.cancel():
+                                        cancelled_count += 1
+                                except:
+                                    pass
+                        print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] Watchdog cancelled {cancelled_count} futures{Style.RESET_ALL}")
+                        break
+                else:
+                    no_progress_cycles = 0
+                
+                # Global timeout check
+                if elapsed > max_wait_time:
+                    print(f"{Fore.RED}[SCAN_CHECKPOINT] ⚠️ Watchdog: Total timeout {max_wait_time}s exceeded{Style.RESET_ALL}")
+                    hang_detected[0] = True
+                    
+                    # Cancel all pending futures
+                    for future in future_to_stock:
+                        if not future.done():
+                            try:
+                                future.cancel()
+                            except:
+                                pass
+                    break
+                    
+                last_count = current_count
+        
+        # Start watchdog thread
+        watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+        watchdog_thread.start()
+        
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Watchdog started, beginning to process results...{Style.RESET_ALL}")
+        
+        for future in as_completed(future_to_stock):
+            # Check hang status - will break on next completed future after watchdog triggers
+            if hang_detected[0]:
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] Breaking loop due to watchdog timeout{Style.RESET_ALL}")
+                break
+                
             stock = future_to_stock[future]
             stock_code = stock['code']
             stock_name = stock['name']
+            processed_count += 1
+            
+            # Log first task completion
+            if processed_count == 1:
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] First task completed: {stock_code} ({stock_name}){Style.RESET_ALL}")
 
             try:
-                # Get K-line data
-                df = future.result()
+                # Get K-line data with timeout to prevent indefinite waiting
+                df = future.result(timeout=15)
 
                 if df.empty:
                     empty_count += 1
+                    if processed_count % 100 == 0:
+                        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] {stock_code}: Empty data (Total empty: {empty_count}){Style.RESET_ALL}")
                     pbar.set_postfix(success=success_count, empty=empty_count,
                                      error=error_count, platform=platform_count)
                     pbar.update(1)
                     continue
 
                 # Analyze for platform periods
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔬 Starting analysis for {stock_code} ({stock_name})...{Style.RESET_ALL}")
                 analysis_result = analyze_stock(
                     df,
                     config.windows,
@@ -207,12 +346,14 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                     config.use_box_detection,
                     config.box_quality_threshold
                 )
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Analysis completed for {stock_code}, is_platform: {analysis_result['is_platform']}{Style.RESET_ALL}")
 
                 success_count += 1
 
                 # If it's a platform stock, add to results
                 if analysis_result["is_platform"]:
                     platform_count += 1
+                    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Platform found: {stock_code} ({stock_name}) - Total platforms: {platform_count}{Style.RESET_ALL}")
 
                     # Create result object
                     platform_stock = {
@@ -257,17 +398,27 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                     platform_stocks.append(platform_stock)
 
                 # Update progress
-                if update_progress and i % 10 == 0:  # Update every 10 stocks
-                    progress_pct = (i + 1) / total_stocks * 100
+                if update_progress and processed_count % 10 == 0:  # Update every 10 stocks
+                    progress_pct = processed_count / total_stocks * 100
                     update_progress(
                         progress=int(progress_pct),
-                        message=f"Processed {i+1}/{total_stocks} stocks. Found {platform_count} platform stocks."
+                        message=f"Processed {processed_count}/{total_stocks} stocks. Found {platform_count} platform stocks."
                     )
+                
+                # Log progress every 100 stocks and at key milestones
+                if processed_count % 100 == 0 or processed_count in [50, 5500, 5550]:
+                    progress_pct = processed_count / total_stocks * 100
+                    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Progress: {processed_count}/{total_stocks} ({progress_pct:.1f}%), {platform_count} platforms, {success_count} success, {empty_count} empty, {error_count} errors{Style.RESET_ALL}")
 
+            except CancelledError:
+                error_count += 1
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] 🚫 Cancelled: {stock_code} ({stock_name}) by watchdog{Style.RESET_ALL}")
+            except TimeoutError:
+                error_count += 1
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⏱️ Timeout (15s) processing stock {stock_code} ({stock_name}), processed: {processed_count}/{total_stocks}{Style.RESET_ALL}")
             except Exception as e:
                 error_count += 1
-                print(
-                    f"{Fore.RED}Error processing stock {stock_code}: {e}{Style.RESET_ALL}")
+                print(f"{Fore.RED}[SCAN_CHECKPOINT] ❌ Error processing stock {stock_code} ({stock_name}): {e}{Style.RESET_ALL}")
                 import traceback
                 traceback.print_exc()
 
@@ -277,7 +428,25 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
             pbar.update(1)
 
         # Close progress bar
+        print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Main processing loop completed{Style.RESET_ALL}")
         pbar.close()
+        
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Final stats - Processed: {processed_count}/{total_stocks}, Success: {success_count}, Empty: {empty_count}, Errors: {error_count}, Platforms: {platform_count}{Style.RESET_ALL}")
+    
+    # Check if there are incomplete tasks
+    incomplete = total_stocks - processed_count
+    if incomplete > 0:
+        print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Warning: {incomplete} tasks did not complete, cancelling them...{Style.RESET_ALL}")
+        # Cancel remaining futures
+        for future in future_to_stock:
+            if not future.done():
+                try:
+                    future.cancel()
+                except:
+                    pass
+    
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Data fetching completed: {success_count} success, {empty_count} empty, {error_count} errors{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Found {platform_count} platform stocks, starting filters...{Style.RESET_ALL}")
 
     # Apply fundamental analysis filter if enabled
     if config.use_fundamental_filter:
@@ -301,14 +470,17 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         print(f"{Fore.YELLOW}Fundamental analysis filter disabled.{Style.RESET_ALL}")
 
     # Apply industry diversity filter
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Applying industry diversity filter on {len(fundamental_filtered_stocks)} stocks{Style.RESET_ALL}")
     filtered_stocks = apply_industry_diversity_filter(
         fundamental_filtered_stocks,
         expected_count=config.expected_count
     )
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Industry filter complete, selected {len(filtered_stocks)} stocks{Style.RESET_ALL}")
 
     # Sort by breakthrough & breakthrough precursor signals if enabled
     # Note: This should happen before industry diversity filter to prioritize stocks with breakthrough signals
     # But we apply it after to maintain industry diversity while still sorting within the filtered set
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Starting breakthrough sorting (enabled={config.sort_by_breakthrough}){Style.RESET_ALL}")
     if config.sort_by_breakthrough:
         print(f"{Fore.CYAN}Sorting stocks by breakthrough & breakthrough precursor signals...{Style.RESET_ALL}")
         
@@ -346,6 +518,8 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         print(f"{Fore.GREEN}Sorted {sorted_count} stocks by breakthrough signals.{Style.RESET_ALL}")
     else:
         print(f"{Fore.YELLOW}Breakthrough sorting disabled.{Style.RESET_ALL}")
+    
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Sorting complete, preparing to return results{Style.RESET_ALL}")
 
     # Print summary
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
@@ -366,10 +540,12 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
 
     # Final progress update
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Updating final progress{Style.RESET_ALL}")
     if update_progress:
         update_progress(
             progress=100,
             message=f"Scan completed. Found {platform_count} platform stocks, filtered to {len(filtered_stocks)}."
         )
-
+    
+    print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Scan complete! Returning {len(filtered_stocks)} stocks{Style.RESET_ALL}")
     return filtered_stocks

@@ -3,6 +3,7 @@ Configuration module for stock platform scanner.
 """
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
+import platform
 
 
 class ScanConfig(BaseModel):
@@ -90,8 +91,24 @@ class ScanConfig(BaseModel):
     expected_count: int = 10
 
 
-# Default configuration
-DEFAULT_CONFIG = ScanConfig()
+def get_default_max_workers() -> int:
+    """
+    Get default max_workers based on platform and environment.
+    Linux servers use more conservative settings to avoid resource issues.
+    """
+    system = platform.system()
+    
+    # Check if running on Linux server (non-macOS, non-Windows)
+    if system == 'Linux':
+        # More conservative for Linux servers to avoid database lock issues
+        return 3
+    else:
+        # macOS/Windows can handle more parallel processing
+        return 5
+
+
+# Default configuration with platform-specific optimizations
+DEFAULT_CONFIG = ScanConfig(max_workers=get_default_max_workers())
 
 # Export default values as constants for use in other modules
 # This ensures all modules use the same default values from a single source

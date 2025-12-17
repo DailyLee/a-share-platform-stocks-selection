@@ -25,7 +25,19 @@ def baostock_login() -> None:
     Login to Baostock API with thread-local connection.
     Each thread/process will have its own connection.
     """
-    # Check if already logged in
+    import os
+    
+    # Track process ID to detect fork
+    current_pid = os.getpid()
+    
+    # Check if we're in a different process (after fork)
+    if hasattr(_thread_local, 'pid') and _thread_local.pid != current_pid:
+        # Reset login state after fork
+        _thread_local.logged_in = False
+    
+    _thread_local.pid = current_pid
+    
+    # Check if already logged in in this thread
     if hasattr(_thread_local, 'logged_in') and _thread_local.logged_in:
         return
     
@@ -36,7 +48,7 @@ def baostock_login() -> None:
         raise ConnectionError(f"Baostock login failed: {lg.error_msg}")
     
     _thread_local.logged_in = True
-    print(f"{Fore.GREEN}Baostock login successful in thread {threading.current_thread().name}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Baostock login successful in thread {threading.current_thread().name} (PID: {current_pid}){Style.RESET_ALL}")
 
 def baostock_logout() -> None:
     """
@@ -170,10 +182,15 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
     Returns:
         pd.DataFrame: DataFrame containing K-line data
     """
+    import threading
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📥 START fetch_kline_data for {code} (thread: {threading.current_thread().name}){Style.RESET_ALL}")
+    
     db = get_stock_database()
     
     # Try to get from database first
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔍 Querying database for {code}...{Style.RESET_ALL}")
     df = db.get_kline_data(code, start_date, end_date)
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Database query completed for {code}, got {len(df)} records{Style.RESET_ALL}")
     
     # Check if we have all the data we need
     if not df.empty:
@@ -192,7 +209,7 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         
         if not need_earlier and not need_later:
             # We have all the data we need
-            print(f"{Fore.GREEN}Loaded K-line data for {code} from database ({len(df)} records){Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Complete data for {code} from database ({len(df)} records){Style.RESET_ALL}")
             return df
         
         # We need to fetch additional data
@@ -213,17 +230,19 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
     all_data = []
     
     for range_start, range_end in missing_ranges:
-        print(f"{Fore.CYAN}Fetching missing K-line data for {code} from {range_start} to {range_end}...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🌐 Fetching missing K-line data for {code} from {range_start} to {range_end}...{Style.RESET_ALL}")
         
         fetched_df = _fetch_kline_data_from_api(
             code, range_start, range_end, retry_attempts, retry_delay
         )
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ API fetch completed for {code}, got {len(fetched_df)} records{Style.RESET_ALL}")
         
         if not fetched_df.empty:
             # Save to database
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 💾 Saving {len(fetched_df)} records to database for {code}...{Style.RESET_ALL}")
             db.save_kline_data(code, fetched_df)
             all_data.append(fetched_df)
-            print(f"{Fore.GREEN}Saved {len(fetched_df)} records to database{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Saved {len(fetched_df)} records to database for {code}{Style.RESET_ALL}")
     
     # Combine all data
     if all_data:
@@ -269,9 +288,12 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
     while True:
         try:
             # Ensure we're logged in
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔐 Ensuring Baostock login for {code}...{Style.RESET_ALL}")
             baostock_login()
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Login check completed for {code}{Style.RESET_ALL}")
             
             # Query historical K-line data
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📡 Calling Baostock API for {code}...{Style.RESET_ALL}")
             rs = bs.query_history_k_data_plus(
                 code,
                 "date,open,high,low,close,volume,turn,preclose,pctChg,peTTM,pbMRQ",
@@ -280,6 +302,7 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
                 frequency="d",     # Daily frequency
                 adjustflag="2"     # Forward adjusted prices
             )
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Baostock API call returned for {code}, error_code: {rs.error_code}{Style.RESET_ALL}")
             
             # Check for API errors
             if rs.error_code != '0':
@@ -296,15 +319,18 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
                 continue
             
             # Process the data if query was successful
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📊 Processing result data for {code}...{Style.RESET_ALL}")
             data_list = []
             while (rs.error_code == '0') & rs.next():
                 data_list.append(rs.get_row_data())
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Collected {len(data_list)} rows for {code}{Style.RESET_ALL}")
             
             # Convert to DataFrame
             if not data_list:
-                print(f"{Fore.YELLOW}No data returned for {code} from {start_date} to {end_date}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ No data returned for {code} from {start_date} to {end_date}{Style.RESET_ALL}")
                 return pd.DataFrame()
             
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔄 Converting to DataFrame for {code}...{Style.RESET_ALL}")
             df = pd.DataFrame(data_list, columns=rs.fields)
             
             # Convert date column to datetime
@@ -316,6 +342,7 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
+            print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ COMPLETE fetch_kline_data for {code}, returning {len(df)} records{Style.RESET_ALL}")
             return df
             
         except Exception as e:

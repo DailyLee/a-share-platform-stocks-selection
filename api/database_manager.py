@@ -106,36 +106,31 @@ class DatabaseManager:
                 cursor.execute(...)
                 # Auto-commit on success, auto-rollback on exception
         """
-        from colorama import Fore, Style
-        print(f"{Fore.CYAN}[DatabaseManager] get_connection called{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[DatabaseManager] Connecting to: {DB_FILE}{Style.RESET_ALL}")
         # Set timeout to 30 seconds to avoid hanging
         try:
-            print(f"{Fore.CYAN}[DatabaseManager] Creating connection...{Style.RESET_ALL}")
-            conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=30.0)
-            print(f"{Fore.GREEN}[DatabaseManager] Connection created{Style.RESET_ALL}")
+            conn = sqlite3.connect(
+                DB_FILE, 
+                check_same_thread=False, 
+                timeout=30.0,
+                isolation_level='DEFERRED'  # Better for concurrent access
+            )
             conn.row_factory = sqlite3.Row  # Enable column access by name
+            # Enable WAL mode and set busy timeout for better concurrency
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA busy_timeout=30000')
             try:
-                print(f"{Fore.CYAN}[DatabaseManager] Yielding connection...{Style.RESET_ALL}")
                 yield conn
-                print(f"{Fore.CYAN}[DatabaseManager] Committing transaction...{Style.RESET_ALL}")
                 conn.commit()
-                print(f"{Fore.GREEN}[DatabaseManager] Transaction committed{Style.RESET_ALL}")
             except Exception as e:
-                print(f"{Fore.RED}[DatabaseManager] Error in transaction: {e}{Style.RESET_ALL}")
                 conn.rollback()
-                print(f"{Fore.RED}[DatabaseManager] Transaction rolled back{Style.RESET_ALL}")
-                import traceback
-                traceback.print_exc()
+                from colorama import Fore, Style
+                print(f"{Fore.RED}[DatabaseManager] Transaction error: {e}{Style.RESET_ALL}")
                 raise
             finally:
-                print(f"{Fore.CYAN}[DatabaseManager] Closing connection...{Style.RESET_ALL}")
                 conn.close()
-                print(f"{Fore.GREEN}[DatabaseManager] Connection closed{Style.RESET_ALL}")
         except Exception as e:
-            print(f"{Fore.RED}[DatabaseManager] Failed to create connection: {e}{Style.RESET_ALL}")
-            import traceback
-            traceback.print_exc()
+            from colorama import Fore, Style
+            print(f"{Fore.RED}[DatabaseManager] Connection error: {e}{Style.RESET_ALL}")
             raise
     
     def execute_query(self, query: str, params: tuple = ()) -> List[sqlite3.Row]:
@@ -149,25 +144,15 @@ class DatabaseManager:
         Returns:
             List of row objects
         """
-        from colorama import Fore, Style
-        print(f"{Fore.CYAN}[DatabaseManager] execute_query called{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[DatabaseManager] Query: {query}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}[DatabaseManager] Params: {params}{Style.RESET_ALL}")
         try:
-            print(f"{Fore.CYAN}[DatabaseManager] Getting connection...{Style.RESET_ALL}")
             with self.get_connection() as conn:
-                print(f"{Fore.GREEN}[DatabaseManager] Connection obtained{Style.RESET_ALL}")
                 cursor = conn.cursor()
-                print(f"{Fore.CYAN}[DatabaseManager] Executing query...{Style.RESET_ALL}")
                 cursor.execute(query, params)
-                print(f"{Fore.CYAN}[DatabaseManager] Fetching results...{Style.RESET_ALL}")
                 results = cursor.fetchall()
-                print(f"{Fore.GREEN}[DatabaseManager] Got {len(results)} results{Style.RESET_ALL}")
                 return results
         except Exception as e:
-            print(f"{Fore.RED}[DatabaseManager] Database query error: {e}{Style.RESET_ALL}")
-            print(f"{Fore.RED}[DatabaseManager] Query: {query}{Style.RESET_ALL}")
-            print(f"{Fore.RED}[DatabaseManager] Params: {params}{Style.RESET_ALL}")
+            from colorama import Fore, Style
+            print(f"{Fore.RED}[DatabaseManager] Query error: {e}{Style.RESET_ALL}")
             import traceback
             traceback.print_exc()
             return []
@@ -231,17 +216,10 @@ _db_manager = None
 
 def get_database_manager() -> DatabaseManager:
     """Get the global database manager instance."""
-    from colorama import Fore, Style
     global _db_manager
-    print(f"{Fore.CYAN}[get_database_manager] Called, _db_manager is None: {_db_manager is None}{Style.RESET_ALL}")
     if _db_manager is None:
-        print(f"{Fore.CYAN}[get_database_manager] Acquiring lock...{Style.RESET_ALL}")
         with DatabaseManager._lock:
-            print(f"{Fore.CYAN}[get_database_manager] Lock acquired{Style.RESET_ALL}")
             if _db_manager is None:
-                print(f"{Fore.CYAN}[get_database_manager] Creating DatabaseManager instance...{Style.RESET_ALL}")
                 _db_manager = DatabaseManager()
-                print(f"{Fore.GREEN}[get_database_manager] DatabaseManager instance created{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}[get_database_manager] Returning instance{Style.RESET_ALL}")
     return _db_manager
 

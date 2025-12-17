@@ -35,27 +35,40 @@ class StockDatabase:
         self.db_path = db_path
         self._lock = Lock()
         self._local = threading.local()
+        self._pid = os.getpid()  # Track the process ID
         
         # Initialize database on first use
         self._initialize_database()
     
     def _get_connection(self) -> sqlite3.Connection:
         """
-        Get a thread-local database connection.
+        Get a thread-local and process-local database connection.
+        Ensures connections are recreated after fork.
         
         Returns:
             SQLite connection
         """
+        current_pid = os.getpid()
+        
+        # Check if we're in a different process (after fork)
+        if current_pid != self._pid:
+            # We're in a forked child process, need to recreate connection
+            self._pid = current_pid
+            self._local = threading.local()  # Reset thread-local storage
+        
         if not hasattr(self._local, 'connection') or self._local.connection is None:
             self._local.connection = sqlite3.connect(
                 self.db_path,
                 check_same_thread=False,
-                timeout=30.0
+                timeout=5.0,  # Reduce to 5 seconds for faster timeout
+                isolation_level='DEFERRED'  # Better for concurrent access
             )
             # Enable WAL mode for better concurrency
             self._local.connection.execute('PRAGMA journal_mode=WAL')
             # Set foreign keys
             self._local.connection.execute('PRAGMA foreign_keys=ON')
+            # Set busy timeout to handle locks (5 seconds)
+            self._local.connection.execute('PRAGMA busy_timeout=5000')
         return self._local.connection
     
     @contextmanager
@@ -285,7 +298,15 @@ class StockDatabase:
         Returns:
             DataFrame containing K-line data
         """
+        import time
+        from colorama import Fore, Style
+        start_time = time.time()
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔒 Acquiring DB lock for get_kline_data({code})...{Style.RESET_ALL}")
+        
         with self._lock:
+            lock_acquired = time.time()
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ DB lock acquired for {code} (waited {lock_acquired - start_time:.3f}s){Style.RESET_ALL}")
+            
             conn = self._get_connection()
             query = '''
                 SELECT date, open, high, low, close, volume, turn, 
@@ -294,7 +315,10 @@ class StockDatabase:
                 WHERE code = ? AND date >= ? AND date <= ?
                 ORDER BY date ASC
             '''
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📖 Executing SQL query for {code}...{Style.RESET_ALL}")
             df = pd.read_sql_query(query, conn, params=(code, start_date, end_date))
+            query_end = time.time()
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Query completed for {code} (took {query_end - lock_acquired:.3f}s, {len(df)} rows){Style.RESET_ALL}")
             
             if not df.empty:
                 # Convert date column to datetime
@@ -343,9 +367,18 @@ class StockDatabase:
         if df.empty:
             return
         
+        import time
+        from colorama import Fore, Style
+        start_time = time.time()
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔒 Acquiring DB lock for save_kline_data({code}, {len(df)} rows)...{Style.RESET_ALL}")
+        
         with self._lock:
+            lock_acquired = time.time()
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ DB lock acquired for save {code} (waited {lock_acquired - start_time:.3f}s){Style.RESET_ALL}")
+            
             with self._transaction() as conn:
-                for _, row in df.iterrows():
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 💾 Starting transaction to save {len(df)} rows for {code}...{Style.RESET_ALL}")
+                for idx, row in df.iterrows():
                     # Convert date to string if it's a datetime
                     date_str = str(row['date'])
                     if isinstance(row['date'], pd.Timestamp):
@@ -371,6 +404,9 @@ class StockDatabase:
                         row.get('pbMRQ'),
                         datetime.now()
                     ))
+                
+                save_end = time.time()
+                print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Transaction committed for {code} (took {save_end - lock_acquired:.3f}s){Style.RESET_ALL}")
     
     def get_missing_date_ranges(self, code: str, start_date: str, end_date: str) -> List[Tuple[str, str]]:
         """
