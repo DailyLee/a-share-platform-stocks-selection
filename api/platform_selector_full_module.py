@@ -11,7 +11,7 @@ import baostock as bs
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 import time  # Import time for retry delay
 import os
 import sys
@@ -277,7 +277,8 @@ def is_platform_window(df: pd.DataFrame,
 
 def fetch_kline_data(code: str, start_date: str, end_date: str,
                      retry_attempts: int,
-                     retry_delay: int) -> pd.DataFrame:
+                     retry_delay: int,
+                     api_timeout: float = 5.0) -> pd.DataFrame:
     """
     Fetches daily K-line data for a specific stock code using the baostock API.
     Includes robust retry logic based on the DataManager example.
@@ -288,12 +289,24 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         end_date (str): The end date in 'YYYY-MM-DD' format.
         retry_attempts (int): Maximum number of times to retry on failure.
         retry_delay (int): Delay in seconds between retries.
+        api_timeout (float): Timeout for each API call in seconds (default: 5.0).
 
     Returns:
         pd.DataFrame: A DataFrame containing the K-line data, or an empty DataFrame on failure.
                       Columns include: date, open, high, low, close, volume, turn,
                                        preclose, pctChg, peTTM, pbMRQ.
     """
+    def _call_api_with_timeout():
+        """Internal function to call Baostock API with timeout protection"""
+        return bs.query_history_k_data_plus(
+            code,
+            "date,open,high,low,close,volume,turn,preclose,pctChg,peTTM,pbMRQ",
+            start_date=start_date,
+            end_date=end_date,
+            frequency="d",
+            adjustflag="2"
+        )
+    
     # 使用无限循环和计数器来控制重试，更接近示例代码中的实现
     retries = 0
 
@@ -301,19 +314,27 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         # 使用彩色输出，但只在调试时打印
         # print(f"{Fore.CYAN}尝试 {retries+1}/{retry_attempts}: 获取 {code} 从 {start_date} 到 {end_date} 的数据{Style.RESET_ALL}")
         try:
-            # Query historical K-line data
+            # Query historical K-line data with timeout protection
             # adjustflag='3' for no adjustment (raw data)
             # adjustflag='2' for forward adjustment
             # adjustflag='1' for backward adjustment
             # Using '2' (forward) is common for analysis comparing across time
-            rs = bs.query_history_k_data_plus(
-                code,
-                "date,open,high,low,close,volume,turn,preclose,pctChg,peTTM,pbMRQ",
-                start_date=start_date,
-                end_date=end_date,  # Use the provided end_date
-                frequency="d",     # Daily frequency
-                adjustflag="2"     # Forward adjusted prices
-            )
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_call_api_with_timeout)
+                    rs = future.result(timeout=api_timeout)
+            except FutureTimeoutError:
+                retries += 1
+                print(f"{Fore.RED}尝试 {retries}/{retry_attempts}: Baostock API 调用超时 ({api_timeout}s) {code}{Style.RESET_ALL}")
+                
+                if retries >= retry_attempts:
+                    print(f"{Fore.RED}在 {retry_attempts} 次尝试后获取 {code} 数据失败（超时）{Style.RESET_ALL}")
+                    return pd.DataFrame()
+                
+                time.sleep(retry_delay * (1 + retries * 0.5))
+                print(f"{Fore.YELLOW}重新登录 Baostock...{Style.RESET_ALL}")
+                baostock_relogin()
+                continue
 
             # Check for API errors
             if rs.error_code != '0':

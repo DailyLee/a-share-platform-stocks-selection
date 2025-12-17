@@ -365,77 +365,165 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                 # Define progress update callback
                 def update_progress(progress=None, message=None):
                     if progress is not None and message is not None:
-                        # Scale progress to 30-90 range (30% for preparation, 60% for scanning, 10% for post-processing)
-                        scaled_progress = 30 + int(progress * 0.6)
-                        task_manager.update_task(
-                            task_id, progress=scaled_progress, message=message)
+                        # Scale progress to 30-100 range (30% for preparation, 70% for scanning)
+                        # When progress=100 from scan_stocks, scale to 100 (not 90)
+                        if progress >= 100:
+                            scaled_progress = 100  # Full completion
+                            # NOTE: Don't mark as COMPLETED here - wait until result is processed
+                            # This prevents result from being None when status is COMPLETED
+                            task_manager.update_task(
+                                task_id, 
+                                progress=scaled_progress, 
+                                message=message
+                            )
+                        else:
+                            scaled_progress = 30 + int(progress * 0.7)  # Scale 0-100 to 30-100
+                            task_manager.update_task(
+                                task_id, progress=scaled_progress, message=message)
 
                 # Run the scan
-                platform_stocks = scan_stocks(
-                    stock_list, scan_config, update_progress)
+                try:
+                    print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks{Style.RESET_ALL}")
+                    platform_stocks = scan_stocks(
+                        stock_list, scan_config, update_progress)
+                    print(f"{Fore.GREEN}[INDEX] ✓ scan_stocks completed successfully, returned {len(platform_stocks)} stocks{Style.RESET_ALL}")
+                    print(f"{Fore.CYAN}[INDEX] First few stocks: {[s.get('code', 'unknown') for s in platform_stocks[:5]]}{Style.RESET_ALL}")
+                except Exception as scan_error:
+                    # Even if scan had errors, try to return partial results
+                    print(f"{Fore.RED}[INDEX] ✗ Scan encountered error: {scan_error}{Style.RESET_ALL}")
+                    import traceback
+                    traceback.print_exc()
+                    # Set empty list if scan completely failed
+                    platform_stocks = []
+                    print(f"{Fore.YELLOW}[INDEX] Continuing with empty platform_stocks list{Style.RESET_ALL}")
 
-                # Process results for API response
+                # CRITICAL FIX: Process results first, then mark as COMPLETED with result
+                # This ensures result is never null when status is COMPLETED
+                print(f"{Fore.CYAN}[INDEX] Starting to process {len(platform_stocks)} stocks into result format{Style.RESET_ALL}")
                 result_stocks = []
-                for stock in platform_stocks:
-                    # Convert kline_data to KlineDataPoint objects
-                    kline_data = []
-                    for point in stock.get('kline_data', []):
-                        try:
-                            kline_point = {
-                                'date': str(point.get('date')),
-                                'open': float(point['open']) if point.get('open') is not None else None,
-                                'high': float(point['high']) if point.get('high') is not None else None,
-                                'low': float(point['low']) if point.get('low') is not None else None,
-                                'close': float(point['close']) if point.get('close') is not None else None,
-                                'volume': float(point['volume']) if point.get('volume') is not None else None,
-                                'turn': float(point['turn']) if point.get('turn') is not None else None,
-                                'preclose': float(point['preclose']) if point.get('preclose') is not None else None,
-                                'pctChg': float(point['pctChg']) if point.get('pctChg') is not None else None,
-                                'peTTM': float(point['peTTM']) if point.get('peTTM') is not None else None,
-                                'pbMRQ': float(point['pbMRQ']) if point.get('pbMRQ') is not None else None,
-                            }
-                            kline_data.append(KlineDataPoint(**kline_point))
-                        except Exception as e:
-                            print(
-                                f"{Fore.YELLOW}Warning: Failed to process K-line data point: {e}{Style.RESET_ALL}")
+                result_processing_error = None
+                processed_count = 0
+                failed_count = 0
+                
+                try:
+                    # Process results for API response
+                    for idx, stock in enumerate(platform_stocks):
+                        processed_count += 1
+                        stock_code = stock.get('code', 'unknown')
+                        stock_name = stock.get('name', 'unknown')
+                        
+                        # Convert kline_data to KlineDataPoint objects
+                        kline_data = []
+                        kline_data_points = stock.get('kline_data', [])
+                        
+                        if not kline_data_points:
+                            print(f"{Fore.YELLOW}[INDEX] Warning: Stock {stock_code} ({stock_name}) has no kline_data, skipping{Style.RESET_ALL}")
+                            failed_count += 1
                             continue
+                        
+                        for point in kline_data_points:
+                            try:
+                                kline_point = {
+                                    'date': str(point.get('date')),
+                                    'open': float(point['open']) if point.get('open') is not None else None,
+                                    'high': float(point['high']) if point.get('high') is not None else None,
+                                    'low': float(point['low']) if point.get('low') is not None else None,
+                                    'close': float(point['close']) if point.get('close') is not None else None,
+                                    'volume': float(point['volume']) if point.get('volume') is not None else None,
+                                    'turn': float(point['turn']) if point.get('turn') is not None else None,
+                                    'preclose': float(point['preclose']) if point.get('preclose') is not None else None,
+                                    'pctChg': float(point['pctChg']) if point.get('pctChg') is not None else None,
+                                    'peTTM': float(point['peTTM']) if point.get('peTTM') is not None else None,
+                                    'pbMRQ': float(point['pbMRQ']) if point.get('pbMRQ') is not None else None,
+                                }
+                                kline_data.append(KlineDataPoint(**kline_point))
+                            except Exception as e:
+                                print(
+                                    f"{Fore.YELLOW}[INDEX] Warning: Failed to process K-line data point for {stock_code}: {e}{Style.RESET_ALL}")
+                                continue
 
-                    # Create StockScanResult object
-                    try:
-                        # 处理标记线数据
-                        mark_lines = []
-                        if 'mark_lines' in stock:
-                            for mark in stock['mark_lines']:
-                                try:
-                                    mark_lines.append(MarkLine(**mark))
-                                except Exception as e:
-                                    print(
-                                        f"{Fore.YELLOW}Warning: Failed to process mark line: {e}{Style.RESET_ALL}")
-                                    continue
+                        # Create StockScanResult object
+                        try:
+                            # 处理标记线数据
+                            mark_lines = []
+                            if 'mark_lines' in stock:
+                                for mark in stock['mark_lines']:
+                                    try:
+                                        mark_lines.append(MarkLine(**mark))
+                                    except Exception as e:
+                                        print(
+                                            f"{Fore.YELLOW}[INDEX] Warning: Failed to process mark line for {stock_code}: {e}{Style.RESET_ALL}")
+                                        continue
 
-                        result_stock = StockScanResult(
-                            code=stock['code'],
-                            name=stock['name'],
-                            industry=stock.get('industry', '未知行业'),
-                            selection_reasons=stock.get(
-                                'selection_reasons', {}),
-                            kline_data=kline_data,
-                            mark_lines=mark_lines
-                        )
-                        result_stocks.append(result_stock)
-                    except Exception as e:
-                        print(
-                            f"{Fore.RED}Error creating StockScanResult: {e}{Style.RESET_ALL}")
-                        continue
+                            result_stock = StockScanResult(
+                                code=stock['code'],
+                                name=stock['name'],
+                                industry=stock.get('industry', '未知行业'),
+                                selection_reasons=stock.get(
+                                    'selection_reasons', {}),
+                                kline_data=kline_data,
+                                mark_lines=mark_lines
+                            )
+                            result_stocks.append(result_stock)
+                            
+                            # Log progress every 10 stocks
+                            if len(result_stocks) % 10 == 0:
+                                print(f"{Fore.CYAN}[INDEX] Processed {len(result_stocks)}/{len(platform_stocks)} stocks successfully{Style.RESET_ALL}")
+                        except Exception as e:
+                            failed_count += 1
+                            print(
+                                f"{Fore.RED}[INDEX] Error creating StockScanResult for {stock_code} ({stock_name}): {e}{Style.RESET_ALL}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
+                    
+                    print(f"{Fore.GREEN}[INDEX] Result processing complete: {len(result_stocks)} successful, {failed_count} failed out of {len(platform_stocks)} total{Style.RESET_ALL}")
+                except Exception as e:
+                    # If result processing fails, log error but continue with empty result
+                    result_processing_error = str(e)
+                    print(f"{Fore.RED}Error processing results: {e}{Style.RESET_ALL}")
+                    import traceback
+                    traceback.print_exc()
+                    # result_stocks remains empty list, which is acceptable
 
-                # Update task with final result
+                # Get the current task to preserve the detailed message from scan_stocks
+                current_task = task_manager.get_task(task_id)
+                if current_task and current_task.message and "Processed" in current_task.message:
+                    # Use the detailed message from scan_stocks (contains processed count, errors, etc.)
+                    # But update it with actual result count
+                    base_message = current_task.message
+                    if len(result_stocks) != len(platform_stocks):
+                        completion_message = f"{base_message} (Filtered to {len(result_stocks)} stocks for display)"
+                    else:
+                        completion_message = base_message
+                else:
+                    # Fallback to basic message if detailed message not available
+                    if len(result_stocks) == 0 and len(platform_stocks) == 0:
+                        completion_message = "Scan completed but no platform stocks found. Some stocks may have been skipped due to timeout."
+                    else:
+                        completion_message = f"Scan completed. Found {len(platform_stocks)} platform stocks, returning {len(result_stocks)} stocks."
+                
+                # Add error info to message if result processing had errors
+                if result_processing_error:
+                    completion_message += f" (Warning: Some results may be incomplete due to processing error: {result_processing_error})"
+                
+                # Mark as COMPLETED with result (never null - at least empty list)
+                # This ensures status=COMPLETED always has a valid result
+                result_data = [stock.model_dump() for stock in result_stocks]  # Always a list, never None
+                print(f"{Fore.CYAN}[INDEX] Preparing to update task with {len(result_data)} results (type: {type(result_data)}){Style.RESET_ALL}")
                 task_manager.update_task(
                     task_id,
                     status=TaskStatus.COMPLETED,
                     progress=100,
-                    message=f"Scan completed. Found {len(result_stocks)} platform stocks.",
-                    result=[stock.model_dump() for stock in result_stocks]
+                    message=completion_message,
+                    result=result_data  # Always a list, never None
                 )
+                # Verify the result was set correctly
+                verify_task = task_manager.get_task(task_id)
+                if verify_task:
+                    print(f"{Fore.GREEN}Task {task_id} marked as COMPLETED with {len(result_data)} results. Verified: result is {type(verify_task.result)} (None: {verify_task.result is None}, length: {len(verify_task.result) if verify_task.result else 'N/A'}){Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.RED}ERROR: Task {task_id} not found after update!{Style.RESET_ALL}")
 
         except Exception as e:
             print(f"{Fore.RED}Error in scan task: {e}{Style.RESET_ALL}")

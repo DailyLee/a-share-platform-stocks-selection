@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from colorama import Fore, Style
 import traceback
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 # Import database manager
 try:
@@ -167,7 +168,8 @@ def fetch_industry_data() -> pd.DataFrame:
 
 def fetch_kline_data(code: str, start_date: str, end_date: str,
                      retry_attempts: int = 3,
-                     retry_delay: int = 1) -> pd.DataFrame:
+                     retry_delay: int = 1,
+                     api_timeout: float = 5.0) -> pd.DataFrame:
     """
     Fetch K-line data for a specific stock with retry logic.
     First checks database, then fetches missing data from API.
@@ -233,7 +235,7 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🌐 Fetching missing K-line data for {code} from {range_start} to {range_end}...{Style.RESET_ALL}")
         
         fetched_df = _fetch_kline_data_from_api(
-            code, range_start, range_end, retry_attempts, retry_delay
+            code, range_start, range_end, retry_attempts, retry_delay, api_timeout
         )
         print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ API fetch completed for {code}, got {len(fetched_df)} records{Style.RESET_ALL}")
         
@@ -267,9 +269,48 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
     return pd.DataFrame()
 
 
+def _call_baostock_api_with_timeout(code: str, start_date: str, end_date: str, timeout: float = 5.0):
+    """
+    Call Baostock API with timeout protection.
+    
+    Args:
+        code: Stock code (e.g., 'sh.600000')
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+        timeout: Timeout in seconds (default: 5.0)
+    
+    Returns:
+        Baostock result object
+    
+    Raises:
+        FutureTimeoutError: If the API call exceeds the timeout
+    """
+    def _api_call():
+        """Internal function to make the actual API call"""
+        return bs.query_history_k_data_plus(
+            code,
+            "date,open,high,low,close,volume,turn,preclose,pctChg,peTTM,pbMRQ",
+            start_date=start_date,
+            end_date=end_date,
+            frequency="d",     # Daily frequency
+            adjustflag="2"     # Forward adjusted prices
+        )
+    
+    # Use ThreadPoolExecutor to implement timeout
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_api_call)
+        try:
+            result = future.result(timeout=timeout)
+            return result
+        except FutureTimeoutError:
+            print(f"{Fore.RED}[SCAN_CHECKPOINT] ⏱️ Timeout ({timeout}s) calling Baostock API for {code}{Style.RESET_ALL}")
+            raise
+
+
 def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
                                retry_attempts: int = 3,
-                               retry_delay: int = 1) -> pd.DataFrame:
+                               retry_delay: int = 1,
+                               api_timeout: float = 5.0) -> pd.DataFrame:
     """
     Internal function to fetch K-line data from Baostock API.
     
@@ -279,6 +320,7 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
         end_date: End date in 'YYYY-MM-DD' format
         retry_attempts: Maximum number of retry attempts
         retry_delay: Delay between retries in seconds
+        api_timeout: Timeout for each API call in seconds (default: 5.0)
     
     Returns:
         pd.DataFrame: DataFrame containing K-line data
@@ -292,17 +334,24 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
             baostock_login()
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Login check completed for {code}{Style.RESET_ALL}")
             
-            # Query historical K-line data
-            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📡 Calling Baostock API for {code}...{Style.RESET_ALL}")
-            rs = bs.query_history_k_data_plus(
-                code,
-                "date,open,high,low,close,volume,turn,preclose,pctChg,peTTM,pbMRQ",
-                start_date=start_date,
-                end_date=end_date,
-                frequency="d",     # Daily frequency
-                adjustflag="2"     # Forward adjusted prices
-            )
-            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Baostock API call returned for {code}, error_code: {rs.error_code}{Style.RESET_ALL}")
+            # Query historical K-line data with timeout protection
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📡 Calling Baostock API for {code} (timeout: {api_timeout}s)...{Style.RESET_ALL}")
+            try:
+                rs = _call_baostock_api_with_timeout(code, start_date, end_date, timeout=api_timeout)
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Baostock API call returned for {code}, error_code: {rs.error_code}{Style.RESET_ALL}")
+            except FutureTimeoutError:
+                # Timeout occurred, treat as error
+                retries += 1
+                print(f"{Fore.RED}[SCAN_CHECKPOINT] ⏱️ Timeout ({api_timeout}s) for {code} (attempt {retries}/{retry_attempts}){Style.RESET_ALL}")
+                
+                if retries >= retry_attempts:
+                    print(f"{Fore.RED}Failed to fetch data for {code} after {retry_attempts} attempts (timeout){Style.RESET_ALL}")
+                    return pd.DataFrame()
+                
+                # Retry with re-login
+                time.sleep(retry_delay * (1 + retries * 0.5))
+                baostock_relogin()
+                continue
             
             # Check for API errors
             if rs.error_code != '0':
@@ -321,8 +370,35 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
             # Process the data if query was successful
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📊 Processing result data for {code}...{Style.RESET_ALL}")
             data_list = []
+            
+            # Process results with safety limits to prevent infinite loops
+            # Add timeout protection by limiting iterations and using time check
+            max_rows = 10000  # Safety limit to prevent processing too many rows
+            start_process_time = time.time()
+            max_process_time = api_timeout  # Use same timeout for processing
+            
+            row_count = 0
             while (rs.error_code == '0') & rs.next():
+                # Check timeout during processing
+                if time.time() - start_process_time > max_process_time:
+                    print(f"{Fore.RED}[SCAN_CHECKPOINT] ⏱️ Timeout ({max_process_time}s) processing results for {code} (processed {row_count} rows){Style.RESET_ALL}")
+                    raise FutureTimeoutError(f"Timeout processing results after {row_count} rows")
+                
+                # Safety limit on row count
+                if row_count >= max_rows:
+                    print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Reached max rows limit ({max_rows}) for {code}{Style.RESET_ALL}")
+                    break
+                
                 data_list.append(rs.get_row_data())
+                row_count += 1
+                
+                # Periodic check every 100 rows to avoid too frequent time checks
+                if row_count % 100 == 0:
+                    elapsed = time.time() - start_process_time
+                    if elapsed > max_process_time:
+                        print(f"{Fore.RED}[SCAN_CHECKPOINT] ⏱️ Timeout ({max_process_time}s) processing results for {code} (processed {row_count} rows){Style.RESET_ALL}")
+                        raise FutureTimeoutError(f"Timeout processing results after {row_count} rows")
+            
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Collected {len(data_list)} rows for {code}{Style.RESET_ALL}")
             
             # Convert to DataFrame
@@ -345,6 +421,19 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
             print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ COMPLETE fetch_kline_data for {code}, returning {len(df)} records{Style.RESET_ALL}")
             return df
             
+        except FutureTimeoutError:
+            # Timeout exception (should be caught above, but handle here as backup)
+            retries += 1
+            print(f"{Fore.RED}Attempt {retries}/{retry_attempts}: Timeout while fetching data for {code}{Style.RESET_ALL}")
+            
+            if retries >= retry_attempts:
+                print(f"{Fore.RED}Failed to fetch data for {code} after {retry_attempts} attempts (timeout){Style.RESET_ALL}")
+                return pd.DataFrame()
+            
+            # Retry with re-login
+            time.sleep(retry_delay * (1 + retries * 0.5))
+            baostock_relogin()
+            continue
         except Exception as e:
             retries += 1
             print(f"{Fore.RED}Attempt {retries}/{retry_attempts}: Exception while fetching data for {code}: {e}{Style.RESET_ALL}")
@@ -403,7 +492,7 @@ def build_historical_data(stock_codes: Optional[List[str]] = None,
                 progress_callback(progress, f"Building data for {code} ({idx+1}/{total_stocks})...")
             
             try:
-                df = _fetch_kline_data_from_api(code, start_date, end_date)
+                df = _fetch_kline_data_from_api(code, start_date, end_date, api_timeout=5.0)
                 if not df.empty:
                     db.save_kline_data(code, df)
                     print(f"{Fore.GREEN}Saved {len(df)} records for {code}{Style.RESET_ALL}")
