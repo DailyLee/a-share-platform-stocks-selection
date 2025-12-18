@@ -27,25 +27,21 @@
 
 
 
-      <!-- 删除确认对话框 -->
-      <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-card rounded-lg shadow-lg w-full max-w-md p-6" @click.stop>
-          <h3 class="text-lg font-semibold mb-2">确认删除</h3>
-          <p class="text-muted-foreground mb-4">确定要删除这个案例吗？此操作无法撤销。</p>
-          <div class="flex justify-end space-x-3">
-            <button class="btn btn-ghost" @click="showDeleteConfirm = false">
-              取消
-            </button>
-            <button class="btn btn-destructive" @click="deleteCase">
-              删除
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 案例详情 -->
     <CaseDetail v-else :case-id="selectedCase" @close="selectedCase = null" @delete="confirmDeleteCase" />
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-model:show="confirmDialog.show"
+      :title="confirmDialog.title"
+      :message="confirmDialog.message"
+      :type="confirmDialog.type"
+      confirm-text="删除"
+      cancel-text="取消"
+      @confirm="confirmDialog.onConfirm && confirmDialog.onConfirm()"
+    />
   </div>
 </template>
 
@@ -54,6 +50,7 @@ import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import CaseDetail from './CaseDetail.vue';
 import CaseList from './CaseList.vue';
+import ConfirmDialog from '../ConfirmDialog.vue';
 
 // 属性和事件
 const props = defineProps({
@@ -69,10 +66,19 @@ const emit = defineEmits(['close', 'case-created', 'case-deleted']);
 const cases = ref([]);
 const selectedCase = ref(null);
 const searchQuery = ref('');
-const showDeleteConfirm = ref(false);
 const caseToDelete = ref(null);
 const loading = ref(false);
 const error = ref(null);
+
+// 确认对话框相关
+const confirmDialog = ref({
+  show: false,
+  title: '确认删除',
+  message: '确定要删除这个案例吗？此操作无法撤销。',
+  type: 'danger',
+  onConfirm: null,
+  pendingAction: null
+});
 
 // 计算属性
 const filteredCases = computed(() => {
@@ -141,18 +147,23 @@ const editCase = (caseItem) => {
 
 const confirmDeleteCase = (caseItem) => {
   caseToDelete.value = caseItem.id;
-  showDeleteConfirm.value = true;
+  confirmDialog.value = {
+    show: true,
+    title: '确认删除',
+    message: '确定要删除这个案例吗？此操作无法撤销。',
+    type: 'danger',
+    onConfirm: executeDeleteCase,
+    pendingAction: caseItem.id
+  };
 };
 
-const deleteCase = async () => {
+const executeDeleteCase = async () => {
   try {
     // 调用API删除案例
-      await axios.delete(`/platform/api/cases/${caseToDelete.value}`);
+    await axios.delete(`/platform/api/cases/${caseToDelete.value}`);
 
     // 从本地列表中移除
     cases.value = cases.value.filter(caseItem => caseItem.id !== caseToDelete.value);
-
-    showDeleteConfirm.value = false;
 
     // 如果正在查看被删除的案例，则返回列表
     if (selectedCase.value === caseToDelete.value) {

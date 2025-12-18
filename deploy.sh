@@ -147,45 +147,53 @@ if [ "$USE_PASSWORD" = true ] && [ "$USE_EXPECT" = false ]; then
     ESCAPED_PASSWORD=$(printf '%q' "$SERVER_PASSWORD")
     rsync -avz --progress \
         -e "sshpass -p $ESCAPED_PASSWORD ssh $SSH_OPTIONS" \
-        --exclude 'node_modules' \
-        --exclude '.git' \
-        --exclude '.gitignore' \
-        --exclude 'dist' \
-        --exclude '__pycache__' \
-        --exclude '*.pyc' \
-        --exclude '.env' \
-        --exclude '.deploy.env' \
-        --exclude '.vscode' \
-        --exclude '.idea' \
+        --exclude='/data/' \
+        --exclude='node_modules' \
+        --exclude='.git' \
+        --exclude='.gitignore' \
+        --exclude='dist' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        --exclude='.env' \
+        --exclude='.deploy.env' \
+        --exclude='.vscode' \
+        --exclude='.idea' \
         ./ "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
 elif [ "$USE_PASSWORD" = true ] && [ "$USE_EXPECT" = true ]; then
     # 使用expect时，需要创建一个expect包装脚本用于rsync
+    # 在 bash 中构建完整的 SSH 命令字符串，确保引号正确
+    SSH_CMD_STR="ssh $SSH_OPTIONS"
+    
     # 创建临时expect脚本
     TEMP_EXPECT_SCRIPT=$(mktemp)
-    cat > "$TEMP_EXPECT_SCRIPT" << 'EXPECT_EOF'
+    cat > "$TEMP_EXPECT_SCRIPT" << EXPECT_EOF
 set timeout 600
-set password [lindex $argv 0]
-set ssh_options [lindex $argv 1]
-set server_user [lindex $argv 2]
-set server_host [lindex $argv 3]
-set deploy_path [lindex $argv 4]
+set password [lindex \$argv 0]
+set ssh_cmd [lindex \$argv 1]
+set server_user [lindex \$argv 2]
+set server_host [lindex \$argv 3]
+set deploy_path [lindex \$argv 4]
 
-spawn rsync -avz -e "ssh $ssh_options" \
-    --exclude 'node_modules' \
-    --exclude '.git' \
-    --exclude '.gitignore' \
-    --exclude 'dist' \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    --exclude '.env' \
-    --exclude '.deploy.env' \
-    --exclude '.vscode' \
-    --exclude '.idea' \
-    ./ $server_user@$server_host:$deploy_path/
+# 构建 rsync 命令
+# 注意：在 Tcl 中，spawn 命令的参数解析可能有问题，所以我们需要确保 -e 选项后的整个 SSH 命令被当作一个参数
+# 使用双引号包裹 $ssh_cmd 以确保整个 SSH 命令字符串被当作一个整体
+spawn rsync -avz -e "\$ssh_cmd" \
+    --exclude=/data/ \
+    --exclude=node_modules \
+    --exclude=.git \
+    --exclude=.gitignore \
+    --exclude=dist \
+    --exclude=__pycache__ \
+    --exclude=*.pyc \
+    --exclude=.env \
+    --exclude=.deploy.env \
+    --exclude=.vscode \
+    --exclude=.idea \
+    ./ \$server_user@\$server_host:\$deploy_path/
 
 expect {
     -re "(?i)password:" {
-        send "$password\r"
+        send "\$password\r"
         exp_continue
     }
     -re "yes/no" {
@@ -194,8 +202,8 @@ expect {
     }
     eof {
         catch wait result
-        set exit_code [lindex $result 3]
-        exit $exit_code
+        set exit_code [lindex \$result 3]
+        exit \$exit_code
     }
     timeout {
         puts "rsync timeout after 600 seconds"
@@ -204,8 +212,8 @@ expect {
 }
 EXPECT_EOF
     
-    # 执行expect脚本
-    expect "$TEMP_EXPECT_SCRIPT" "$SERVER_PASSWORD" "$SSH_OPTIONS" "$SERVER_USER" "$SERVER_HOST" "$DEPLOY_PATH"
+    # 执行expect脚本，传递完整的 SSH 命令字符串
+    expect "$TEMP_EXPECT_SCRIPT" "$SERVER_PASSWORD" "$SSH_CMD_STR" "$SERVER_USER" "$SERVER_HOST" "$DEPLOY_PATH"
     EXIT_CODE=$?
     rm -f "$TEMP_EXPECT_SCRIPT"
     
@@ -217,16 +225,17 @@ else
     # 使用密钥认证时，SSH选项必须通过-e参数传递给ssh
     rsync -avz --progress \
         -e "ssh $SSH_OPTIONS" \
-        --exclude 'node_modules' \
-        --exclude '.git' \
-        --exclude '.gitignore' \
-        --exclude 'dist' \
-        --exclude '__pycache__' \
-        --exclude '*.pyc' \
-        --exclude '.env' \
-        --exclude '.deploy.env' \
-        --exclude '.vscode' \
-        --exclude '.idea' \
+        --exclude='/data/' \
+        --exclude='node_modules' \
+        --exclude='.git' \
+        --exclude='.gitignore' \
+        --exclude='dist' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        --exclude='.env' \
+        --exclude='.deploy.env' \
+        --exclude='.vscode' \
+        --exclude='.idea' \
         ./ "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
 fi
 

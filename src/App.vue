@@ -123,7 +123,7 @@
                         数据回测
                       </button>
                       <button
-                        @click.stop="deleteScanHistoryRecord(record.id)"
+                        @click.stop="showDeleteScanHistoryConfirm(record.id)"
                         class="px-2 py-1 text-xs rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
                         title="删除"
                       >
@@ -150,7 +150,7 @@
           <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
             <button
               v-if="scanHistory.length > 0"
-              @click="clearScanHistory"
+              @click="showClearScanHistoryConfirm"
               class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
             >
               <i class="fas fa-trash mr-2"></i>
@@ -1242,6 +1242,17 @@
         </transition>
       </div>
     </main>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-model:show="confirmDialog.show"
+      :title="confirmDialog.title"
+      :message="confirmDialog.message"
+      :type="confirmDialog.type"
+      confirm-text="确认"
+      cancel-text="取消"
+      @confirm="confirmDialog.onConfirm && confirmDialog.onConfirm()"
+    />
   </div>
 </template>
 
@@ -1255,6 +1266,7 @@ import TaskProgress from './components/TaskProgress.vue'; // 任务进度组件
 import { ParameterHelpManager, ParameterLabel } from './components/parameter-help'; // 参数帮助组件
 import CaseManager from './components/case-management/CaseManager.vue'; // 案例管理组件
 import ThemeToggle from './components/ThemeToggle.vue'; // 主题切换组件
+import ConfirmDialog from './components/ConfirmDialog.vue'; // 确认对话框组件
 import { gsap } from 'gsap';
 
 const router = useRouter();
@@ -1410,6 +1422,16 @@ const scanHistory = ref([]);
 const scanHistoryLoading = ref(false);
 const selectedScanHistoryRecord = ref(null);
 const scanHistoryGroupedByDate = ref({});
+
+// 确认对话框相关
+const confirmDialog = ref({
+  show: false,
+  title: '确认操作',
+  message: '',
+  type: 'default',
+  onConfirm: null,
+  pendingAction: null // 存储待执行的删除操作参数
+});
 
 // 参数帮助相关
 const parameterHelp = inject('parameterHelp', {
@@ -2616,11 +2638,18 @@ async function viewScanHistoryRecord(record) {
 }
 
 // 删除扫描历史记录
-async function deleteScanHistoryRecord(cacheKey) {
-  if (!confirm('确定要删除这条扫描历史记录吗？此操作不可恢复。')) {
-    return
+function showDeleteScanHistoryConfirm(cacheKey) {
+  confirmDialog.value = {
+    show: true,
+    title: '确认删除',
+    message: '确定要删除这条扫描历史记录吗？此操作不可恢复。',
+    type: 'danger',
+    onConfirm: () => executeDeleteScanHistory(cacheKey),
+    pendingAction: cacheKey
   }
-  
+}
+
+async function executeDeleteScanHistory(cacheKey) {
   try {
     const response = await axios.delete(`/platform/api/scan/history/${cacheKey}`)
     if (response.data.success) {
@@ -2642,11 +2671,18 @@ async function deleteScanHistoryRecord(cacheKey) {
 }
 
 // 清空所有扫描历史
-async function clearScanHistory() {
-  if (!confirm('确定要清空所有扫描历史记录吗？此操作不可恢复。')) {
-    return
+function showClearScanHistoryConfirm() {
+  confirmDialog.value = {
+    show: true,
+    title: '确认清空',
+    message: '确定要清空所有扫描历史记录吗？此操作不可恢复。',
+    type: 'danger',
+    onConfirm: executeClearScanHistory,
+    pendingAction: null
   }
-  
+}
+
+async function executeClearScanHistory() {
   try {
     const response = await axios.delete('/platform/api/scan/history')
     if (response.data.success) {

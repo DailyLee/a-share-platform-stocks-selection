@@ -548,7 +548,7 @@
           <div class="p-4 sm:p-6 border-t border-border flex justify-end space-x-2">
             <button
               v-if="backtestHistory.length > 0"
-              @click="clearBacktestHistory"
+              @click="showClearBacktestHistoryConfirm"
               class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
             >
               <i class="fas fa-trash mr-2"></i>
@@ -670,7 +670,7 @@
                   加载到当前回测
                 </button>
                 <button
-                  @click="deleteHistoryRecord(selectedHistoryRecord.id)"
+                  @click="showDeleteHistoryConfirm(selectedHistoryRecord.id)"
                   class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
                 >
                   <i class="fas fa-trash mr-2"></i>
@@ -688,6 +688,17 @@
         </div>
       </div>
     </transition>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-model:show="confirmDialog.show"
+      :title="confirmDialog.title"
+      :message="confirmDialog.message"
+      :type="confirmDialog.type"
+      confirm-text="确认"
+      cancel-text="取消"
+      @confirm="confirmDialog.onConfirm && confirmDialog.onConfirm()"
+    />
   </div>
 </template>
 
@@ -696,6 +707,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import ThemeToggle from './ThemeToggle.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -727,6 +739,16 @@ const scanConfig = ref(null)
 const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
+
+// 确认对话框相关
+const confirmDialog = ref({
+  show: false,
+  title: '确认操作',
+  message: '',
+  type: 'default',
+  onConfirm: null,
+  pendingAction: null
+})
 const selectedHistoryRecord = ref(null)
 const backtestHistoryGroupedByDate = ref({})
 
@@ -1041,11 +1063,18 @@ async function viewHistoryRecord(record) {
 }
 
 // 删除历史记录
-async function deleteHistoryRecord(historyId) {
-  if (!confirm('确定要删除这条回测历史记录吗？此操作不可恢复。')) {
-    return
+function showDeleteHistoryConfirm(historyId) {
+  confirmDialog.value = {
+    show: true,
+    title: '确认删除',
+    message: '确定要删除这条回测历史记录吗？此操作不可恢复。',
+    type: 'danger',
+    onConfirm: () => executeDeleteHistory(historyId),
+    pendingAction: historyId
   }
-  
+}
+
+async function executeDeleteHistory(historyId) {
   try {
     const response = await axios.delete(`/platform/api/backtest/history/${historyId}`)
     if (response.data.success) {
@@ -1067,11 +1096,18 @@ async function deleteHistoryRecord(historyId) {
 }
 
 // 清空所有回测历史
-async function clearBacktestHistory() {
-  if (!confirm('确定要清空所有回测历史记录吗？此操作不可恢复。')) {
-    return
+function showClearBacktestHistoryConfirm() {
+  confirmDialog.value = {
+    show: true,
+    title: '确认清空',
+    message: '确定要清空所有回测历史记录吗？此操作不可恢复。',
+    type: 'danger',
+    onConfirm: executeClearBacktestHistory,
+    pendingAction: null
   }
-  
+}
+
+async function executeClearBacktestHistory() {
   try {
     const response = await axios.delete('/platform/api/backtest/history')
     if (response.data.success) {

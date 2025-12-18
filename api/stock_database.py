@@ -7,7 +7,7 @@ import sqlite3
 import pandas as pd
 import json
 from typing import Optional, List, Tuple, Dict, Any
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from threading import Lock
 import threading
 from contextlib import contextmanager
@@ -18,6 +18,47 @@ DB_FILE = os.path.join(DB_DIR, 'stocks.db')
 
 # Ensure database directory exists
 os.makedirs(DB_DIR, exist_ok=True)
+
+
+def normalize_timestamp_to_utc(timestamp) -> str:
+    """
+    Normalize timestamp to UTC ISO format string.
+    
+    Args:
+        timestamp: Timestamp value (datetime object or string)
+    
+    Returns:
+        UTC ISO format string (e.g., '2024-01-01T12:00:00+00:00')
+    """
+    if timestamp is None:
+        return None
+    
+    # If it's already a string, try to parse and convert to UTC
+    if isinstance(timestamp, str):
+        try:
+            # Try parsing ISO format
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            # If timezone-naive, assume it's UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Convert to UTC
+            dt_utc = dt.astimezone(timezone.utc)
+            return dt_utc.isoformat()
+        except (ValueError, AttributeError):
+            # If parsing fails, return as-is (fallback)
+            return timestamp
+    
+    # If it's a datetime object
+    if isinstance(timestamp, datetime):
+        # If timezone-naive, assume it's UTC
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        # Convert to UTC
+        dt_utc = timestamp.astimezone(timezone.utc)
+        return dt_utc.isoformat()
+    
+    # Fallback: return as string
+    return str(timestamp)
 
 
 class StockDatabase:
@@ -864,17 +905,40 @@ class StockDatabase:
         with self._lock:
             with self._transaction() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO scan_cache 
-                    (cache_key, scan_config, backtest_date, scanned_stocks, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (
-                    cache_key,
-                    json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
-                    backtest_date,
-                    json.dumps(scanned_stocks, ensure_ascii=False, default=str),
-                    datetime.now()
-                ))
+                # Use UTC time for timestamps
+                now_utc = datetime.now(timezone.utc).isoformat()
+                
+                # Check if record exists
+                cursor.execute('SELECT cache_key FROM scan_cache WHERE cache_key = ?', (cache_key,))
+                exists = cursor.fetchone() is not None
+                
+                if exists:
+                    # Update existing record, preserve created_at
+                    cursor.execute('''
+                        UPDATE scan_cache 
+                        SET scan_config = ?, backtest_date = ?, scanned_stocks = ?, updated_at = ?
+                        WHERE cache_key = ?
+                    ''', (
+                        json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
+                        backtest_date,
+                        json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                        now_utc,
+                        cache_key
+                    ))
+                else:
+                    # Insert new record with both created_at and updated_at
+                    cursor.execute('''
+                        INSERT INTO scan_cache 
+                        (cache_key, scan_config, backtest_date, scanned_stocks, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        cache_key,
+                        json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
+                        backtest_date,
+                        json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                        now_utc,
+                        now_utc
+                    ))
     
     def get_scan_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """
@@ -904,7 +968,7 @@ class StockDatabase:
                 'scan_config': json.loads(row[0]),
                 'backtest_date': row[1],
                 'scanned_stocks': json.loads(row[2]),
-                'created_at': row[3]
+                'created_at': normalize_timestamp_to_utc(row[3])
             }
     
     def clear_scan_cache(self, cache_key: Optional[str] = None) -> int:
@@ -965,8 +1029,8 @@ class StockDatabase:
                 record = {
                     'id': row[0],  # Use cache_key as id
                     'cacheKey': row[0],
-                    'createdAt': row[4],
-                    'updatedAt': row[5],
+                    'createdAt': normalize_timestamp_to_utc(row[4]),
+                    'updatedAt': normalize_timestamp_to_utc(row[5]),
                     'scanDate': row[2],  # backtest_date is the scan date
                     'stockCount': len(scanned_stocks) if isinstance(scanned_stocks, list) else 0,
                     'scanConfig': scan_config
@@ -1009,8 +1073,8 @@ class StockDatabase:
             return {
                 'id': row[0],
                 'cacheKey': row[0],
-                'createdAt': row[4],
-                'updatedAt': row[5],
+                'createdAt': normalize_timestamp_to_utc(row[4]),
+                'updatedAt': normalize_timestamp_to_utc(row[5]),
                 'scanDate': row[2],  # backtest_date is the scan date
                 'scanConfig': scan_config,
                 'scannedStocks': scanned_stocks
