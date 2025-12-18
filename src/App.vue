@@ -31,6 +31,13 @@
           <span class="hidden sm:inline">缓存管理</span>
         </router-link>
 
+        <!-- 扫描历史入口 -->
+        <button @click="showScanHistoryDialog = true; loadScanHistory()"
+          class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-purple-600 text-white hover:bg-purple-600/80 transition-colors">
+          <i class="fas fa-history mr-1 sm:mr-2"></i>
+          <span class="hidden sm:inline">扫描历史</span>
+        </button>
+
         <!-- 主题切换 -->
         <ThemeToggle />
       </div>
@@ -53,6 +60,199 @@
         </div>
       </div>
     </div>
+
+    <!-- 扫描历史对话框 -->
+    <transition name="fade">
+      <div v-if="showScanHistoryDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showScanHistoryDialog = false">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <!-- 对话框头部 -->
+          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
+            <h2 class="text-lg font-semibold flex items-center">
+              <i class="fas fa-history mr-2 text-primary"></i>
+              扫描历史记录
+            </h2>
+            <button
+              @click="showScanHistoryDialog = false"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- 对话框内容 -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div v-if="scanHistoryLoading" class="text-center py-8">
+              <i class="fas fa-spinner fa-spin text-2xl mb-4 text-primary"></i>
+              <p class="text-muted-foreground">加载中...</p>
+            </div>
+            <div v-else-if="scanHistory.length === 0" class="text-center py-8 text-muted-foreground">
+              <i class="fas fa-inbox text-4xl mb-4"></i>
+              <p>暂无扫描历史记录</p>
+            </div>
+            <div v-else class="space-y-6">
+              <!-- 按日期分组显示 -->
+              <div v-for="(records, scanDate) in scanHistoryGroupedByDate" :key="scanDate" class="space-y-3">
+                <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3">
+                  <h3 class="text-md font-semibold text-primary flex items-center">
+                    <i class="fas fa-calendar-alt mr-2"></i>
+                    扫描日期: {{ scanDate }}
+                    <span class="ml-2 text-sm text-muted-foreground">({{ records.length }} 条记录)</span>
+                  </h3>
+                </div>
+                <div
+                  v-for="(record, index) in records"
+                  :key="record.id"
+                  class="card p-4 hover:bg-muted/30 transition-colors"
+                >
+                  <div class="flex justify-between items-start mb-2">
+                    <div class="flex-1 cursor-pointer" @click="viewScanHistoryRecord(record)">
+                      <h3 class="font-semibold text-sm mb-1">
+                        扫描 #{{ records.length - index }}
+                      </h3>
+                      <p class="text-xs text-muted-foreground mt-1">
+                        {{ formatDateTime(record.createdAt) }}
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button
+                        @click.stop="goToBacktestFromScanHistory(record)"
+                        class="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors flex items-center"
+                        title="数据回测"
+                      >
+                        <i class="fas fa-chart-line mr-1"></i>
+                        数据回测
+                      </button>
+                      <button
+                        @click.stop="deleteScanHistoryRecord(record.id)"
+                        class="px-2 py-1 text-xs rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                        title="删除"
+                      >
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 text-xs cursor-pointer" @click="viewScanHistoryRecord(record)">
+                    <div>
+                      <span class="text-muted-foreground">股票数量:</span>
+                      <span class="ml-1 font-medium">{{ record.stockCount }}</span>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">窗口期:</span>
+                      <span class="ml-1 font-medium">{{ record.scanConfig?.windows?.join(', ') || 'N/A' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 对话框底部 -->
+          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
+            <button
+              v-if="scanHistory.length > 0"
+              @click="clearScanHistory"
+              class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
+            >
+              <i class="fas fa-trash mr-2"></i>
+              清空历史
+            </button>
+            <div class="flex-1"></div>
+            <button
+              @click="showScanHistoryDialog = false"
+              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 扫描历史详情对话框 -->
+    <transition name="fade">
+      <div v-if="selectedScanHistoryRecord" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="selectedScanHistoryRecord = null">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <!-- 对话框头部 -->
+          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
+            <h2 class="text-lg font-semibold flex items-center">
+              <i class="fas fa-info-circle mr-2 text-primary"></i>
+              扫描历史详情
+            </h2>
+            <button
+              @click="selectedScanHistoryRecord = null"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- 对话框内容 -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div v-if="selectedScanHistoryRecord" class="space-y-4">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <span class="text-sm text-muted-foreground">扫描日期:</span>
+                  <p class="font-medium">{{ selectedScanHistoryRecord.scanDate }}</p>
+                </div>
+                <div>
+                  <span class="text-sm text-muted-foreground">创建时间:</span>
+                  <p class="font-medium">{{ formatDateTime(selectedScanHistoryRecord.createdAt) }}</p>
+                </div>
+                <div>
+                  <span class="text-sm text-muted-foreground">股票数量:</span>
+                  <p class="font-medium">{{ selectedScanHistoryRecord.stockCount }}</p>
+                </div>
+                <div>
+                  <span class="text-sm text-muted-foreground">窗口期:</span>
+                  <p class="font-medium">{{ selectedScanHistoryRecord.scanConfig?.windows?.join(', ') || 'N/A' }}</p>
+                </div>
+              </div>
+
+              <div v-if="selectedScanHistoryRecord.scannedStocks && selectedScanHistoryRecord.scannedStocks.length > 0">
+                <h3 class="text-md font-semibold mb-3">扫描结果股票列表</h3>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="border-b border-border">
+                        <th class="text-left p-2">代码</th>
+                        <th class="text-left p-2">名称</th>
+                        <th class="text-left p-2">行业</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="stock in selectedScanHistoryRecord.scannedStocks" :key="stock.code" class="border-b border-border/50 hover:bg-muted/30">
+                        <td class="p-2">{{ stock.code }}</td>
+                        <td class="p-2">{{ stock.name }}</td>
+                        <td class="p-2">{{ stock.industry || '未知' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 对话框底部 -->
+          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
+            <button
+              v-if="selectedScanHistoryRecord && selectedScanHistoryRecord.scannedStocks && selectedScanHistoryRecord.scannedStocks.length > 0"
+              @click="goToBacktestFromScanHistory(selectedScanHistoryRecord)"
+              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm flex items-center"
+            >
+              <i class="fas fa-chart-line mr-2"></i>
+              数据回测
+            </button>
+            <div class="flex-1"></div>
+            <button
+              @click="selectedScanHistoryRecord = null"
+              class="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors text-sm"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- 主内容区 -->
     <main class="p-4 sm:p-6 md:p-8">
@@ -1204,6 +1404,13 @@ const showFullChart = ref(false);
 const showCaseManager = ref(false);
 const selectedStock = ref(null);
 
+// 扫描历史相关
+const showScanHistoryDialog = ref(false);
+const scanHistory = ref([]);
+const scanHistoryLoading = ref(false);
+const selectedScanHistoryRecord = ref(null);
+const scanHistoryGroupedByDate = ref({});
+
 // 参数帮助相关
 const parameterHelp = inject('parameterHelp', {
   openTutorial: (id) => {
@@ -2333,6 +2540,183 @@ async function fetchPlatformStocksLegacy () {
     error.value = `请求失败: ${e.message || '未知错误'}`;
   } finally {
     loading.value = false;
+  }
+}
+
+// 格式化日期时间
+function formatDateTime(isoString) {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 加载扫描历史记录列表
+async function loadScanHistory() {
+  scanHistoryLoading.value = true
+  try {
+    const response = await axios.get('/platform/api/scan/history')
+    if (response.data.success) {
+      scanHistory.value = response.data.data || []
+      // 按扫描日期分组
+      groupScanHistoryByDate()
+    } else {
+      error.value = '加载扫描历史失败'
+    }
+  } catch (e) {
+    console.error('加载扫描历史失败:', e)
+    error.value = '加载扫描历史失败: ' + (e.response?.data?.detail || e.message)
+    scanHistory.value = []
+  } finally {
+    scanHistoryLoading.value = false
+  }
+}
+
+// 按扫描日期分组扫描历史
+function groupScanHistoryByDate() {
+  const grouped = {}
+  scanHistory.value.forEach(record => {
+    const scanDate = record.scanDate || '未知日期'
+    if (!grouped[scanDate]) {
+      grouped[scanDate] = []
+    }
+    grouped[scanDate].push(record)
+  })
+  // 按日期倒序排序
+  const sortedDates = Object.keys(grouped).sort((a, b) => {
+    if (a === '未知日期') return 1
+    if (b === '未知日期') return -1
+    return b.localeCompare(a)
+  })
+  const sortedGrouped = {}
+  sortedDates.forEach(date => {
+    sortedGrouped[date] = grouped[date]
+  })
+  scanHistoryGroupedByDate.value = sortedGrouped
+}
+
+// 查看扫描历史记录详情
+async function viewScanHistoryRecord(record) {
+  try {
+    const response = await axios.get(`/platform/api/scan/history/${record.id}`)
+    if (response.data.success) {
+      selectedScanHistoryRecord.value = response.data.data
+    } else {
+      error.value = '加载扫描历史详情失败'
+    }
+  } catch (e) {
+    console.error('加载扫描历史详情失败:', e)
+    error.value = '加载扫描历史详情失败: ' + (e.response?.data?.detail || e.message)
+  }
+}
+
+// 删除扫描历史记录
+async function deleteScanHistoryRecord(cacheKey) {
+  if (!confirm('确定要删除这条扫描历史记录吗？此操作不可恢复。')) {
+    return
+  }
+  
+  try {
+    const response = await axios.delete(`/platform/api/scan/history/${cacheKey}`)
+    if (response.data.success) {
+      // 从列表中移除
+      scanHistory.value = scanHistory.value.filter(r => r.id !== cacheKey)
+      // 重新分组
+      groupScanHistoryByDate()
+      // 如果正在查看这条记录，关闭详情对话框
+      if (selectedScanHistoryRecord.value && selectedScanHistoryRecord.value.id === cacheKey) {
+        selectedScanHistoryRecord.value = null
+      }
+    } else {
+      error.value = '删除扫描历史记录失败'
+    }
+  } catch (e) {
+    console.error('删除扫描历史记录失败:', e)
+    error.value = '删除扫描历史记录失败: ' + (e.response?.data?.detail || e.message)
+  }
+}
+
+// 清空所有扫描历史
+async function clearScanHistory() {
+  if (!confirm('确定要清空所有扫描历史记录吗？此操作不可恢复。')) {
+    return
+  }
+  
+  try {
+    const response = await axios.delete('/platform/api/scan/history')
+    if (response.data.success) {
+      scanHistory.value = []
+      scanHistoryGroupedByDate.value = {}
+      selectedScanHistoryRecord.value = null
+    } else {
+      error.value = '清空扫描历史记录失败'
+    }
+  } catch (e) {
+    console.error('清空扫描历史记录失败:', e)
+    error.value = '清空扫描历史记录失败: ' + (e.response?.data?.detail || e.message)
+  }
+}
+
+// 从扫描历史跳转到回测页面
+async function goToBacktestFromScanHistory(record) {
+  try {
+    // 如果记录中没有完整的股票数据，需要先获取详情
+    let scanRecord = record
+    if (!record.scannedStocks || record.scannedStocks.length === 0) {
+      const response = await axios.get(`/platform/api/scan/history/${record.id}`)
+      if (response.data.success) {
+        scanRecord = response.data.data
+      } else {
+        error.value = '加载扫描历史详情失败'
+        return
+      }
+    }
+
+    // 检查是否有股票数据
+    if (!scanRecord.scannedStocks || scanRecord.scannedStocks.length === 0) {
+      error.value = '该扫描记录中没有股票数据，无法进行回测'
+      return
+    }
+
+    // 准备股票数据（确保格式正确）
+    const stocksForBacktest = scanRecord.scannedStocks.map(stock => ({
+      code: stock.code,
+      name: stock.name,
+      industry: stock.industry || '未知行业',
+      selection_reasons: stock.selection_reasons || {}
+    }))
+
+    // 准备扫描配置
+    const scanConfig = scanRecord.scanConfig || {}
+    
+    console.log('准备从扫描历史跳转到回测页面')
+    console.log('股票数量:', stocksForBacktest.length)
+    console.log('扫描配置:', scanConfig)
+    
+    // 保存选中的股票和扫描配置到sessionStorage
+    try {
+      sessionStorage.setItem('selectedStocks', JSON.stringify(stocksForBacktest))
+      sessionStorage.setItem('scanConfig', JSON.stringify(scanConfig))
+      console.log('已保存选中的股票和扫描配置到 sessionStorage')
+      
+      // 关闭扫描历史对话框
+      showScanHistoryDialog.value = false
+      selectedScanHistoryRecord.value = null
+      
+      // 跳转到回测页面
+      router.push('/platform/backtest')
+    } catch (e) {
+      console.error('保存数据到 sessionStorage 失败:', e)
+      error.value = '保存数据失败，请重试'
+    }
+  } catch (e) {
+    console.error('从扫描历史跳转到回测页面失败:', e)
+    error.value = '加载扫描历史数据失败: ' + (e.response?.data?.detail || e.message)
   }
 }
 

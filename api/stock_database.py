@@ -930,6 +930,108 @@ class StockDatabase:
                     return count
                 return cursor.rowcount
     
+    def get_scan_history_list(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get list of all scan history records (metadata only).
+        
+        Args:
+            limit: Maximum number of records to return
+        
+        Returns:
+            List of history record metadata
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT cache_key, scan_config, backtest_date, scanned_stocks, created_at, updated_at
+                FROM scan_cache
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+            rows = cursor.fetchall()
+            
+            records = []
+            for row in rows:
+                try:
+                    scan_config = json.loads(row[1])
+                    scanned_stocks = json.loads(row[3])  # row[3] is scanned_stocks, row[2] is backtest_date
+                except (json.JSONDecodeError, TypeError) as e:
+                    # If JSON parsing fails, skip this record or use empty values
+                    print(f"Warning: Failed to parse JSON for scan cache {row[0]}: {e}")
+                    scan_config = {}
+                    scanned_stocks = []
+                
+                record = {
+                    'id': row[0],  # Use cache_key as id
+                    'cacheKey': row[0],
+                    'createdAt': row[4],
+                    'updatedAt': row[5],
+                    'scanDate': row[2],  # backtest_date is the scan date
+                    'stockCount': len(scanned_stocks) if isinstance(scanned_stocks, list) else 0,
+                    'scanConfig': scan_config
+                }
+                records.append(record)
+            
+            return records
+    
+    def get_scan_history(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific scan history record by cache_key.
+        
+        Args:
+            cache_key: The cache key of the scan record
+        
+        Returns:
+            Full scan history record if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT cache_key, scan_config, backtest_date, scanned_stocks, created_at, updated_at
+                FROM scan_cache
+                WHERE cache_key = ?
+            ''', (cache_key,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            try:
+                scan_config = json.loads(row[1])
+                scanned_stocks = json.loads(row[3])  # row[3] is scanned_stocks, row[2] is backtest_date
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Warning: Failed to parse JSON for scan cache {row[0]}: {e}")
+                scan_config = {}
+                scanned_stocks = []
+            
+            return {
+                'id': row[0],
+                'cacheKey': row[0],
+                'createdAt': row[4],
+                'updatedAt': row[5],
+                'scanDate': row[2],  # backtest_date is the scan date
+                'scanConfig': scan_config,
+                'scannedStocks': scanned_stocks
+            }
+    
+    def delete_scan_history(self, cache_key: str) -> bool:
+        """
+        Delete a scan history record.
+        
+        Args:
+            cache_key: The cache key of the scan record to delete
+        
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM scan_cache WHERE cache_key = ?', (cache_key,))
+                return cursor.rowcount > 0
+    
     def close(self):
         """
         Close all database connections.

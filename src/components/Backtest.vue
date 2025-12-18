@@ -479,56 +479,66 @@
               <i class="fas fa-inbox text-4xl mb-4"></i>
               <p>暂无回测历史记录</p>
             </div>
-            <div v-else class="space-y-4">
-              <div
-                v-for="(record, index) in backtestHistory"
-                :key="record.id"
-                class="card p-4 hover:bg-muted/30 transition-colors cursor-pointer"
-                @click="viewHistoryRecord(record)"
-              >
-                <div class="flex justify-between items-start mb-2">
-                  <div>
-                    <h3 class="font-semibold text-sm sm:text-base">
-                      回测 #{{ backtestHistory.length - index }}
-                    </h3>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      {{ formatDateTime(record.createdAt) }}
-                    </p>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-lg font-bold" :class="record.summary.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                      {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(record.summary.totalReturnRate) }}%
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                      {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary.totalProfit) }}
-                    </div>
-                  </div>
+            <div v-else class="space-y-6">
+              <!-- 按日期分组显示 -->
+              <div v-for="(records, scanDate) in backtestHistoryGroupedByDate" :key="scanDate" class="space-y-3">
+                <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3">
+                  <h3 class="text-md font-semibold text-primary flex items-center">
+                    <i class="fas fa-calendar-alt mr-2"></i>
+                    扫描日期: {{ scanDate }}
+                    <span class="ml-2 text-sm text-muted-foreground">({{ records.length }} 条记录)</span>
+                  </h3>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
-                  <div>
-                    <span class="text-muted-foreground">回测日：</span>
-                    <span>{{ record.backtestDate }}</span>
+                <div
+                  v-for="(record, index) in records"
+                  :key="record.id"
+                  class="card p-4 hover:bg-muted/30 transition-colors cursor-pointer"
+                  @click="viewHistoryRecord(record)"
+                >
+                  <div class="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 class="font-semibold text-sm sm:text-base">
+                        回测 #{{ records.length - index }}
+                      </h3>
+                      <p class="text-xs text-muted-foreground mt-1">
+                        {{ formatDateTime(record.createdAt) }}
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-lg font-bold" :class="record.summary.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                        {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(record.summary.totalReturnRate) }}%
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary.totalProfit) }}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span class="text-muted-foreground">统计日：</span>
-                    <span>{{ record.statDate }}</span>
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
+                    <div>
+                      <span class="text-muted-foreground">回测日：</span>
+                      <span>{{ record.backtestDate }}</span>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">统计日：</span>
+                      <span>{{ record.statDate }}</span>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">股票数：</span>
+                      <span>{{ record.summary.totalStocks }}</span>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">投入：</span>
+                      <span>¥{{ formatNumber(record.summary.totalInvestment) }}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span class="text-muted-foreground">股票数：</span>
-                    <span>{{ record.summary.totalStocks }}</span>
+                  <div class="mt-2 flex flex-wrap gap-2">
+                    <span v-if="record.useStopLoss" class="px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-700 dark:text-blue-400">
+                      止损: {{ record.stopLossPercent }}%
+                    </span>
+                    <span v-if="record.useTakeProfit" class="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-700 dark:text-red-400">
+                      止盈: {{ record.takeProfitPercent }}%
+                    </span>
                   </div>
-                  <div>
-                    <span class="text-muted-foreground">投入：</span>
-                    <span>¥{{ formatNumber(record.summary.totalInvestment) }}</span>
-                  </div>
-                </div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  <span v-if="record.useStopLoss" class="px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-700 dark:text-blue-400">
-                    止损: {{ record.stopLossPercent }}%
-                  </span>
-                  <span v-if="record.useTakeProfit" class="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-700 dark:text-red-400">
-                    止盈: {{ record.takeProfitPercent }}%
-                  </span>
                 </div>
               </div>
             </div>
@@ -718,6 +728,7 @@ const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
 const selectedHistoryRecord = ref(null)
+const backtestHistoryGroupedByDate = ref({})
 
 // 筛选理由展开状态
 const expandedReasons = ref({})
@@ -976,6 +987,8 @@ async function loadBacktestHistory() {
     const response = await axios.get('/platform/api/backtest/history')
     if (response.data.success) {
       backtestHistory.value = response.data.data || []
+      // 按扫描日期分组
+      groupBacktestHistoryByDate()
     } else {
       error.value = '加载回测历史失败'
     }
@@ -986,6 +999,30 @@ async function loadBacktestHistory() {
   } finally {
     backtestHistoryLoading.value = false
   }
+}
+
+// 按扫描日期分组回测历史
+function groupBacktestHistoryByDate() {
+  const grouped = {}
+  backtestHistory.value.forEach(record => {
+    // 使用回测日作为扫描日期（因为回测日通常是扫描日期）
+    const scanDate = record.backtestDate || '未知日期'
+    if (!grouped[scanDate]) {
+      grouped[scanDate] = []
+    }
+    grouped[scanDate].push(record)
+  })
+  // 按日期倒序排序
+  const sortedDates = Object.keys(grouped).sort((a, b) => {
+    if (a === '未知日期') return 1
+    if (b === '未知日期') return -1
+    return b.localeCompare(a)
+  })
+  const sortedGrouped = {}
+  sortedDates.forEach(date => {
+    sortedGrouped[date] = grouped[date]
+  })
+  backtestHistoryGroupedByDate.value = sortedGrouped
 }
 
 // 查看历史记录详情
@@ -1014,6 +1051,8 @@ async function deleteHistoryRecord(historyId) {
     if (response.data.success) {
       // 从列表中移除
       backtestHistory.value = backtestHistory.value.filter(r => r.id !== historyId)
+      // 重新分组
+      groupBacktestHistoryByDate()
       // 如果正在查看这条记录，关闭详情对话框
       if (selectedHistoryRecord.value && selectedHistoryRecord.value.id === historyId) {
         selectedHistoryRecord.value = null
@@ -1037,6 +1076,7 @@ async function clearBacktestHistory() {
     const response = await axios.delete('/platform/api/backtest/history')
     if (response.data.success) {
       backtestHistory.value = []
+      backtestHistoryGroupedByDate.value = {}
       selectedHistoryRecord.value = null
     } else {
       error.value = '清空回测历史记录失败'

@@ -31,6 +31,10 @@ try:
         save_backtest_history, get_backtest_history_list, 
         get_backtest_history, delete_backtest_history, clear_all_backtest_history
     )
+    from api.scan_history_manager import (
+        get_scan_history_list, get_scan_history,
+        delete_scan_history, clear_all_scan_history
+    )
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
     from .config import ScanConfig
@@ -43,6 +47,10 @@ except ImportError:
     from .backtest_history_manager import (
         save_backtest_history, get_backtest_history_list, 
         get_backtest_history, delete_backtest_history, clear_all_backtest_history
+    )
+    from .scan_history_manager import (
+        get_scan_history_list, get_scan_history,
+        delete_scan_history, clear_all_scan_history
     )
 
 # Import default values from config to ensure consistency
@@ -1678,4 +1686,108 @@ async def clear_all_backtest_history_endpoint():
         raise HTTPException(
             status_code=500,
             detail=f"清空回测历史记录失败: {str(e)}"
+        )
+
+
+# =================================
+# Scan History API
+# =================================
+
+@app.get("/api/scan/history")
+async def get_scan_history_list_endpoint():
+    """
+    获取扫描历史记录列表
+    """
+    try:
+        records = get_scan_history_list()
+        return {
+            "success": True,
+            "data": records,
+            "count": len(records)
+        }
+    except Exception as e:
+        print(f"{Fore.RED}获取扫描历史列表失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取扫描历史列表失败: {str(e)}"
+        )
+
+
+@app.get("/api/scan/history/{cache_key}")
+async def get_scan_history_endpoint(cache_key: str):
+    """
+    获取单个扫描历史记录详情
+    """
+    try:
+        record = get_scan_history(cache_key)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"扫描历史记录不存在: {cache_key}"
+            )
+        return {
+            "success": True,
+            "data": record
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}获取扫描历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取扫描历史记录失败: {str(e)}"
+        )
+
+
+@app.delete("/api/scan/history/{cache_key}")
+async def delete_scan_history_endpoint(cache_key: str):
+    """
+    删除单个扫描历史记录
+    """
+    try:
+        success = delete_scan_history(cache_key)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"扫描历史记录不存在: {cache_key}"
+            )
+        return {
+            "success": True,
+            "message": "扫描历史记录已删除"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}删除扫描历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除扫描历史记录失败: {str(e)}"
+        )
+
+
+@app.delete("/api/scan/history")
+async def clear_all_scan_history_endpoint():
+    """
+    清空所有扫描历史记录
+    """
+    try:
+        count = clear_all_scan_history()
+        return {
+            "success": True,
+            "message": f"已清空 {count} 条扫描历史记录",
+            "count": count
+        }
+    except Exception as e:
+        print(f"{Fore.RED}清空扫描历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"清空扫描历史记录失败: {str(e)}"
         )
