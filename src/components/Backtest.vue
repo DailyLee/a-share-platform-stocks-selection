@@ -171,16 +171,47 @@
 
           <!-- 回测股票预览 -->
           <div v-if="selectedStocks.length > 0" class="mb-6">
-            <h3 class="text-sm font-medium mb-3 flex items-center">
-              <i class="fas fa-list mr-2 text-primary"></i>
-              回测股票预览（共 {{ selectedStocks.length }} 只）
-            </h3>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-medium flex items-center">
+                <i class="fas fa-list mr-2 text-primary"></i>
+                回测股票预览（已选 {{ selectedStockCodes.size }} / 共 {{ selectedStocks.length }} 只）
+              </h3>
+              <div class="flex items-center space-x-2">
+                <button
+                  @click="toggleSelectAll"
+                  class="text-xs px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  {{ isAllSelected ? '反选' : '全选' }}
+                </button>
+              </div>
+            </div>
             <div class="bg-muted/30 p-4 rounded-md max-h-60 overflow-y-auto">
               <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                <div v-for="stock in selectedStocks" :key="stock.code" class="flex items-center space-x-2 text-sm">
-                  <i class="fas fa-check-circle text-green-500"></i>
-                  <span class="font-medium">{{ stock.code }}</span>
-                  <span class="text-muted-foreground">{{ stock.name }}</span>
+                <div 
+                  v-for="stock in selectedStocks" 
+                  :key="stock.code" 
+                  class="flex items-center justify-between text-sm p-1.5 rounded transition-colors group"
+                >
+                  <div 
+                    class="flex items-center space-x-2 flex-1 cursor-pointer hover:bg-muted/50 rounded p-1"
+                    @click="toggleStock(stock.code)"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="selectedStockCodes.has(stock.code)"
+                      @click.stop="toggleStock(stock.code)"
+                      class="checkbox w-4 h-4 cursor-pointer"
+                    />
+                    <span class="font-medium">{{ stock.code }}</span>
+                    <span class="text-muted-foreground">{{ stock.name }}</span>
+                  </div>
+                  <button
+                    @click.stop="goToStockCheck(stock)"
+                    class="ml-2 px-2 py-1 text-xs rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover:opacity-100"
+                    title="单股查询"
+                  >
+                    <i class="fas fa-search"></i>
+                  </button>
                 </div>
               </div>
             </div>
@@ -197,7 +228,7 @@
                 <p class="text-sm" :class="selectedStocks.length > 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
                   <strong v-if="selectedStocks.length > 0">已加载回测股票：</strong>
                   <strong v-else>提示：</strong>
-                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，可以开始回测。</span>
+                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，当前选中 {{ selectedStockCodes.size }} 只，可以开始回测。</span>
                   <span v-else>请先在扫描工具页面选择股票，然后点击"数据回测"按钮进入此页面。</span>
                 </p>
               </div>
@@ -271,6 +302,18 @@
                   <div class="text-sm text-muted-foreground mb-1">总收益率</div>
                   <div class="text-2xl font-bold" :class="backtestResult.summary.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                     {{ backtestResult.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(backtestResult.summary.totalReturnRate) }}%
+                  </div>
+                </div>
+                <div class="p-4 bg-muted/30 rounded-md" v-if="backtestResult.summary.marketReturnRate !== null && backtestResult.summary.marketReturnRate !== undefined">
+                  <div class="text-sm text-muted-foreground mb-1">大盘收益率（上证指数）</div>
+                  <div class="text-2xl font-bold" :class="backtestResult.summary.marketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ backtestResult.summary.marketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(backtestResult.summary.marketReturnRate) }}%
+                  </div>
+                </div>
+                <div class="p-4 bg-muted/30 rounded-md" v-if="backtestResult.summary.marketReturnRate !== null && backtestResult.summary.marketReturnRate !== undefined">
+                  <div class="text-sm text-muted-foreground mb-1">相对大盘超额收益</div>
+                  <div class="text-2xl font-bold" :class="(backtestResult.summary.totalReturnRate - backtestResult.summary.marketReturnRate) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ (backtestResult.summary.totalReturnRate - backtestResult.summary.marketReturnRate) >= 0 ? '+' : '' }}{{ formatPercent(backtestResult.summary.totalReturnRate - backtestResult.summary.marketReturnRate) }}%
                   </div>
                 </div>
                 <div class="p-4 bg-muted/30 rounded-md">
@@ -557,6 +600,18 @@
                       {{ selectedHistoryRecord.result.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(selectedHistoryRecord.result.summary.totalReturnRate) }}%
                     </div>
                   </div>
+                  <div class="p-3 bg-muted/30 rounded-md" v-if="selectedHistoryRecord.result.summary.marketReturnRate !== null && selectedHistoryRecord.result.summary.marketReturnRate !== undefined">
+                    <div class="text-sm text-muted-foreground mb-1">大盘收益率（上证指数）</div>
+                    <div class="text-xl font-bold" :class="selectedHistoryRecord.result.summary.marketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ selectedHistoryRecord.result.summary.marketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(selectedHistoryRecord.result.summary.marketReturnRate) }}%
+                    </div>
+                  </div>
+                  <div class="p-3 bg-muted/30 rounded-md" v-if="selectedHistoryRecord.result.summary.marketReturnRate !== null && selectedHistoryRecord.result.summary.marketReturnRate !== undefined">
+                    <div class="text-sm text-muted-foreground mb-1">相对大盘超额收益</div>
+                    <div class="text-xl font-bold" :class="(selectedHistoryRecord.result.summary.totalReturnRate - selectedHistoryRecord.result.summary.marketReturnRate) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ (selectedHistoryRecord.result.summary.totalReturnRate - selectedHistoryRecord.result.summary.marketReturnRate) >= 0 ? '+' : '' }}{{ formatPercent(selectedHistoryRecord.result.summary.totalReturnRate - selectedHistoryRecord.result.summary.marketReturnRate) }}%
+                    </div>
+                  </div>
                   <div class="p-3 bg-muted/30 rounded-md">
                     <div class="text-sm text-muted-foreground mb-1">盈利股票数</div>
                     <div class="text-xl font-bold text-red-600 dark:text-red-400">{{ selectedHistoryRecord.result.summary.profitableStocks }}</div>
@@ -628,11 +683,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import ThemeToggle from './ThemeToggle.vue'
 
 const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const error = ref(null)
 const backtestResult = ref(null)
@@ -652,6 +708,8 @@ const backtestConfig = ref({
 
 // 选中的股票列表（从扫描工具页面获取）
 const selectedStocks = ref([])
+// 用于回测的选中股票代码集合（默认全选）
+const selectedStockCodes = ref(new Set())
 // 扫描配置（从扫描工具页面获取，用于设置默认回测日）
 const scanConfig = ref(null)
 
@@ -670,9 +728,20 @@ const maxDate = computed(() => {
   return today.toISOString().split('T')[0]
 })
 
+// 获取实际选中的股票列表（用于回测）
+const stocksForBacktest = computed(() => {
+  return selectedStocks.value.filter(stock => selectedStockCodes.value.has(stock.code))
+})
+
+// 是否全选
+const isAllSelected = computed(() => {
+  return selectedStocks.value.length > 0 && 
+         selectedStockCodes.value.size === selectedStocks.value.length
+})
+
 // 检查是否可以运行回测
 const canRunBacktest = computed(() => {
-  return selectedStocks.value.length > 0 &&
+  return stocksForBacktest.value.length > 0 &&
          backtestConfig.value.backtestDate && 
          backtestConfig.value.statDate &&
          (backtestConfig.value.useStopLoss || backtestConfig.value.useTakeProfit)
@@ -695,6 +764,39 @@ function initDates() {
   backtestConfig.value.statDate = today.toISOString().split('T')[0]
 }
 
+// 切换单只股票的选择状态
+function toggleStock(code) {
+  if (selectedStockCodes.value.has(code)) {
+    selectedStockCodes.value.delete(code)
+  } else {
+    selectedStockCodes.value.add(code)
+  }
+}
+
+// 全选/反选所有股票
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    // 反选：清空所有选择
+    selectedStockCodes.value.clear()
+  } else {
+    // 全选：选择所有股票
+    selectedStocks.value.forEach(stock => {
+      selectedStockCodes.value.add(stock.code)
+    })
+  }
+}
+
+// 跳转到单股检查页面
+function goToStockCheck(stock) {
+  router.push({
+    path: '/platform/check',
+    query: {
+      code: stock.code,
+      from: 'backtest'
+    }
+  })
+}
+
 // 从 sessionStorage 加载选中的股票和扫描配置
 function loadSelectedStocksAndConfig() {
   try {
@@ -706,6 +808,13 @@ function loadSelectedStocksAndConfig() {
       try {
         selectedStocks.value = JSON.parse(savedStocks)
         console.log('✓ 从 sessionStorage 加载选中的股票成功:', selectedStocks.value.length, '只')
+        
+        // 默认全选所有股票
+        selectedStockCodes.value.clear()
+        selectedStocks.value.forEach(stock => {
+          selectedStockCodes.value.add(stock.code)
+        })
+        console.log('✓ 默认全选所有股票:', selectedStockCodes.value.size, '只')
       } catch (e) {
         console.error('✗ 解析 sessionStorage 中的选中股票失败:', e)
       }
@@ -742,8 +851,8 @@ async function runBacktest() {
   }
 
   // 检查是否有选中的股票
-  if (selectedStocks.value.length === 0) {
-    error.value = '未选择股票，请先在扫描工具页面选择股票并点击"数据回测"按钮'
+  if (stocksForBacktest.value.length === 0) {
+    error.value = '请至少选择一只股票进行回测'
     return
   }
 
@@ -768,7 +877,7 @@ async function runBacktest() {
         use_take_profit: backtestConfig.value.useTakeProfit,
         stop_loss_percent: backtestConfig.value.stopLossPercent,
         take_profit_percent: backtestConfig.value.takeProfitPercent,
-        selected_stocks: selectedStocks.value
+        selected_stocks: stocksForBacktest.value
       })
     })
 
@@ -969,6 +1078,13 @@ function loadHistoryRecordToCurrent(record) {
       error.value = '历史记录中没有股票信息，无法加载'
       return
     }
+    
+    // 默认全选所有股票
+    selectedStockCodes.value.clear()
+    selectedStocks.value.forEach(stock => {
+      selectedStockCodes.value.add(stock.code)
+    })
+    console.log('✓ 默认全选所有股票:', selectedStockCodes.value.size, '只')
     
     // 加载扫描配置（用于设置默认回测日，向后兼容）
     // 优先使用 selected_stocks 中的信息，如果没有则尝试从 scan_config 加载

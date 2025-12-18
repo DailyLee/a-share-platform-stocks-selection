@@ -568,12 +568,6 @@
               <h2 class="text-lg font-semibold flex items-center">
                 <i class="fas fa-list-ul mr-2 text-primary"></i>
                 扫描结果
-                <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-primary opacity-20 text-primary">{{
-                  platformStocks.length
-                  }} 只</span>
-                <span v-if="selectedStocks && selectedStocks.length > 0" class="ml-2 px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-700 dark:text-green-400">
-                  已选择 {{ selectedStocks.length }} 只
-                </span>
               </h2>
               <div class="flex space-x-2">
                 <button 
@@ -598,14 +592,17 @@
                 <thead class="bg-muted/50">
                   <tr>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[50px]">
-                      <div class="flex items-center">
+                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <div class="flex items-center space-x-2">
                         <input
                           type="checkbox"
                           :checked="isAllSelected"
                           @change="toggleSelectAll"
                           class="checkbox"
                         />
+                        <span class="text-xs text-muted-foreground">
+                          ({{ selectedStocks ? selectedStocks.length : 0 }} / {{ platformStocks.length }})
+                        </span>
                       </div>
                     </th>
                     <th scope="col"
@@ -809,16 +806,6 @@
                             </svg>
                           </button>
 
-                          <!-- 回测数据按钮 -->
-                          <button @click="goToBacktest"
-                            class="bg-purple-500/30 hover:bg-purple-500 text-white rounded-md p-1.5 shadow-md backdrop-blur-sm transform hover:scale-110 transition-all"
-                            title="回测数据">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                              class="w-3.5 h-3.5">
-                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                            </svg>
-                          </button>
                         </div>
                       </div>
                     </td>
@@ -861,6 +848,21 @@
 
             <!-- 移动端卡片视图 -->
             <div class="md:hidden">
+              <!-- 移动端全选/反选按钮 -->
+              <div class="p-3 border-b border-border bg-muted/30 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    :checked="isAllSelected"
+                    @change="toggleSelectAll"
+                    class="checkbox"
+                  />
+                </div>
+                <span class="text-xs text-muted-foreground">
+                  {{ selectedStocks ? selectedStocks.length : 0 }} / {{ platformStocks.length }} 只
+                </span>
+              </div>
+              
               <div v-for="stock in paginatedStocks" :key="stock.code"
                 class="mb-4 border border-border rounded-lg overflow-hidden bg-card">
                 <!-- 股票基本信息 -->
@@ -899,12 +901,6 @@
                         title="单股检查">
                         <i class="fas fa-search text-sm"></i>
                       </button>
-                      <input
-                        type="checkbox"
-                        :checked="isStockSelected(stock.code)"
-                        @change="toggleStockSelection(stock)"
-                        class="checkbox"
-                      />
                     </div>
                   </div>
                 </div>
@@ -2037,9 +2033,12 @@ function startPolling (taskId) {
           platformStocks.value = processedResults;
           console.log('处理后的平台股票数据:', platformStocks.value);
 
-          // 重置分页状态和选中的股票
+          // 重置分页状态
           currentPage.value = 1;
-          selectedStocks.value = [];
+          
+          // 默认全选所有扫描结果
+          selectedStocks.value = [...processedResults];
+          console.log('✓ 扫描完成，默认全选所有股票:', selectedStocks.value.length, '只');
         } else {
           console.error("Task completed but no valid result:", taskData);
           error.value = "任务完成但未返回有效数据。";
@@ -2277,6 +2276,10 @@ async function fetchPlatformStocksLegacy () {
 
       platformStocks.value = processedResults;
       console.log('处理后的平台股票数据:', platformStocks.value);
+      
+      // 默认全选所有扫描结果
+      selectedStocks.value = [...processedResults];
+      console.log('✓ 扫描完成，默认全选所有股票:', selectedStocks.value.length, '只');
       
       // 保存扫描配置到 localStorage，供回测使用
       const currentScanConfig = {

@@ -8,11 +8,15 @@
       </div>
 
       <div class="flex items-center space-x-2 sm:space-x-3">
-        <!-- 返回首页 -->
-        <router-link :to="getBackUrl()" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors">
+        <!-- 返回按钮 -->
+        <button 
+          @click.stop.prevent="goBack" 
+          class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors cursor-pointer"
+          type="button"
+        >
           <i class="fas fa-arrow-left mr-1 sm:mr-2"></i>
           <span class="hidden sm:inline">返回</span>
-        </router-link>
+        </button>
 
         <!-- 主题切换 -->
         <ThemeToggle />
@@ -682,7 +686,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, provide } from 'vue'
+import { ref, onMounted, computed, provide, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import KlineChart from './KlineChart.vue'
@@ -932,21 +936,60 @@ function toggleDarkMode() {
   }
 }
 
-// 获取返回URL
-function getBackUrl() {
-  // 如果是从扫描页面跳转过来的，返回时添加查询参数以恢复状态
-  if (route.query.from === 'scan') {
-    return {
-      path: '/platform/',
-      query: { from: 'check' }
-    }
+// 返回上一页，如果没有历史记录则返回首页
+function goBack(event) {
+  // 阻止事件冒泡和默认行为
+  if (event) {
+    event.preventDefault()
+    event.stopPropagation()
   }
-  return '/platform/'
+  
+  try {
+    // 直接使用 router.back() 返回上一页
+    // Vue Router 会自动处理历史记录
+    router.back()
+  } catch (error) {
+    console.error('返回失败:', error)
+    // 如果返回失败，跳转到首页
+    router.push('/platform/')
+  }
 }
 
 // 提供 isDarkMode 和 toggleDarkMode 给子组件
 provide('isDarkMode', isDarkMode)
 provide('toggleDarkMode', toggleDarkMode)
+
+// 处理股票代码参数并执行分析
+function handleStockCodeFromRoute() {
+  const codeFromRoute = route.query.code
+  if (codeFromRoute) {
+    const code = String(codeFromRoute).trim()
+    console.log('从路由参数获取股票代码:', code, '当前stockCode:', stockCode.value)
+    
+    // 只有当代码不同时才更新和执行检查，避免重复请求
+    if (code !== stockCode.value) {
+      stockCode.value = code
+      // 自动执行检查
+      checkStock()
+    }
+  }
+}
+
+// 监听路由变化，处理股票代码参数
+watch(() => route.query.code, (newCode, oldCode) => {
+  console.log('路由参数变化:', { newCode, oldCode })
+  if (newCode) {
+    handleStockCodeFromRoute()
+  }
+}, { immediate: true })
+
+// 监听整个 route 对象的变化（确保路由变化时能触发）
+watch(() => route.fullPath, (newPath, oldPath) => {
+  console.log('路由路径变化:', { newPath, oldPath })
+  if (route.query.code) {
+    handleStockCodeFromRoute()
+  }
+})
 
 onMounted(() => {
   // 检查本地存储中的主题设置
@@ -957,11 +1000,7 @@ onMounted(() => {
   }
   
   // 检查URL查询参数中是否有股票代码
-  if (route.query.code) {
-    stockCode.value = String(route.query.code)
-    // 自动执行检查
-    checkStock()
-  }
+  handleStockCodeFromRoute()
 })
 </script>
 

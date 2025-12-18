@@ -1150,6 +1150,7 @@ class BacktestSummary(BaseModel):
     totalReturnRate: float
     profitableStocks: int
     lossStocks: int
+    marketReturnRate: Optional[float] = None  # 大盘收益率（同周期内）
 
 
 class BacktestResponse(BaseModel):
@@ -1369,6 +1370,54 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     profitable_stocks = sum(1 for detail in stock_details if detail['profit'] > 0)
     loss_stocks = sum(1 for detail in stock_details if detail['profit'] < 0)
     
+    # 4. 计算大盘收益率（使用上证指数 sh.000001）
+    market_return_rate = None
+    try:
+        if progress_callback:
+            progress_callback(99, "正在获取大盘指数数据...")
+        
+        # 获取上证指数数据
+        market_index_code = "sh.000001"  # 上证指数
+        start_date = request.backtest_date
+        end_date = request.stat_date
+        
+        with BaostockConnectionManager():
+            market_df = fetch_kline_data(market_index_code, start_date, end_date)
+        
+        if not market_df.empty:
+            # 确保数据按日期排序
+            market_df = market_df.sort_values('date').reset_index(drop=True)
+            
+            # 找到回测日的数据（买入日）
+            market_df['date_str'] = market_df['date'].astype(str)
+            buy_day_data = market_df[market_df['date_str'] == request.backtest_date]
+            
+            # 如果回测日没有数据，使用第一个交易日
+            if buy_day_data.empty and len(market_df) > 0:
+                buy_day_data = market_df.iloc[[0]]
+            
+            # 找到统计日的数据（卖出日）
+            stat_day_data = market_df[market_df['date_str'] == request.stat_date]
+            
+            # 如果统计日没有数据，使用最后一个交易日
+            if stat_day_data.empty and len(market_df) > 0:
+                stat_day_data = market_df.iloc[[-1]]
+            
+            if not buy_day_data.empty and not stat_day_data.empty:
+                buy_price = float(buy_day_data.iloc[0]['close'])
+                sell_price = float(stat_day_data.iloc[-1]['close'])
+                market_return_rate = ((sell_price - buy_price) / buy_price) * 100
+                print(f"{Fore.GREEN}大盘收益率计算成功: {market_return_rate:.2f}%{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}Warning: 无法找到大盘指数的买入日或统计日数据{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}Warning: 无法获取大盘指数数据{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.YELLOW}Warning: 计算大盘收益率时出错: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        # 不阻止回测完成，只是记录警告
+    
     if progress_callback:
         progress_callback(100, "回测完成！")
     
@@ -1380,7 +1429,8 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             totalProfit=total_profit,
             totalReturnRate=total_return_rate,
             profitableStocks=profitable_stocks,
-            lossStocks=loss_stocks
+            lossStocks=loss_stocks,
+            marketReturnRate=market_return_rate
         ),
         buyRecords=[BuyRecord(**record) for record in buy_records],
         sellRecords=[SellRecord(**record) for record in sell_records],
