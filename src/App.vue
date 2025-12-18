@@ -18,12 +18,6 @@
           <span class="hidden sm:inline">单股检查</span>
         </router-link>
 
-        <!-- 回测数据入口 -->
-        <button @click="goToBacktest" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-purple-600 text-white hover:bg-purple-600/80 transition-colors">
-          <i class="fas fa-chart-line mr-1 sm:mr-2"></i>
-          <span class="hidden sm:inline">回测数据</span>
-        </button>
-
         <!-- 案例管理入口 -->
         <button @click="showCaseManager = true"
           class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors">
@@ -513,6 +507,32 @@
               </div>
             </div>
           </div>
+          
+          <!-- 系统设置 -->
+          <div class="mb-6">
+            <h3 class="text-sm font-medium mb-3 flex items-center">
+              <i class="fas fa-cog mr-2 text-primary"></i>
+              系统设置
+            </h3>
+            <div class="bg-muted/30 p-4 rounded-md space-y-3">
+              <div class="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="useScanCache"
+                  v-model="config.use_scan_cache"
+                  class="checkbox"
+                />
+                <label for="useScanCache" class="text-sm cursor-pointer">
+                  <i class="fas fa-database mr-1 text-primary"></i>
+                  使用扫描结果缓存
+                </label>
+              </div>
+              <p class="text-xs text-muted-foreground ml-6">
+                开启后，相同参数的扫描结果会从缓存中读取，提高扫描速度。关闭后会重新从数据中筛选，不使用缓存。
+              </p>
+            </div>
+          </div>
+          
           <div class="flex items-center justify-center">
             <button @click="fetchPlatformStocks" :disabled="loading" class="btn btn-primary py-2 px-6" type="button">
               <i class="fas fa-search mr-2" v-if="!loading"></i>
@@ -551,8 +571,19 @@
                 <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-primary opacity-20 text-primary">{{
                   platformStocks.length
                   }} 只</span>
+                <span v-if="selectedStocks && selectedStocks.length > 0" class="ml-2 px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-700 dark:text-green-400">
+                  已选择 {{ selectedStocks.length }} 只
+                </span>
               </h2>
               <div class="flex space-x-2">
+                <button 
+                  @click="goToBacktest" 
+                  :disabled="!selectedStocks || selectedStocks.length === 0"
+                  class="btn btn-primary text-xs py-1 px-2"
+                  :class="!selectedStocks || selectedStocks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+                >
+                  <i class="fas fa-chart-line mr-1"></i> 数据回测
+                </button>
                 <button @click="exportToCSV" class="btn btn-secondary text-xs py-1 px-2">
                   <i class="fas fa-download mr-1"></i> 导出
                 </button>
@@ -566,6 +597,17 @@
               <table class="w-full">
                 <thead class="bg-muted/50">
                   <tr>
+                    <th scope="col"
+                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[50px]">
+                      <div class="flex items-center">
+                        <input
+                          type="checkbox"
+                          :checked="isAllSelected"
+                          @change="toggleSelectAll"
+                          class="checkbox"
+                        />
+                      </div>
+                    </th>
                     <th scope="col"
                       class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[100px]">
                       <div class="flex items-center">
@@ -600,6 +642,14 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                   <tr v-for="stock in paginatedStocks" :key="stock.code">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        :checked="isStockSelected(stock.code)"
+                        @change="toggleStockSelection(stock)"
+                        class="checkbox"
+                      />
+                    </td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium">{{ stock.code }}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm">{{ stock.name }}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -816,13 +866,21 @@
                 <!-- 股票基本信息 -->
                 <div class="p-3 border-b border-border bg-muted/20">
                   <div class="flex justify-between items-center">
-                    <div>
-                      <div class="font-medium">{{ stock.name }} <span class="text-muted-foreground">{{ stock.code
-                          }}</span></div>
-                      <div class="mt-1">
-                        <span class="px-2 py-0.5 rounded-full text-xs bg-primary/20 text-primary">
-                          {{ stock.industry || '未知行业' }}
-                        </span>
+                    <div class="flex items-center space-x-2 flex-1">
+                      <input
+                        type="checkbox"
+                        :checked="isStockSelected(stock.code)"
+                        @change="toggleStockSelection(stock)"
+                        class="checkbox"
+                      />
+                      <div>
+                        <div class="font-medium">{{ stock.name }} <span class="text-muted-foreground">{{ stock.code
+                            }}</span></div>
+                        <div class="mt-1">
+                          <span class="px-2 py-0.5 rounded-full text-xs bg-primary/20 text-primary">
+                            {{ stock.industry || '未知行业' }}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div class="flex space-x-2">
@@ -841,11 +899,12 @@
                         title="单股检查">
                         <i class="fas fa-search text-sm"></i>
                       </button>
-                      <button @click="goToBacktest"
-                        class="bg-purple-500/20 hover:bg-purple-500/30 text-purple-600 dark:text-purple-400 rounded-md p-1.5 transition-colors"
-                        title="回测数据">
-                        <i class="fas fa-chart-line text-sm"></i>
-                      </button>
+                      <input
+                        type="checkbox"
+                        :checked="isStockSelected(stock.code)"
+                        @change="toggleStockSelection(stock)"
+                        class="checkbox"
+                      />
                     </div>
                   </div>
                 </div>
@@ -926,6 +985,22 @@
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- 移动端数据回测按钮 -->
+              <div class="px-2 mb-3">
+                <button 
+                  @click="goToBacktest" 
+                  :disabled="!selectedStocks || selectedStocks.length === 0"
+                  class="btn btn-primary w-full text-sm py-2"
+                  :class="!selectedStocks || selectedStocks.length === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+                >
+                  <i class="fas fa-chart-line mr-2"></i> 
+                  数据回测
+                  <span v-if="selectedStocks && selectedStocks.length > 0" class="ml-2 px-2 py-0.5 rounded-full text-xs bg-white/20">
+                    {{ selectedStocks.length }} 只
+                  </span>
+                </button>
               </div>
 
               <!-- 移动端分页控制器 -->
@@ -1051,7 +1126,10 @@ const config = ref({
   window_weights: {}, // 窗口权重
 
   // 排序参数
-  sort_by_breakthrough: true // 根据突破&突破前兆排序，默认开启
+  sort_by_breakthrough: true, // 根据突破&突破前兆排序，默认开启
+  
+  // 系统设置
+  use_scan_cache: true // 是否使用扫描结果缓存，默认为开启
 });
 
 const platformStocks = ref([]);
@@ -1061,6 +1139,7 @@ const hasSearched = ref(false); // Track if a search has been performed
 const isDarkMode = ref(false); // 暗色模式状态
 const windowWeights = ref({}); // 窗口权重
 const expandedReasons = ref({}); // 跟踪每个股票的选择理由是否展开
+const selectedStocks = ref([]); // 选中的股票列表（用于回测）
 
 // 分页相关状态
 const currentPage = ref(1);
@@ -1471,6 +1550,50 @@ function toggleReasonExpand (stockCode) {
 }
 
 // 导出股票到案例库
+// 股票选择相关方法
+function isStockSelected(code) {
+  return selectedStocks.value && selectedStocks.value.some(s => s.code === code);
+}
+
+function toggleStockSelection(stock) {
+  if (!selectedStocks.value) {
+    selectedStocks.value = [];
+  }
+  const index = selectedStocks.value.findIndex(s => s.code === stock.code);
+  if (index >= 0) {
+    selectedStocks.value.splice(index, 1);
+  } else {
+    selectedStocks.value.push(stock);
+  }
+}
+
+const isAllSelected = computed(() => {
+  return paginatedStocks.value.length > 0 && 
+         paginatedStocks.value.every(stock => isStockSelected(stock.code));
+});
+
+function toggleSelectAll() {
+  if (!selectedStocks.value) {
+    selectedStocks.value = [];
+  }
+  if (isAllSelected.value) {
+    // 取消选择当前页的所有股票
+    paginatedStocks.value.forEach(stock => {
+      const index = selectedStocks.value.findIndex(s => s.code === stock.code);
+      if (index >= 0) {
+        selectedStocks.value.splice(index, 1);
+      }
+    });
+  } else {
+    // 选择当前页的所有股票
+    paginatedStocks.value.forEach(stock => {
+      if (!isStockSelected(stock.code)) {
+        selectedStocks.value.push(stock);
+      }
+    });
+  }
+}
+
 // 跳转到单股检查页面
 function goToStockCheck(stock) {
   router.push({
@@ -1483,6 +1606,10 @@ function goToStockCheck(stock) {
 
 // 跳转到回测页面
 function goToBacktest() {
+  if (!selectedStocks.value || selectedStocks.value.length === 0) {
+    error.value = '请至少选择一只股票进行回测';
+    return;
+  }
   // 获取当前扫描配置
   const currentScanConfig = {
     scan_date: config.value.scan_date || maxDate.value,
@@ -1523,23 +1650,17 @@ function goToBacktest() {
   
   console.log('准备跳转到回测页面，当前扫描配置:', currentScanConfig);
   
-  // 直接使用 sessionStorage 保存配置（更可靠）
+  // 保存选中的股票和扫描配置到sessionStorage
   try {
-    const configJson = JSON.stringify(currentScanConfig);
-    console.log('配置 JSON 长度:', configJson.length);
-    sessionStorage.setItem('scanConfig', configJson);
-    console.log('配置已保存到 sessionStorage');
-    
-    // 同时保存到 localStorage 作为备份
-    localStorage.setItem('scanConfig', configJson);
-    console.log('配置已保存到 localStorage 作为备份');
+    sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value));
+    sessionStorage.setItem('scanConfig', JSON.stringify(currentScanConfig));
+    console.log('已保存选中的股票和扫描配置到 sessionStorage');
     
     // 跳转到回测页面
     router.push('/platform/backtest');
   } catch (e) {
-    console.error('保存扫描配置失败:', e);
-    // 即使保存失败，也跳转页面，让用户看到错误提示
-    router.push('/platform/backtest');
+    console.error('保存数据到 sessionStorage 失败:', e);
+    error.value = '保存数据失败，请重试';
   }
 }
 
@@ -1916,8 +2037,9 @@ function startPolling (taskId) {
           platformStocks.value = processedResults;
           console.log('处理后的平台股票数据:', platformStocks.value);
 
-          // 重置分页状态
+          // 重置分页状态和选中的股票
           currentPage.value = 1;
+          selectedStocks.value = [];
         } else {
           console.error("Task completed but no valid result:", taskData);
           error.value = "任务完成但未返回有效数据。";
@@ -2023,7 +2145,10 @@ async function fetchPlatformStocks () {
       liability_percentile: config.value.liability_percentile,
       pe_percentile: config.value.pe_percentile,
       pb_percentile: config.value.pb_percentile,
-      fundamental_years_to_check: config.value.fundamental_years_to_check
+      fundamental_years_to_check: config.value.fundamental_years_to_check,
+      
+      // 系统设置
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true
     };
 
     console.log("发送POST请求到 /platform/api/scan/start...");
@@ -2128,7 +2253,10 @@ async function fetchPlatformStocksLegacy () {
       liability_percentile: config.value.liability_percentile,
       pe_percentile: config.value.pe_percentile,
       pb_percentile: config.value.pb_percentile,
-      fundamental_years_to_check: config.value.fundamental_years_to_check
+      fundamental_years_to_check: config.value.fundamental_years_to_check,
+      
+      // 系统设置
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true
     };
 
     console.log("使用旧版API直接请求...");

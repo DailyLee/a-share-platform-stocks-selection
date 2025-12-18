@@ -52,7 +52,7 @@
                 :max="maxDate"
               />
               <p class="text-xs text-muted-foreground mt-1">
-                以这一天为截止日，扫描平台期的股票
+                以这一天为买入日，买入选中的股票
               </p>
             </div>
 
@@ -169,28 +169,37 @@
             </div>
           </div>
 
-          <!-- 扫描参数提示 -->
-          <div class="mb-6 p-4" :class="scanConfig ? 'bg-green-500/10 border border-green-500/20' : 'bg-amber-500/10 border border-amber-500/20'">
+          <!-- 回测股票预览 -->
+          <div v-if="selectedStocks.length > 0" class="mb-6">
+            <h3 class="text-sm font-medium mb-3 flex items-center">
+              <i class="fas fa-list mr-2 text-primary"></i>
+              回测股票预览（共 {{ selectedStocks.length }} 只）
+            </h3>
+            <div class="bg-muted/30 p-4 rounded-md max-h-60 overflow-y-auto">
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                <div v-for="stock in selectedStocks" :key="stock.code" class="flex items-center space-x-2 text-sm">
+                  <i class="fas fa-check-circle text-green-500"></i>
+                  <span class="font-medium">{{ stock.code }}</span>
+                  <span class="text-muted-foreground">{{ stock.name }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 提示信息 -->
+          <div class="mb-6 p-4" :class="selectedStocks.length > 0 ? 'bg-green-500/10 border border-green-500/20' : 'bg-amber-500/10 border border-amber-500/20'">
             <div class="flex items-start">
               <i :class="[
-                scanConfig ? 'fas fa-check-circle text-green-500' : 'fas fa-info-circle text-amber-500',
+                selectedStocks.length > 0 ? 'fas fa-check-circle text-green-500' : 'fas fa-info-circle text-amber-500',
                 'mr-2 mt-0.5'
               ]"></i>
               <div class="flex-1">
-                <p class="text-sm" :class="scanConfig ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
-                  <strong v-if="scanConfig">已加载扫描配置：</strong>
+                <p class="text-sm" :class="selectedStocks.length > 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
+                  <strong v-if="selectedStocks.length > 0">已加载回测股票：</strong>
                   <strong v-else>提示：</strong>
-                  <span v-if="scanConfig">扫描配置已从扫描工具页面直接传递，可以开始回测。</span>
-                  <span v-else>回测将使用扫描工具页面配置的扫描参数。请先在扫描工具页面配置好参数，然后点击"回测数据"按钮进入此页面。</span>
+                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，可以开始回测。</span>
+                  <span v-else>请先在扫描工具页面选择股票，然后点击"数据回测"按钮进入此页面。</span>
                 </p>
-                <button
-                  v-if="!scanConfig"
-                  @click="loadScanConfig"
-                  class="mt-2 text-sm hover:underline text-amber-700 dark:text-amber-400"
-                >
-                  <i class="fas fa-sync mr-1"></i>
-                  尝试重新加载参数
-                </button>
               </div>
             </div>
           </div>
@@ -394,47 +403,6 @@
               </div>
             </div>
 
-            <!-- 每只股票详细数据 -->
-            <div class="card p-4 sm:p-6">
-              <h2 class="text-lg font-semibold mb-4 flex items-center">
-                <i class="fas fa-list mr-2 text-primary"></i>
-                每只股票详细数据
-              </h2>
-              <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="border-b border-border">
-                      <th class="text-left p-2">股票代码</th>
-                      <th class="text-left p-2">股票名称</th>
-                      <th class="text-right p-2">买入金额</th>
-                      <th class="text-right p-2">卖出金额</th>
-                      <th class="text-right p-2">盈亏金额</th>
-                      <th class="text-right p-2">收益率</th>
-                      <th class="text-right p-2">状态</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="stock in backtestResult.stockDetails" :key="stock.code" class="border-b border-border/50 hover:bg-muted/30">
-                      <td class="p-2">{{ stock.code }}</td>
-                      <td class="p-2">{{ stock.name }}</td>
-                      <td class="p-2 text-right">¥{{ formatNumber(stock.buyAmount) }}</td>
-                      <td class="p-2 text-right">¥{{ formatNumber(stock.sellAmount) }}</td>
-                      <td class="p-2 text-right" :class="stock.profit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                        {{ stock.profit >= 0 ? '+' : '' }}¥{{ formatNumber(stock.profit) }}
-                      </td>
-                      <td class="p-2 text-right" :class="stock.returnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                        {{ stock.returnRate >= 0 ? '+' : '' }}{{ formatPercent(stock.returnRate) }}%
-                      </td>
-                      <td class="p-2 text-right">
-                        <span class="px-2 py-0.5 rounded-full text-xs" :class="stock.status === '已卖出' ? 'bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-gray-500/20 text-gray-700 dark:text-gray-400'">
-                          {{ stock.status }}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         </transition>
       </div>
@@ -682,7 +650,9 @@ const backtestConfig = ref({
   takeProfitPercent: 15 // 止盈百分比
 })
 
-// 扫描配置（从扫描工具页面获取）
+// 选中的股票列表（从扫描工具页面获取）
+const selectedStocks = ref([])
+// 扫描配置（从扫描工具页面获取，用于设置默认回测日）
 const scanConfig = ref(null)
 
 // 回测历史相关
@@ -702,7 +672,8 @@ const maxDate = computed(() => {
 
 // 检查是否可以运行回测
 const canRunBacktest = computed(() => {
-  return backtestConfig.value.backtestDate && 
+  return selectedStocks.value.length > 0 &&
+         backtestConfig.value.backtestDate && 
          backtestConfig.value.statDate &&
          (backtestConfig.value.useStopLoss || backtestConfig.value.useTakeProfit)
 })
@@ -710,41 +681,44 @@ const canRunBacktest = computed(() => {
 // 初始化日期
 function initDates() {
   const today = new Date()
-  const oneWeekAgo = new Date(today)
-  oneWeekAgo.setDate(today.getDate() - 7)
+  
+  // 如果扫描配置中有扫描日期，使用扫描日期作为默认回测日
+  if (scanConfig.value && scanConfig.value.scan_date) {
+    backtestConfig.value.backtestDate = scanConfig.value.scan_date
+  } else {
+    // 否则使用一周前
+    const oneWeekAgo = new Date(today)
+    oneWeekAgo.setDate(today.getDate() - 7)
+    backtestConfig.value.backtestDate = oneWeekAgo.toISOString().split('T')[0]
+  }
   
   backtestConfig.value.statDate = today.toISOString().split('T')[0]
-  backtestConfig.value.backtestDate = oneWeekAgo.toISOString().split('T')[0]
 }
 
-// 从路由参数或 sessionStorage 加载扫描配置
-function loadScanConfig() {
+// 从 sessionStorage 加载选中的股票和扫描配置
+function loadSelectedStocksAndConfig() {
   try {
-    console.log('开始加载扫描配置...')
-    console.log('路由 query 参数:', route.query)
+    console.log('开始加载选中的股票和扫描配置...')
     
-    // 优先从路由参数获取
-    if (route.query.scanConfig) {
+    // 从 sessionStorage 获取选中的股票
+    const savedStocks = sessionStorage.getItem('selectedStocks')
+    if (savedStocks) {
       try {
-        const decoded = decodeURIComponent(route.query.scanConfig)
-        scanConfig.value = JSON.parse(decoded)
-        console.log('✓ 从路由参数加载扫描配置成功:', scanConfig.value)
-        error.value = null
-        return true
+        selectedStocks.value = JSON.parse(savedStocks)
+        console.log('✓ 从 sessionStorage 加载选中的股票成功:', selectedStocks.value.length, '只')
       } catch (e) {
-        console.error('✗ 解析路由参数中的扫描配置失败:', e)
+        console.error('✗ 解析 sessionStorage 中的选中股票失败:', e)
       }
+    } else {
+      console.log('✗ sessionStorage 中没有找到 selectedStocks')
     }
     
-    // 从 sessionStorage 获取（主要方式）
-    console.log('检查 sessionStorage...')
+    // 从 sessionStorage 获取扫描配置（用于设置默认回测日）
     const savedConfig = sessionStorage.getItem('scanConfig')
     if (savedConfig) {
       try {
         scanConfig.value = JSON.parse(savedConfig)
         console.log('✓ 从 sessionStorage 加载扫描配置成功:', scanConfig.value)
-        error.value = null
-        return true
       } catch (e) {
         console.error('✗ 解析 sessionStorage 中的扫描配置失败:', e)
       }
@@ -752,28 +726,10 @@ function loadScanConfig() {
       console.log('✗ sessionStorage 中没有找到 scanConfig')
     }
     
-    // 最后尝试从 localStorage 获取（向后兼容）
-    console.log('检查 localStorage...')
-    const localConfig = localStorage.getItem('scanConfig')
-    if (localConfig) {
-      try {
-        scanConfig.value = JSON.parse(localConfig)
-        console.log('✓ 从 localStorage 加载扫描配置成功:', scanConfig.value)
-        error.value = null
-        return true
-      } catch (e) {
-        console.error('✗ 解析 localStorage 中的扫描配置失败:', e)
-      }
-    } else {
-      console.log('✗ localStorage 中没有找到 scanConfig')
-    }
-    
-    console.log('✗ 所有方式都未找到扫描配置')
-    // 不设置错误，只返回 false，让调用者决定是否显示错误
-    return false
+    return selectedStocks.value.length > 0
   } catch (e) {
-    console.error('✗ 加载扫描配置时发生异常:', e)
-    error.value = '加载扫描配置失败: ' + e.message
+    console.error('✗ 加载数据时发生异常:', e)
+    error.value = '加载数据失败: ' + e.message
     return false
   }
 }
@@ -785,12 +741,10 @@ async function runBacktest() {
     return
   }
 
-  // 尝试加载扫描配置
-  if (!scanConfig.value) {
-    if (!loadScanConfig()) {
-      error.value = '未找到扫描配置，请先在扫描工具页面配置参数并执行扫描'
-      return
-    }
+  // 检查是否有选中的股票
+  if (selectedStocks.value.length === 0) {
+    error.value = '未选择股票，请先在扫描工具页面选择股票并点击"数据回测"按钮'
+    return
   }
 
   loading.value = true
@@ -814,7 +768,7 @@ async function runBacktest() {
         use_take_profit: backtestConfig.value.useTakeProfit,
         stop_loss_percent: backtestConfig.value.stopLossPercent,
         take_profit_percent: backtestConfig.value.takeProfitPercent,
-        scan_config: scanConfig.value
+        selected_stocks: selectedStocks.value
       })
     })
 
@@ -996,19 +950,50 @@ function loadHistoryRecordToCurrent(record) {
     backtestConfig.value.stopLossPercent = record.config.stop_loss_percent || -3
     backtestConfig.value.takeProfitPercent = record.config.take_profit_percent || 10
     
-    // 加载扫描配置（重要：回测需要扫描配置才能运行）
-    if (record.config.scan_config) {
+    // 加载选中的股票
+    // 优先从 config.selected_stocks 加载（新格式）
+    if (record.config.selected_stocks && Array.isArray(record.config.selected_stocks)) {
+      selectedStocks.value = record.config.selected_stocks
+      console.log('✓ 从历史记录配置中加载选中的股票成功:', selectedStocks.value.length, '只')
+    } 
+    // 否则从回测结果中提取（向后兼容旧格式）
+    else if (record.result && record.result.buyRecords) {
+      selectedStocks.value = record.result.buyRecords.map(record => ({
+        code: record.code,
+        name: record.name,
+        selection_reasons: record.selection_reasons || {}
+      }))
+      console.log('✓ 从历史记录结果中提取选中的股票成功:', selectedStocks.value.length, '只')
+    } else {
+      console.warn('历史记录中没有股票信息')
+      error.value = '历史记录中没有股票信息，无法加载'
+      return
+    }
+    
+    // 加载扫描配置（用于设置默认回测日，向后兼容）
+    // 优先使用 selected_stocks 中的信息，如果没有则尝试从 scan_config 加载
+    if (record.config.selected_stocks && record.config.selected_stocks.length > 0) {
+      // 新格式：从 selected_stocks 中提取信息，尝试从 sessionStorage 获取扫描配置
+      try {
+        const savedScanConfig = sessionStorage.getItem('scanConfig')
+        if (savedScanConfig) {
+          scanConfig.value = JSON.parse(savedScanConfig)
+        }
+        sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value))
+        console.log('✓ 股票已加载并保存到 sessionStorage')
+      } catch (e) {
+        console.error('保存数据到 sessionStorage 失败:', e)
+      }
+    } else if (record.config.scan_config) {
+      // 旧格式：向后兼容
       scanConfig.value = record.config.scan_config
-      // 同时保存到 sessionStorage，确保回测时可以使用
       try {
         sessionStorage.setItem('scanConfig', JSON.stringify(record.config.scan_config))
-        console.log('✓ 扫描配置已加载并保存到 sessionStorage')
+        sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value))
+        console.log('✓ 扫描配置和股票已加载并保存到 sessionStorage（旧格式）')
       } catch (e) {
-        console.error('保存扫描配置到 sessionStorage 失败:', e)
+        console.error('保存数据到 sessionStorage 失败:', e)
       }
-    } else {
-      console.warn('历史记录中没有扫描配置，回测可能无法运行')
-      error.value = '历史记录中没有扫描配置，请手动配置扫描参数'
     }
     
     // 加载并显示回测结果数据
@@ -1046,9 +1031,10 @@ function formatDateTime(isoString) {
 }
 
 onMounted(() => {
+  // 加载选中的股票和扫描配置
+  loadSelectedStocksAndConfig()
+  // 初始化日期（会使用扫描配置中的扫描日期作为默认回测日）
   initDates()
-  // 自动加载扫描配置（优先从路由参数，然后 sessionStorage，最后 localStorage）
-  loadScanConfig()
 })
 </script>
 

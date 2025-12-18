@@ -169,6 +169,9 @@ class ScanConfigRequest(BaseModel):
     retry_attempts: int = 2
     retry_delay: int = 1
     expected_count: int = 10  # 期望返回的股票数量，默认为10
+    
+    # Cache settings
+    use_scan_cache: bool = True  # 是否使用扫描结果缓存，默认为开启
 
 # --- Define response models ---
 
@@ -276,8 +279,9 @@ def generate_scan_cache_key(scan_config: Dict[str, Any], backtest_date: str) -> 
     Returns:
         MD5 hash string as cache key
     """
-    # Ensure scan_date is not in config_dict (it's passed separately)
-    clean_config = {k: v for k, v in scan_config.items() if k != 'scan_date'}
+    # Ensure scan_date and use_scan_cache are not in config_dict
+    # scan_date is passed separately, use_scan_cache doesn't affect cache key
+    clean_config = {k: v for k, v in scan_config.items() if k not in ['scan_date', 'use_scan_cache']}
     
     # Sort config keys and convert to JSON string for consistent hashing
     config_str = json.dumps(clean_config, sort_keys=True, ensure_ascii=False)
@@ -408,11 +412,12 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                 else:
                     print(f"{Fore.GREEN}[INDEX] ✓ 使用配置的扫描日期: {scan_date}{Style.RESET_ALL}")
                 
-                # 生成缓存键：从 config_dict 中移除 scan_date，避免重复
-                # 因为 scan_date 会作为单独参数传入，不应该同时出现在 config_dict 中
+                # 生成缓存键：从 config_dict 中移除 scan_date 和 use_scan_cache，避免影响缓存键
+                # scan_date 会作为单独参数传入，use_scan_cache 不影响扫描结果
                 cache_config_dict = config_dict.copy()
                 original_scan_date_in_dict = cache_config_dict.get('scan_date')
                 cache_config_dict.pop('scan_date', None)  # 移除 scan_date，避免影响缓存键
+                cache_config_dict.pop('use_scan_cache', None)  # 移除 use_scan_cache，避免影响缓存键
                 
                 # 详细日志：显示缓存键生成过程
                 print(f"{Fore.CYAN}[CACHE_DEBUG] 原始 config_dict 中的 scan_date: {original_scan_date_in_dict}{Style.RESET_ALL}")
@@ -422,9 +427,17 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                 cache_key = generate_scan_cache_key(cache_config_dict, scan_date)
                 print(f"{Fore.CYAN}[INDEX] 缓存键生成: scan_date={scan_date}, cache_key={cache_key[:16]}...{Style.RESET_ALL}")
                 
-                # 检查缓存
+                # 检查缓存（如果启用了缓存）
                 db = get_stock_database()
-                cached_result = db.get_scan_cache(cache_key)
+                cached_result = None
+                if config_request.use_scan_cache:
+                    cached_result = db.get_scan_cache(cache_key)
+                    if cached_result:
+                        print(f"{Fore.GREEN}[INDEX] 使用扫描结果缓存（use_scan_cache=True）{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.YELLOW}[INDEX] 缓存未命中，将执行新扫描（use_scan_cache=True）{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.CYAN}[INDEX] 跳过缓存检查，直接执行扫描（use_scan_cache=False）{Style.RESET_ALL}")
                 
                 if cached_result:
                     cached_scan_date = cached_result.get('backtest_date', 'unknown')
@@ -671,11 +684,12 @@ async def run_scan(config_request: ScanConfigRequest):
     else:
         print(f"{Fore.GREEN}[INDEX] ✓ 使用配置的扫描日期: {scan_date}{Style.RESET_ALL}")
     
-    # 生成缓存键：从 config_dict 中移除 scan_date，避免重复
-    # 因为 scan_date 会作为单独参数传入，不应该同时出现在 config_dict 中
+    # 生成缓存键：从 config_dict 中移除 scan_date 和 use_scan_cache，避免影响缓存键
+    # scan_date 会作为单独参数传入，use_scan_cache 不影响扫描结果
     cache_config_dict = config_dict.copy()
     original_scan_date_in_dict = cache_config_dict.get('scan_date')
     cache_config_dict.pop('scan_date', None)  # 移除 scan_date，避免影响缓存键
+    cache_config_dict.pop('use_scan_cache', None)  # 移除 use_scan_cache，避免影响缓存键
     
     # 详细日志：显示缓存键生成过程
     print(f"{Fore.CYAN}[CACHE_DEBUG] 原始 config_dict 中的 scan_date: {original_scan_date_in_dict}{Style.RESET_ALL}")
@@ -684,9 +698,17 @@ async def run_scan(config_request: ScanConfigRequest):
     cache_key = generate_scan_cache_key(cache_config_dict, scan_date)
     print(f"{Fore.CYAN}[INDEX] 缓存键生成: scan_date={scan_date}, cache_key={cache_key[:16]}...{Style.RESET_ALL}")
     
-    # 检查缓存
+    # 检查缓存（如果启用了缓存）
     db = get_stock_database()
-    cached_result = db.get_scan_cache(cache_key)
+    cached_result = None
+    if config_request.use_scan_cache:
+        cached_result = db.get_scan_cache(cache_key)
+        if cached_result:
+            print(f"{Fore.GREEN}[INDEX] 使用扫描结果缓存（use_scan_cache=True）{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}[INDEX] 缓存未命中，将执行新扫描（use_scan_cache=True）{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}[INDEX] 跳过缓存检查，直接执行扫描（use_scan_cache=False）{Style.RESET_ALL}")
     
     if cached_result:
         cached_scan_date = cached_result.get('backtest_date', 'unknown')
@@ -1082,7 +1104,7 @@ class BacktestRequest(BaseModel):
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -3.0  # 止损百分比
     take_profit_percent: float = 10.0  # 止盈百分比
-    scan_config: Dict[str, Any]  # 扫描配置
+    selected_stocks: List[Dict[str, Any]]  # 选中的股票列表（从扫描结果传递）
 
 
 class BuyRecord(BaseModel):
@@ -1156,81 +1178,20 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         raise HTTPException(status_code=400, detail="回测日必须早于统计日")
     
     if progress_callback:
-        progress_callback(5, "开始回测，准备扫描配置...")
+        progress_callback(5, "开始回测，准备股票数据...")
     
-    # 1. 使用扫描配置执行扫描（以回测日为截止日）
+    # 1. 直接使用传入的股票列表（不再执行扫描）
     print(f"{Fore.CYAN}开始回测: 回测日={request.backtest_date}, 统计日={request.stat_date}{Style.RESET_ALL}")
     
-    # 准备扫描配置
-    scan_config_dict = request.scan_config.copy()
+    # 验证股票列表
+    if not request.selected_stocks or len(request.selected_stocks) == 0:
+        raise HTTPException(status_code=400, detail="未选择股票，请至少选择一只股票进行回测")
     
-    # 创建ScanConfig对象
-    scan_config = ScanConfig(**scan_config_dict)
+    scanned_stocks = request.selected_stocks
+    print(f"{Fore.GREEN}使用传入的股票列表，共 {len(scanned_stocks)} 只股票{Style.RESET_ALL}")
     
-    # 生成缓存键
-    cache_key = generate_scan_cache_key(scan_config_dict, request.backtest_date)
-    
-    # 检查缓存
-    db = get_stock_database()
-    cached_result = db.get_scan_cache(cache_key)
-    
-    if cached_result:
-        print(f"{Fore.GREEN}找到缓存结果: 回测日={request.backtest_date}, 扫描配置已缓存{Style.RESET_ALL}")
-        scanned_stocks = cached_result['scanned_stocks']
-        if progress_callback:
-            progress_callback(60, f"使用缓存结果，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
-    else:
-        # 缓存未命中，执行扫描
-        if progress_callback:
-            progress_callback(10, "正在获取股票基本信息...")
-        
-        # 执行扫描（使用回测日作为截止日）
-        with BaostockConnectionManager():
-            # 获取股票基本信息
-            stock_basics_df = fetch_stock_basics()
-            
-            if progress_callback:
-                progress_callback(15, "正在获取行业数据...")
-            
-            # 获取行业数据
-            try:
-                industry_df = fetch_industry_data()
-            except Exception as e:
-                print(f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
-                industry_df = pd.DataFrame()
-            
-            if progress_callback:
-                progress_callback(20, "正在准备股票列表...")
-            
-            # 准备股票列表
-            stock_list = prepare_stock_list(stock_basics_df, industry_df)
-            
-            if progress_callback:
-                progress_callback(25, f"开始扫描 {len(stock_list)} 只股票，查找符合条件的平台期股票...")
-            
-            # 执行扫描（使用回测日作为截止日）
-            end_date = backtest_date.strftime('%Y-%m-%d')
-            
-            # 定义进度更新回调
-            def scan_progress_update(progress, message):
-                if progress_callback:
-                    # 扫描阶段占30-60%
-                    scaled_progress = 30 + int(progress * 0.3)
-                    progress_callback(scaled_progress, message)
-            
-            scanned_stocks = scan_stocks(stock_list, scan_config, update_progress=scan_progress_update, end_date=end_date)
-            
-            print(f"{Fore.GREEN}扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票{Style.RESET_ALL}")
-            
-            # 保存扫描结果到缓存
-            try:
-                db.save_scan_cache(cache_key, scan_config_dict, request.backtest_date, scanned_stocks)
-                print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
-            except Exception as e:
-                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
-        
-        if progress_callback:
-            progress_callback(60, f"扫描完成，找到 {len(scanned_stocks)} 只符合条件的股票，开始执行回测...")
+    if progress_callback:
+        progress_callback(10, f"准备回测 {len(scanned_stocks)} 只股票...")
     
     # 2. 对于每只股票，执行买入和卖出逻辑
     buy_records = []
@@ -1245,7 +1206,7 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         name = stock.get('name', code)
         
         if progress_callback:
-            progress = 60 + int((idx + 1) / total_stocks * 35)
+            progress = 10 + int((idx + 1) / total_stocks * 85)
             progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
         
         # 获取从回测日到统计日的历史数据
@@ -1275,7 +1236,14 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 continue
         
         buy_price = float(buy_day_data.iloc[0]['open'])
-        buy_date = str(buy_day_data.iloc[0]['date'])
+        # 只提取日期部分，去掉时间
+        buy_date_obj = buy_day_data.iloc[0]['date']
+        if isinstance(buy_date_obj, pd.Timestamp):
+            buy_date_raw = buy_date_obj.strftime('%Y-%m-%d')
+        else:
+            buy_date_raw = str(buy_date_obj).split()[0]  # 取第一个空格前的部分
+        # 买入日期显示为"日期（开盘）"，因为买入价格是开盘价
+        buy_date = f"{buy_date_raw}（开盘）"
         quantity = int(buy_amount_per_stock / buy_price / 100) * 100  # 按手（100股）买入
         actual_buy_amount = quantity * buy_price
         
@@ -1299,7 +1267,12 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         # 检查从买入日到统计日的数据
         for i in range(buy_day_index + 1, len(kline_df)):
             day_data = kline_df.iloc[i]
-            current_date = str(day_data['date'])
+            # 只提取日期部分，去掉时间
+            date_obj = day_data['date']
+            if isinstance(date_obj, pd.Timestamp):
+                current_date = date_obj.strftime('%Y-%m-%d')
+            else:
+                current_date = str(date_obj).split()[0]  # 取第一个空格前的部分
             current_close = float(day_data['close'])
             current_low = float(day_data['low'])
             current_high = float(day_data['high'])
@@ -1312,7 +1285,8 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 low_return_rate = ((current_low - buy_price) / buy_price) * 100
                 if low_return_rate <= request.stop_loss_percent:
                     sell_price = buy_price * (1 + request.stop_loss_percent / 100)
-                    sell_date = current_date
+                    # 止损日期显示为"日期（止损）"
+                    sell_date = f"{current_date}（止损）"
                     sell_reason = '止损'
                     break
             
@@ -1321,14 +1295,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 high_return_rate = ((current_high - buy_price) / buy_price) * 100
                 if high_return_rate >= request.take_profit_percent:
                     sell_price = buy_price * (1 + request.take_profit_percent / 100)
-                    sell_date = current_date
+                    # 止盈日期显示为"日期（止盈）"
+                    sell_date = f"{current_date}（止盈）"
                     sell_reason = '止盈'
                     break
             
             # 如果到了统计日，使用收盘价卖出（确保日期格式一致）
             if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
                 sell_price = current_close
-                sell_date = current_date
+                # 统计日卖出日期显示为"日期（收盘）"，因为卖出价格是收盘价
+                sell_date = f"{current_date}（收盘）"
                 sell_reason = '统计日卖出'
                 break
         
@@ -1338,12 +1314,19 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             if len(kline_df) > 0:
                 last_day = kline_df.iloc[-1]
                 sell_price = float(last_day['close'])
-                sell_date = str(last_day['date'])
+                # 只提取日期部分，去掉时间
+                last_date_obj = last_day['date']
+                if isinstance(last_date_obj, pd.Timestamp):
+                    last_date = last_date_obj.strftime('%Y-%m-%d')
+                else:
+                    last_date = str(last_date_obj).split()[0]  # 取第一个空格前的部分
+                # 统计日卖出日期显示为"日期（收盘）"
+                sell_date = f"{last_date}（收盘）"
                 sell_reason = '统计日卖出'
             else:
                 # 如果没有数据，使用买入价（未卖出）
                 sell_price = buy_price
-                sell_date = buy_date
+                sell_date = f"{buy_date_raw}（未卖出）"
                 sell_reason = '未卖出'
         
         # 计算盈亏
@@ -1509,12 +1492,15 @@ async def run_backtest_stream(request: BacktestRequest):
                         'use_take_profit': request.use_take_profit,
                         'stop_loss_percent': request.stop_loss_percent,
                         'take_profit_percent': request.take_profit_percent,
-                        'scan_config': request.scan_config
+                        'selected_stocks': request.selected_stocks  # 保存选中的股票列表
                     }
                     history_id = save_backtest_history(config_dict, result_dict)
                     result_dict['historyId'] = history_id  # 将历史ID添加到结果中
+                    print(f"{Fore.GREEN}回测历史已保存: {history_id}{Style.RESET_ALL}")
                 except Exception as e:
-                    print(f"Warning: Failed to save backtest history: {e}")
+                    print(f"{Fore.YELLOW}Warning: Failed to save backtest history: {e}{Style.RESET_ALL}")
+                    import traceback
+                    traceback.print_exc()
                     # 不阻止返回结果，只是记录警告
                 
                 result_data = {

@@ -33,8 +33,14 @@ def apply_industry_diversity_filter(platform_stocks: List[Dict[str, Any]],
     remainder = expected_count % total_industries
     
     # Allocate slots per industry
+    # IMPORTANT: Sort by count (descending) then by industry name (ascending) for deterministic results
+    # This ensures that when multiple industries have the same count, the order is stable
     industry_slots = {}
-    for i, (industry, _) in enumerate(industry_counts.most_common()):
+    sorted_industries = sorted(
+        industry_counts.items(),
+        key=lambda x: (-x[1], x[0])  # Sort by count descending, then by name ascending
+    )
+    for i, (industry, _) in enumerate(sorted_industries):
         industry_slots[industry] = base_per_industry + (1 if i < remainder else 0)
     
     # Select stocks based on allocated slots

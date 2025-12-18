@@ -3,6 +3,7 @@ Platform Scanner module for scanning stocks for platform consolidation patterns.
 """
 import pandas as pd
 import numpy as np
+import math
 from typing import List, Dict, Any, Optional, Tuple
 import time
 from datetime import datetime, timedelta
@@ -508,6 +509,10 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                             platform_stock['weight_details'] = analysis_result.get(
                                 "weight_details", {})
 
+                        # Add box analysis results if available (for sorting by box quality)
+                        if config.use_box_detection and "box_analysis" in analysis_result:
+                            platform_stock['box_analysis'] = analysis_result["box_analysis"]
+
                         platform_stocks.append(platform_stock)
 
                     # Update progress
@@ -739,10 +744,17 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         print(f"{Fore.YELLOW}Fundamental analysis filter disabled.{Style.RESET_ALL}")
 
     # Apply industry diversity filter
-    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Applying industry diversity filter on {len(fundamental_filtered_stocks)} stocks (expected_count={config.expected_count}){Style.RESET_ALL}")
+    # IMPORTANT: Sort stocks by code before filtering to ensure deterministic results
+    # This is necessary because concurrent processing may produce different orders
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Sorting stocks by code for deterministic filtering...{Style.RESET_ALL}")
+    fundamental_filtered_stocks_sorted = sorted(
+        fundamental_filtered_stocks,
+        key=lambda s: s.get('code', '')
+    )
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Applying industry diversity filter on {len(fundamental_filtered_stocks_sorted)} stocks (expected_count={config.expected_count}){Style.RESET_ALL}")
     try:
         filtered_stocks = apply_industry_diversity_filter(
-            fundamental_filtered_stocks,
+            fundamental_filtered_stocks_sorted,
             expected_count=config.expected_count
         )
         print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Industry filter complete, selected {len(filtered_stocks)} stocks{Style.RESET_ALL}")
@@ -750,51 +762,66 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         print(f"{Fore.RED}[SCAN_CHECKPOINT] ⚠️ Error in industry filter: {e}{Style.RESET_ALL}")
         import traceback
         traceback.print_exc()
-        # Fallback: return all stocks if filter fails
-        filtered_stocks = fundamental_filtered_stocks
+        # Fallback: return all stocks if filter fails (use sorted version for consistency)
+        filtered_stocks = fundamental_filtered_stocks_sorted
         print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] Using all {len(filtered_stocks)} stocks as fallback{Style.RESET_ALL}")
 
-    # Sort by breakthrough & breakthrough precursor signals if enabled
-    # Note: This should happen before industry diversity filter to prioritize stocks with breakthrough signals
-    # But we apply it after to maintain industry diversity while still sorting within the filtered set
-    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Starting breakthrough sorting (enabled={config.sort_by_breakthrough}){Style.RESET_ALL}")
-    if config.sort_by_breakthrough:
-        print(f"{Fore.CYAN}Sorting stocks by breakthrough & breakthrough precursor signals...{Style.RESET_ALL}")
+    # Sort by breakthrough & breakthrough precursor signals, then by box quality
+    # Priority order (higher priority first):
+    # 1. Breakthrough confirmation & breakthrough precursor signals
+    # 2. Box quality
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Starting multi-criteria sorting...{Style.RESET_ALL}")
+    
+    def calculate_sort_score(stock: Dict[str, Any]) -> Tuple[int, int, float]:
+        """
+        Calculate a composite score for sorting stocks.
+        Returns: (has_confirmation, signal_count, box_quality)
+        - has_confirmation: 1 if has breakthrough confirmation, 0 otherwise (highest priority)
+        - signal_count: number of breakthrough precursor indicators (second priority)
+        - box_quality: box quality score (third priority, higher is better)
+        """
+        has_confirmation = 0
+        signal_count = 0
+        box_quality = 0.0
         
-        def calculate_breakthrough_score(stock: Dict[str, Any]) -> Tuple[int, int]:
-            """
-            Calculate a score for sorting stocks by breakthrough signals.
-            Returns: (has_confirmation, signal_count)
-            - has_confirmation: 1 if has breakthrough confirmation, 0 otherwise
-            - signal_count: number of breakthrough precursor indicators
-            Higher scores (has_confirmation first, then signal_count) should be sorted first.
-            """
-            has_confirmation = 0
-            signal_count = 0
-            
-            # Check for breakthrough confirmation (highest priority)
-            if config.use_breakthrough_confirmation:
-                if stock.get('has_breakthrough_confirmation', False):
-                    has_confirmation = 1
-            
-            # Check for breakthrough prediction signals
-            if config.use_breakthrough_prediction and 'breakthrough_prediction' in stock:
-                breakthrough_pred = stock['breakthrough_prediction']
-                if isinstance(breakthrough_pred, dict):
-                    signal_count = breakthrough_pred.get('signal_count', 0)
-            
-            return (has_confirmation, signal_count)
+        # Check for breakthrough confirmation (highest priority)
+        if config.use_breakthrough_confirmation:
+            if stock.get('has_breakthrough_confirmation', False):
+                has_confirmation = 1
         
-        # Sort stocks: first by has_confirmation (descending), then by signal_count (descending)
-        filtered_stocks.sort(
-            key=lambda stock: calculate_breakthrough_score(stock),
-            reverse=True
-        )
+        # Check for breakthrough prediction signals
+        if config.use_breakthrough_prediction and 'breakthrough_prediction' in stock:
+            breakthrough_pred = stock['breakthrough_prediction']
+            if isinstance(breakthrough_pred, dict):
+                signal_count = breakthrough_pred.get('signal_count', 0)
         
-        sorted_count = len(filtered_stocks)
-        print(f"{Fore.GREEN}Sorted {sorted_count} stocks by breakthrough signals.{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.YELLOW}Breakthrough sorting disabled.{Style.RESET_ALL}")
+        # Get box quality score (third priority)
+        if config.use_box_detection and 'box_analysis' in stock:
+            box_analysis = stock['box_analysis']
+            if isinstance(box_analysis, dict):
+                box_quality = box_analysis.get('box_quality', 0.0)
+                # Ensure box_quality is a valid number
+                if not isinstance(box_quality, (int, float)) or (isinstance(box_quality, float) and (math.isnan(box_quality) or math.isinf(box_quality))):
+                    box_quality = 0.0
+        
+        return (has_confirmation, signal_count, box_quality)
+    
+    # Sort stocks: first by has_confirmation (descending), then by signal_count (descending), then by box_quality (descending)
+    filtered_stocks.sort(
+        key=lambda stock: calculate_sort_score(stock),
+        reverse=True
+    )
+    
+    sorted_count = len(filtered_stocks)
+    print(f"{Fore.GREEN}Sorted {sorted_count} stocks by breakthrough signals and box quality.{Style.RESET_ALL}")
+    
+    # Log sorting details for first few stocks
+    if sorted_count > 0:
+        print(f"{Fore.CYAN}Top 5 stocks after sorting:{Style.RESET_ALL}")
+        for i, stock in enumerate(filtered_stocks[:5], 1):
+            score = calculate_sort_score(stock)
+            print(f"  {i}. {stock.get('code', 'unknown')} ({stock.get('name', 'unknown')}): "
+                  f"confirmation={score[0]}, signals={score[1]}, box_quality={score[2]:.2f}")
     
     print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Sorting complete, preparing to return results{Style.RESET_ALL}")
 
