@@ -267,7 +267,7 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                 start_time = time_module.time()
                 
                 while processed_count < total_stocks and not hang_detected[0]:
-                    time_module.sleep(30)  # Check every 30 seconds
+                    time_module.sleep(10)  # Check every 10 seconds
                     current_count = processed_count
                     completion_rate = current_count / total_stocks
                     elapsed = time_module.time() - start_time
@@ -275,12 +275,12 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                     # Always log watchdog heartbeat
                     print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🐕 Watchdog: {current_count}/{total_stocks} ({completion_rate*100:.1f}%), elapsed: {elapsed:.0f}s{Style.RESET_ALL}")
                     
-                    # If no progress in 30s and 95%+ complete, consider it hung
+                    # If no progress in 10s and 95%+ complete, consider it hung
                     if current_count == last_count:
                         no_progress_cycles += 1
                         if completion_rate >= 0.95 and no_progress_cycles >= 1:
                             remaining = total_stocks - current_count
-                            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Watchdog: No progress for {30*no_progress_cycles}s, {remaining} tasks stuck (95%+ done){Style.RESET_ALL}")
+                            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Watchdog: No progress for {10*no_progress_cycles}s, {remaining} tasks stuck (95%+ done){Style.RESET_ALL}")
                             
                             # List stuck tasks (with lock for thread safety)
                             with stocks_lock:

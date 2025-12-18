@@ -71,6 +71,22 @@
             扫描参数配置
           </h2>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4">
+            <!-- 扫描日期 -->
+            <div>
+              <label class="block text-sm font-medium mb-2">
+                <i class="fas fa-calendar-alt mr-1 text-primary"></i>
+                扫描日期
+              </label>
+              <input
+                v-model="config.scan_date"
+                type="date"
+                class="input w-full"
+                :max="maxDate"
+              />
+              <p class="text-xs text-muted-foreground mt-1">
+                设置扫描的截止日期，默认为今天
+              </p>
+            </div>
             <!-- 基本参数 -->
             <div>
               <ParameterLabel for-id="windows" parameter-id="windows" @show-tutorial="showParameterTutorial">
@@ -972,7 +988,16 @@ import { gsap } from 'gsap';
 
 const router = useRouter();
 
+// 计算最大日期（今天）
+const maxDate = computed(() => {
+  const today = new Date()
+  return today.toISOString().split('T')[0]
+})
+
 const config = ref({
+  // 扫描日期
+  scan_date: '', // 扫描日期，默认为今天
+  
   // 基本参数
   windowsInput: '30,60,90', // 中期窗口期设置（默认）
   expected_count: 10, // 期望返回的股票数量，默认为10
@@ -1009,7 +1034,7 @@ const config = ref({
 
   // 箱体检测参数
   use_box_detection: true, // 是否启用箱体检测
-  box_quality_threshold: 0.75, // 箱体质量阈值
+  box_quality_threshold: 0.9, // 箱体质量阈值
 
   // 基本面筛选参数
   use_fundamental_filter: false, // 是否启用基本面筛选
@@ -1129,8 +1154,17 @@ const showParameterTutorial = (id) => {
   }
 };
 
+// 初始化扫描日期为今天
+function initScanDate() {
+  const today = new Date();
+  config.value.scan_date = today.toISOString().split('T')[0];
+}
+
 // 初始化时检查系统偏好
 onMounted(() => {
+  // 初始化扫描日期
+  initScanDate();
+  
   // 检查本地存储中的主题设置
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -1451,6 +1485,7 @@ function goToStockCheck(stock) {
 function goToBacktest() {
   // 获取当前扫描配置
   const currentScanConfig = {
+    scan_date: config.value.scan_date || maxDate.value,
     windows: parsedWindows.value,
     expected_count: config.value.expected_count || 10,
     box_threshold: config.value.box_threshold,
@@ -1932,6 +1967,9 @@ async function fetchPlatformStocks () {
 
   try {
     const payload = {
+      // 扫描日期
+      scan_date: config.value.scan_date || maxDate.value,
+      
       // 基本参数
       windows: parsedWindows.value,
       expected_count: config.value.expected_count || 10,
@@ -2034,6 +2072,9 @@ async function fetchPlatformStocksLegacy () {
 
   try {
     const payload = {
+      // 扫描日期
+      scan_date: config.value.scan_date || maxDate.value,
+      
       // 基本参数
       windows: parsedWindows.value,
       expected_count: config.value.expected_count || 10,
@@ -2111,6 +2152,7 @@ async function fetchPlatformStocksLegacy () {
       
       // 保存扫描配置到 localStorage，供回测使用
       const currentScanConfig = {
+        scan_date: config.value.scan_date || maxDate.value,
         windows: parsedWindows.value,
         expected_count: config.value.expected_count || 10,
         box_threshold: config.value.box_threshold,

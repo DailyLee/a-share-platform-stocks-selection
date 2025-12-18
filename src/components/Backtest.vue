@@ -678,8 +678,8 @@ const backtestConfig = ref({
   buyStrategy: 'fixed_amount', // 买入策略
   useStopLoss: true, // 使用止损
   useTakeProfit: true, // 使用止盈
-  stopLossPercent: -3, // 止损百分比
-  takeProfitPercent: 10 // 止盈百分比
+  stopLossPercent: -2, // 止损百分比
+  takeProfitPercent: 15 // 止盈百分比
 })
 
 // 扫描配置（从扫描工具页面获取）

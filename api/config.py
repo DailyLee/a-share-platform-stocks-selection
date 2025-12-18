@@ -1,13 +1,17 @@
 """
 Configuration module for stock platform scanner.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 import platform
+from datetime import datetime
 
 
 class ScanConfig(BaseModel):
     """Configuration model for stock platform scanner."""
+    # Scan date - 扫描日期，默认为今天
+    scan_date: Optional[str] = Field(default=None, description="扫描日期，格式：YYYY-MM-DD，默认为今天")
+    
     # Window settings - 基于安记食品平台期分析的最佳参数组合
     windows: List[int] = Field(default_factory=lambda: [
                                80, 100, 120])  # 使用安记食品平台期的最佳参数

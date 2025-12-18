@@ -86,6 +86,9 @@ class ScanConfigRequest(BaseModel):
     All default values are imported from config.py to ensure consistency
     across the entire codebase.
     """
+    # Scan date - 扫描日期，默认为今天
+    scan_date: Optional[str] = Field(default=None, description="扫描日期，格式：YYYY-MM-DD，默认为今天")
+    
     # Window settings - 基于平台期分析的最佳参数组合
     windows: List[int] = Field(default_factory=lambda: DEFAULT_WINDOWS.copy())
 
@@ -267,18 +270,26 @@ def generate_scan_cache_key(scan_config: Dict[str, Any], backtest_date: str) -> 
     Generate a unique cache key for scan results based on scan config and backtest date.
     
     Args:
-        scan_config: Scan configuration dictionary
+        scan_config: Scan configuration dictionary (should NOT contain scan_date)
         backtest_date: Backtest date string (YYYY-MM-DD)
     
     Returns:
         MD5 hash string as cache key
     """
+    # Ensure scan_date is not in config_dict (it's passed separately)
+    clean_config = {k: v for k, v in scan_config.items() if k != 'scan_date'}
+    
     # Sort config keys and convert to JSON string for consistent hashing
-    config_str = json.dumps(scan_config, sort_keys=True, ensure_ascii=False)
+    config_str = json.dumps(clean_config, sort_keys=True, ensure_ascii=False)
     # Combine config and backtest_date
     cache_string = f"{config_str}:{backtest_date}"
     # Generate MD5 hash
-    return hashlib.md5(cache_string.encode('utf-8')).hexdigest()
+    cache_key = hashlib.md5(cache_string.encode('utf-8')).hexdigest()
+    
+    # Debug log (only show first 16 chars to avoid log spam)
+    print(f"{Fore.CYAN}[CACHE_KEY] Generated cache key: {cache_key[:16]}... (scan_date={backtest_date}){Style.RESET_ALL}")
+    
+    return cache_key
 
 
 # --- API Endpoints ---
@@ -327,6 +338,12 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
     print(f"{Fore.YELLOW}Scan configuration:{Style.RESET_ALL}")
     for key, value in config_dict.items():
         print(f"  - {key}: {Fore.GREEN}{value}{Style.RESET_ALL}")
+    
+    # 特别强调 scan_date 的值
+    if 'scan_date' in config_dict:
+        print(f"{Fore.MAGENTA}[DEBUG] scan_date in config_dict: {config_dict['scan_date']}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}[DEBUG] ⚠️ scan_date NOT in config_dict!{Style.RESET_ALL}")
 
     # Start the scan in the background
     def run_scan_task():
@@ -383,18 +400,37 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                 # Create scan config
                 scan_config = ScanConfig(**config_dict)
                 
-                # 使用当前日期作为截止日期（平台期扫描就是回测日为当天的回测扫描）
-                current_date = datetime.now().strftime('%Y-%m-%d')
+                # 使用配置中的扫描日期，如果没有则使用当前日期
+                scan_date = scan_config.scan_date
+                if scan_date is None:
+                    scan_date = datetime.now().strftime('%Y-%m-%d')
+                    print(f"{Fore.YELLOW}[INDEX] 未提供扫描日期，使用当前日期: {scan_date}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.GREEN}[INDEX] ✓ 使用配置的扫描日期: {scan_date}{Style.RESET_ALL}")
                 
-                # 生成缓存键
-                cache_key = generate_scan_cache_key(config_dict, current_date)
+                # 生成缓存键：从 config_dict 中移除 scan_date，避免重复
+                # 因为 scan_date 会作为单独参数传入，不应该同时出现在 config_dict 中
+                cache_config_dict = config_dict.copy()
+                original_scan_date_in_dict = cache_config_dict.get('scan_date')
+                cache_config_dict.pop('scan_date', None)  # 移除 scan_date，避免影响缓存键
+                
+                # 详细日志：显示缓存键生成过程
+                print(f"{Fore.CYAN}[CACHE_DEBUG] 原始 config_dict 中的 scan_date: {original_scan_date_in_dict}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}[CACHE_DEBUG] 实际使用的 scan_date: {scan_date}{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}[CACHE_DEBUG] 移除 scan_date 后的 config_dict keys: {list(cache_config_dict.keys())[:5]}...{Style.RESET_ALL}")
+                
+                cache_key = generate_scan_cache_key(cache_config_dict, scan_date)
+                print(f"{Fore.CYAN}[INDEX] 缓存键生成: scan_date={scan_date}, cache_key={cache_key[:16]}...{Style.RESET_ALL}")
                 
                 # 检查缓存
                 db = get_stock_database()
                 cached_result = db.get_scan_cache(cache_key)
                 
                 if cached_result:
-                    print(f"{Fore.GREEN}找到缓存结果: 截止日期={current_date}, 扫描配置已缓存{Style.RESET_ALL}")
+                    cached_scan_date = cached_result.get('backtest_date', 'unknown')
+                    print(f"{Fore.GREEN}找到缓存结果: 请求日期={scan_date}, 缓存中的日期={cached_scan_date}, 扫描配置已缓存{Style.RESET_ALL}")
+                    if cached_scan_date != scan_date:
+                        print(f"{Fore.RED}[CACHE_WARNING] ⚠️ 缓存日期不匹配！请求日期={scan_date}, 缓存日期={cached_scan_date}{Style.RESET_ALL}")
                     platform_stocks = cached_result['scanned_stocks']
                     task_manager.update_task(
                         task_id,
@@ -424,15 +460,15 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
 
                     # Run the scan
                     try:
-                        print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks, scan_date={scan_date}{Style.RESET_ALL}")
                         platform_stocks = scan_stocks(
-                            stock_list, scan_config, update_progress)
+                            stock_list, scan_config, update_progress, end_date=scan_date)
                         print(f"{Fore.GREEN}[INDEX] ✓ scan_stocks completed successfully, returned {len(platform_stocks)} stocks{Style.RESET_ALL}")
                         print(f"{Fore.CYAN}[INDEX] First few stocks: {[s.get('code', 'unknown') for s in platform_stocks[:5]]}{Style.RESET_ALL}")
                         
                         # 保存扫描结果到缓存
                         try:
-                            db.save_scan_cache(cache_key, config_dict, current_date, platform_stocks)
+                            db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks)
                             print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
                         except Exception as cache_error:
                             print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {cache_error}{Style.RESET_ALL}")
@@ -627,18 +663,36 @@ async def run_scan(config_request: ScanConfigRequest):
     # Create scan config
     scan_config = ScanConfig(**config_dict)
     
-    # 使用当前日期作为截止日期（平台期扫描就是回测日为当天的回测扫描）
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    # 使用配置中的扫描日期，如果没有则使用当前日期
+    scan_date = scan_config.scan_date
+    if scan_date is None:
+        scan_date = datetime.now().strftime('%Y-%m-%d')
+        print(f"{Fore.YELLOW}[INDEX] 未提供扫描日期，使用当前日期: {scan_date}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.GREEN}[INDEX] ✓ 使用配置的扫描日期: {scan_date}{Style.RESET_ALL}")
     
-    # 生成缓存键
-    cache_key = generate_scan_cache_key(config_dict, current_date)
+    # 生成缓存键：从 config_dict 中移除 scan_date，避免重复
+    # 因为 scan_date 会作为单独参数传入，不应该同时出现在 config_dict 中
+    cache_config_dict = config_dict.copy()
+    original_scan_date_in_dict = cache_config_dict.get('scan_date')
+    cache_config_dict.pop('scan_date', None)  # 移除 scan_date，避免影响缓存键
+    
+    # 详细日志：显示缓存键生成过程
+    print(f"{Fore.CYAN}[CACHE_DEBUG] 原始 config_dict 中的 scan_date: {original_scan_date_in_dict}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[CACHE_DEBUG] 实际使用的 scan_date: {scan_date}{Style.RESET_ALL}")
+    
+    cache_key = generate_scan_cache_key(cache_config_dict, scan_date)
+    print(f"{Fore.CYAN}[INDEX] 缓存键生成: scan_date={scan_date}, cache_key={cache_key[:16]}...{Style.RESET_ALL}")
     
     # 检查缓存
     db = get_stock_database()
     cached_result = db.get_scan_cache(cache_key)
     
     if cached_result:
-        print(f"{Fore.GREEN}找到缓存结果: 截止日期={current_date}, 扫描配置已缓存{Style.RESET_ALL}")
+        cached_scan_date = cached_result.get('backtest_date', 'unknown')
+        print(f"{Fore.GREEN}找到缓存结果: 请求日期={scan_date}, 缓存中的日期={cached_scan_date}, 扫描配置已缓存{Style.RESET_ALL}")
+        if cached_scan_date != scan_date:
+            print(f"{Fore.RED}[CACHE_WARNING] ⚠️ 缓存日期不匹配！请求日期={scan_date}, 缓存日期={cached_scan_date}{Style.RESET_ALL}")
         platform_stocks = cached_result['scanned_stocks']
     else:
         # 缓存未命中，执行扫描
@@ -658,11 +712,11 @@ async def run_scan(config_request: ScanConfigRequest):
             stock_list = prepare_stock_list(stock_basics_df, industry_df)
 
             # Run the scan
-            platform_stocks = scan_stocks(stock_list, scan_config)
+            platform_stocks = scan_stocks(stock_list, scan_config, end_date=scan_date)
             
             # 保存扫描结果到缓存
             try:
-                db.save_scan_cache(cache_key, config_dict, current_date, platform_stocks)
+                db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks)
                 print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
             except Exception as e:
                 print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
