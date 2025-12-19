@@ -140,6 +140,10 @@
                       <span class="text-muted-foreground">窗口期:</span>
                       <span class="ml-1 font-medium">{{ record.scanConfig?.windows?.join(', ') || 'N/A' }}</span>
                     </div>
+                    <div v-if="record.totalScanned !== null && record.totalScanned !== undefined && record.successCount !== null && record.successCount !== undefined">
+                      <span class="text-muted-foreground">扫描统计:</span>
+                      <span class="ml-1 font-medium">{{ record.successCount }}/{{ record.totalScanned }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -205,6 +209,211 @@
                 <div>
                   <span class="text-sm text-muted-foreground">窗口期:</span>
                   <p class="font-medium">{{ selectedScanHistoryRecord.scanConfig?.windows?.join(', ') || 'N/A' }}</p>
+                </div>
+              </div>
+
+              <!-- 扫描配置详情（可折叠） -->
+              <div class="border border-border rounded-lg overflow-hidden">
+                <button
+                  @click="showScanConfigDetails = !showScanConfigDetails"
+                  class="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors"
+                >
+                  <span class="font-semibold flex items-center">
+                    <i class="fas fa-cog mr-2 text-primary"></i>
+                    扫描参数配置
+                  </span>
+                  <i 
+                    :class="['fas transition-transform', showScanConfigDetails ? 'fa-chevron-up' : 'fa-chevron-down']"
+                  ></i>
+                </button>
+                <div v-show="showScanConfigDetails" class="px-4 py-4 bg-muted/10 border-t border-border">
+                  <div v-if="selectedScanHistoryRecord.scanConfig" class="space-y-4">
+                    <!-- 窗口期设置 -->
+                    <div>
+                      <h4 class="text-sm font-semibold mb-2 text-primary">窗口期设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">窗口期:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.windows?.join(', ') || 'N/A' }}</span>
+                        </div>
+                        <div v-if="selectedScanHistoryRecord.scanConfig.use_window_weights">
+                          <span class="text-muted-foreground">窗口权重:</span>
+                          <span class="ml-2">{{ JSON.stringify(selectedScanHistoryRecord.scanConfig.window_weights || {}) }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 价格模式阈值 -->
+                    <div>
+                      <h4 class="text-sm font-semibold mb-2 text-primary">价格模式阈值</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">箱体阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.box_threshold ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">MA差异阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.ma_diff_threshold ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">波动率阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.volatility_threshold ?? 'N/A' }}</span>
+                        </div>
+                        <div v-if="selectedScanHistoryRecord.scanConfig.box_quality_threshold !== undefined">
+                          <span class="text-muted-foreground">箱体质量阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.box_quality_threshold }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 成交量分析设置 -->
+                    <div v-if="selectedScanHistoryRecord.scanConfig.use_volume_analysis">
+                      <h4 class="text-sm font-semibold mb-2 text-primary">成交量分析设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">成交量变化阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.volume_change_threshold ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">成交量稳定性阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.volume_stability_threshold ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">成交量增长阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.volume_increase_threshold ?? 'N/A' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 技术指标设置 -->
+                    <div>
+                      <h4 class="text-sm font-semibold mb-2 text-primary">技术指标设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">使用突破预测:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.use_breakthrough_prediction ? '是' : '否' }}</span>
+                        </div>
+                        <div v-if="selectedScanHistoryRecord.scanConfig.use_breakthrough_confirmation">
+                          <span class="text-muted-foreground">突破确认天数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.breakthrough_confirmation_days ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">使用箱体检测:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.use_box_detection ? '是' : '否' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 位置分析设置 -->
+                    <div v-if="selectedScanHistoryRecord.scanConfig.use_low_position">
+                      <h4 class="text-sm font-semibold mb-2 text-primary">位置分析设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">高点回看天数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.high_point_lookback_days ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">下跌周期天数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.decline_period_days ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">下跌阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.decline_threshold ?? 'N/A' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 快速下跌检测设置 -->
+                    <div v-if="selectedScanHistoryRecord.scanConfig.use_rapid_decline_detection">
+                      <h4 class="text-sm font-semibold mb-2 text-primary">快速下跌检测设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">快速下跌天数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.rapid_decline_days ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">快速下跌阈值:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.rapid_decline_threshold ?? 'N/A' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 基本面分析设置 -->
+                    <div v-if="selectedScanHistoryRecord.scanConfig.use_fundamental_filter">
+                      <h4 class="text-sm font-semibold mb-2 text-primary">基本面分析设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">营收增长百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.revenue_growth_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">净利润增长百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.profit_growth_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">ROE百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.roe_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">资产负债率百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.liability_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">PE百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.pe_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">PB百分位:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.pb_percentile ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">检查年数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.fundamental_years_to_check ?? 'N/A' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 排序设置 -->
+                    <div>
+                      <h4 class="text-sm font-semibold mb-2 text-primary">排序设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">按突破信号排序:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.sort_by_breakthrough ? '是' : '否' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 系统设置 -->
+                    <div>
+                      <h4 class="text-sm font-semibold mb-2 text-primary">系统设置</h4>
+                      <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span class="text-muted-foreground">最大并发数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.max_workers ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">重试次数:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.retry_attempts ?? 'N/A' }}</span>
+                        </div>
+                        <div>
+                          <span class="text-muted-foreground">重试延迟(秒):</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.retry_delay ?? 'N/A' }}</span>
+                        </div>
+                        <div v-if="selectedScanHistoryRecord.scanConfig.expected_count !== undefined">
+                          <span class="text-muted-foreground">预期数量:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.expected_count }}</span>
+                        </div>
+                        <div v-if="selectedScanHistoryRecord.scanConfig.use_local_database_first !== undefined">
+                          <span class="text-muted-foreground">优先使用本地数据库:</span>
+                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.use_local_database_first ? '是' : '否' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="text-sm text-muted-foreground">
+                    暂无配置信息
+                  </div>
                 </div>
               </div>
 
@@ -730,6 +939,39 @@
               <p class="text-xs text-muted-foreground ml-6">
                 开启后，相同参数的扫描结果会从缓存中读取，提高扫描速度。关闭后会重新从数据中筛选，不使用缓存。
               </p>
+              <div class="flex items-center space-x-2 mt-4">
+                <input
+                  type="checkbox"
+                  id="useLocalDatabaseFirst"
+                  v-model="config.use_local_database_first"
+                  class="checkbox"
+                />
+                <label for="useLocalDatabaseFirst" class="text-sm cursor-pointer">
+                  <i class="fas fa-server mr-1 text-primary"></i>
+                  优先使用本地数据库
+                </label>
+              </div>
+              <p class="text-xs text-muted-foreground ml-6">
+                开启后，优先从本地数据库读取数据，减少API请求。关闭后，所有数据都从网络API获取并更新本地数据库。
+              </p>
+              <div class="mt-4">
+                <label for="maxStockCount" class="block text-sm font-medium mb-2">
+                  <i class="fas fa-list-ol mr-1 text-primary"></i>
+                  扫描股票数量
+                </label>
+                <input
+                  id="maxStockCount"
+                  v-model.number="config.max_stock_count"
+                  type="number"
+                  step="1"
+                  min="1"
+                  class="input w-full"
+                  placeholder="留空表示全量扫描"
+                />
+                <p class="text-xs text-muted-foreground mt-1">
+                  限制扫描的股票数量，留空或0表示扫描全部股票。输入数字后，将只扫描前N只股票。
+                </p>
+              </div>
             </div>
           </div>
           
@@ -1337,7 +1579,9 @@ const config = ref({
   sort_by_breakthrough: true, // 根据突破&突破前兆排序，默认开启
   
   // 系统设置
-  use_scan_cache: true // 是否使用扫描结果缓存，默认为开启
+  use_scan_cache: true, // 是否使用扫描结果缓存，默认为开启
+  max_stock_count: null, // 扫描股票数量限制，null或0表示全量扫描
+  use_local_database_first: true // 优先使用本地数据库数据，默认为开启
 });
 
 const platformStocks = ref([]);
@@ -1422,6 +1666,7 @@ const scanHistory = ref([]);
 const scanHistoryLoading = ref(false);
 const selectedScanHistoryRecord = ref(null);
 const scanHistoryGroupedByDate = ref({});
+const showScanConfigDetails = ref(false); // 控制配置详情展开/折叠
 
 // 确认对话框相关
 const confirmDialog = ref({
@@ -2376,7 +2621,9 @@ async function fetchPlatformStocks () {
       fundamental_years_to_check: config.value.fundamental_years_to_check,
       
       // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true,
+      max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
+      use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
     };
 
     console.log("发送POST请求到 /platform/api/scan/start...");
@@ -2484,7 +2731,9 @@ async function fetchPlatformStocksLegacy () {
       fundamental_years_to_check: config.value.fundamental_years_to_check,
       
       // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true,
+      max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
+      use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
     };
 
     console.log("使用旧版API直接请求...");
@@ -2625,6 +2874,7 @@ function groupScanHistoryByDate() {
 // 查看扫描历史记录详情
 async function viewScanHistoryRecord(record) {
   try {
+    showScanConfigDetails.value = false // 重置折叠状态
     const response = await axios.get(`/platform/api/scan/history/${record.id}`)
     if (response.data.success) {
       selectedScanHistoryRecord.value = response.data.data

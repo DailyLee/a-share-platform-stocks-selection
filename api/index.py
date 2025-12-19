@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from api.config import ScanConfig
     from api.task_manager import task_manager, TaskStatus
-    from api.data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager
+    from api.data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager, set_use_local_database_first
     from api.platform_scanner import prepare_stock_list, scan_stocks
     from api.case_api import router as case_router
     from api.json_utils import convert_numpy_types
@@ -39,7 +39,7 @@ except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
     from .config import ScanConfig
     from .task_manager import task_manager, TaskStatus
-    from .data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager
+    from .data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager, set_use_local_database_first
     from .platform_scanner import prepare_stock_list, scan_stocks
     from .case_api import router as case_router
     from .json_utils import convert_numpy_types
@@ -177,9 +177,13 @@ class ScanConfigRequest(BaseModel):
     retry_attempts: int = 2
     retry_delay: int = 1
     expected_count: int = 10  # 期望返回的股票数量，默认为10
+    max_stock_count: Optional[int] = None  # 扫描股票数量限制，None或0表示全量扫描
     
     # Cache settings
     use_scan_cache: bool = True  # 是否使用扫描结果缓存，默认为开启
+    
+    # Data source settings
+    use_local_database_first: bool = True  # 优先使用本地数据库数据，默认为开启
 
 # --- Define response models ---
 
@@ -372,9 +376,13 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                 # For now, we'll just fetch stock basics and let individual queries build data
                 print(f"{Fore.YELLOW}Database is empty, will build data on first access{Style.RESET_ALL}")
             
+            # Set global database-first preference from config
+            use_db_first = config_dict.get('use_local_database_first', True)
+            set_use_local_database_first(use_db_first)
+            
             # Fetch stock basics
             with BaostockConnectionManager():
-                stock_basics_df = fetch_stock_basics()
+                stock_basics_df = fetch_stock_basics(use_local_database_first=use_db_first)
 
                 # Update task status
                 task_manager.update_task(
@@ -385,7 +393,7 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
 
                 # Fetch industry data
                 try:
-                    industry_df = fetch_industry_data()
+                    industry_df = fetch_industry_data(use_local_database_first=use_db_first)
                     task_manager.update_task(
                         task_id,
                         progress=20,
@@ -403,6 +411,13 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
 
                 # Prepare stock list
                 stock_list = prepare_stock_list(stock_basics_df, industry_df)
+                
+                # 如果设置了最大股票数量限制，则限制股票列表
+                original_stock_count = len(stock_list)
+                if config_request.max_stock_count and config_request.max_stock_count > 0:
+                    stock_list = stock_list[:config_request.max_stock_count]
+                    print(f"{Fore.YELLOW}[INDEX] 限制扫描股票数量: {original_stock_count} -> {len(stock_list)} (限制: {config_request.max_stock_count}){Style.RESET_ALL}")
+                
                 task_manager.update_task(
                     task_id,
                     progress=30,
@@ -482,17 +497,36 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                     # Run the scan
                     try:
                         print(f"{Fore.CYAN}[INDEX] Starting scan_stocks with {len(stock_list)} stocks, scan_date={scan_date}{Style.RESET_ALL}")
-                        platform_stocks = scan_stocks(
-                            stock_list, scan_config, update_progress, end_date=scan_date)
+                        scan_result = scan_stocks(
+                            stock_list, scan_config, update_progress, end_date=scan_date, return_stats=True)
+                        if isinstance(scan_result, tuple):
+                            platform_stocks, scan_stats = scan_result
+                            total_scanned = scan_stats.get('total_scanned', len(stock_list))
+                            success_count = scan_stats.get('success_count', len(platform_stocks))
+                        else:
+                            # Backward compatibility: if function doesn't return stats
+                            platform_stocks = scan_result
+                            total_scanned = len(stock_list)
+                            success_count = len(platform_stocks)  # 近似值
                         print(f"{Fore.GREEN}[INDEX] ✓ scan_stocks completed successfully, returned {len(platform_stocks)} stocks{Style.RESET_ALL}")
                         print(f"{Fore.CYAN}[INDEX] First few stocks: {[s.get('code', 'unknown') for s in platform_stocks[:5]]}{Style.RESET_ALL}")
                         
-                        # 保存扫描结果到缓存
-                        try:
-                            db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks)
-                            print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
-                        except Exception as cache_error:
-                            print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {cache_error}{Style.RESET_ALL}")
+                        # 保存扫描结果到缓存（仅当结果不为空时）
+                        if platform_stocks and len(platform_stocks) > 0:
+                            try:
+                                db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks,
+                                                  total_scanned=total_scanned, success_count=success_count)
+                                print(f"{Fore.GREEN}扫描结果已保存到缓存（{len(platform_stocks)}个股票），统计：{success_count}/{total_scanned}{Style.RESET_ALL}")
+                            except Exception as cache_error:
+                                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {cache_error}{Style.RESET_ALL}")
+                        else:
+                            # 即使结果为空，也保存统计信息
+                            try:
+                                db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks,
+                                                  total_scanned=total_scanned, success_count=success_count)
+                                print(f"{Fore.YELLOW}扫描结果为空，但已保存统计信息：{success_count}/{total_scanned}{Style.RESET_ALL}")
+                            except Exception as cache_error:
+                                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {cache_error}{Style.RESET_ALL}")
                     except Exception as scan_error:
                         # Even if scan had errors, try to return partial results
                         print(f"{Fore.RED}[INDEX] ✗ Scan encountered error: {scan_error}{Style.RESET_ALL}")
@@ -726,13 +760,17 @@ async def run_scan(config_request: ScanConfigRequest):
         platform_stocks = cached_result['scanned_stocks']
     else:
         # 缓存未命中，执行扫描
+        # Set global database-first preference from config
+        use_db_first = config_request.use_local_database_first if hasattr(config_request, 'use_local_database_first') else True
+        set_use_local_database_first(use_db_first)
+        
         # Fetch stock basics
         with BaostockConnectionManager():
-            stock_basics_df = fetch_stock_basics()
+            stock_basics_df = fetch_stock_basics(use_local_database_first=use_db_first)
 
             # Fetch industry data
             try:
-                industry_df = fetch_industry_data()
+                industry_df = fetch_industry_data(use_local_database_first=use_db_first)
             except Exception as e:
                 print(
                     f"{Fore.YELLOW}Warning: Failed to fetch industry data: {e}{Style.RESET_ALL}")
@@ -740,16 +778,41 @@ async def run_scan(config_request: ScanConfigRequest):
 
             # Prepare stock list
             stock_list = prepare_stock_list(stock_basics_df, industry_df)
+            
+            # 如果设置了最大股票数量限制，则限制股票列表
+            original_stock_count = len(stock_list)
+            if config_request.max_stock_count and config_request.max_stock_count > 0:
+                stock_list = stock_list[:config_request.max_stock_count]
+                print(f"{Fore.YELLOW}[INDEX] 限制扫描股票数量: {original_stock_count} -> {len(stock_list)} (限制: {config_request.max_stock_count}){Style.RESET_ALL}")
 
             # Run the scan
-            platform_stocks = scan_stocks(stock_list, scan_config, end_date=scan_date)
+            scan_result = scan_stocks(stock_list, scan_config, end_date=scan_date, return_stats=True)
+            if isinstance(scan_result, tuple):
+                platform_stocks, scan_stats = scan_result
+                total_scanned = scan_stats.get('total_scanned', len(stock_list))
+                success_count = scan_stats.get('success_count', len(platform_stocks))
+            else:
+                # Backward compatibility: if function doesn't return stats
+                platform_stocks = scan_result
+                total_scanned = len(stock_list)
+                success_count = len(platform_stocks)  # 近似值
             
-            # 保存扫描结果到缓存
-            try:
-                db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks)
-                print(f"{Fore.GREEN}扫描结果已保存到缓存{Style.RESET_ALL}")
-            except Exception as e:
-                print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
+            # 保存扫描结果到缓存（仅当结果不为空时）
+            if platform_stocks and len(platform_stocks) > 0:
+                try:
+                    db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks,
+                                      total_scanned=total_scanned, success_count=success_count)
+                    print(f"{Fore.GREEN}扫描结果已保存到缓存（{len(platform_stocks)}个股票），统计：{success_count}/{total_scanned}{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
+            else:
+                # 即使结果为空，也保存统计信息
+                try:
+                    db.save_scan_cache(cache_key, config_dict, scan_date, platform_stocks,
+                                      total_scanned=total_scanned, success_count=success_count)
+                    print(f"{Fore.YELLOW}扫描结果为空，但已保存统计信息：{success_count}/{total_scanned}{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}Warning: Failed to save scan cache: {e}{Style.RESET_ALL}")
 
     # Process results for API response
     result_stocks = []

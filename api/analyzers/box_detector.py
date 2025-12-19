@@ -261,16 +261,16 @@ def analyze_box_pattern(df: pd.DataFrame, window: int,
         recent_df = df.iloc[-window:].copy()
 
         # Calculate price volatility within the box
-        volatility = recent_df['close'].pct_change().std()
+        volatility = recent_df['close'].pct_change(fill_method=None).std()
 
         # Calculate volume trend
         if 'volume' in recent_df.columns:
             # Check if volume is decreasing or stable
-            volume_trend = recent_df['volume'].pct_change().mean()
+            volume_trend = recent_df['volume'].pct_change(fill_method=None).mean()
             is_volume_decreasing = volume_trend < 0
 
             # Calculate volume volatility
-            volume_volatility = recent_df['volume'].pct_change().std()
+            volume_volatility = recent_df['volume'].pct_change(fill_method=None).std()
         else:
             is_volume_decreasing = False
             volume_volatility = np.nan

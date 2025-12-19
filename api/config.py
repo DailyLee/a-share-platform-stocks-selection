@@ -93,6 +93,9 @@ class ScanConfig(BaseModel):
     retry_attempts: int = 2
     retry_delay: int = 1
     expected_count: int = 10
+    
+    # Data source settings
+    use_local_database_first: bool = True  # 优先使用本地数据库数据，默认为开启
 
 
 def get_default_max_workers() -> int:

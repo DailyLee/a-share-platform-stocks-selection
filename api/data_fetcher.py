@@ -6,7 +6,7 @@ import baostock as bs
 import pandas as pd
 import time
 import threading
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from colorama import Fore, Style
 import traceback
 from datetime import datetime, timedelta
@@ -18,8 +18,43 @@ try:
 except ImportError:
     from api.stock_database import get_stock_database
 
+# Global flag for database-first strategy (can be overridden per call)
+_USE_LOCAL_DATABASE_FIRST = True
+
+def set_use_local_database_first(value: bool) -> None:
+    """
+    Set the global default for use_local_database_first.
+    
+    Args:
+        value: If True, check database first. If False, fetch from API directly.
+    """
+    global _USE_LOCAL_DATABASE_FIRST
+    _USE_LOCAL_DATABASE_FIRST = value
+    print(f"{Fore.CYAN}[DATA_FETCHER] Global use_local_database_first set to {value}{Style.RESET_ALL}")
+
 # Thread-local storage for Baostock connections
 _thread_local = threading.local()
+
+# Global data source tracking (thread-safe)
+_data_source_stats = {}  # {code: 'db'|'api'|'mixed'}
+_data_source_lock = threading.Lock()
+
+def get_data_source_stats() -> Dict[str, str]:
+    """
+    Get data source statistics for all stocks fetched.
+    
+    Returns:
+        Dictionary mapping stock codes to data source ('db', 'api', or 'mixed')
+    """
+    with _data_source_lock:
+        return _data_source_stats.copy()
+
+def clear_data_source_stats() -> None:
+    """
+    Clear data source statistics.
+    """
+    with _data_source_lock:
+        _data_source_stats.clear()
 
 def baostock_login() -> None:
     """
@@ -67,6 +102,71 @@ def baostock_relogin() -> None:
     baostock_logout()
     baostock_login()
 
+
+def is_trading_day(date_str: str) -> bool:
+    """
+    Check if a date is a trading day (exclude weekends).
+    Note: This is a simple check that only excludes weekends.
+    For a complete check including holidays, a trading calendar would be needed.
+    
+    Args:
+        date_str: Date string in 'YYYY-MM-DD' format
+    
+    Returns:
+        True if the date is a weekday (Monday-Friday), False otherwise
+    """
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        # Monday = 0, Sunday = 6
+        # Trading days are Monday (0) through Friday (4)
+        weekday = date_obj.weekday()
+        return weekday < 5  # 0-4 are Monday-Friday
+    except (ValueError, TypeError):
+        return False
+
+
+def adjust_date_range_to_trading_days(start_date: str, end_date: str) -> Optional[Tuple[str, str]]:
+    """
+    Adjust date range to only include trading days (exclude weekends).
+    Returns None if the entire range contains no trading days.
+    
+    Args:
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+    
+    Returns:
+        Tuple of (adjusted_start_date, adjusted_end_date) or None if no trading days
+    """
+    try:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        # Find the first trading day from start_date
+        adjusted_start = start_dt
+        while adjusted_start <= end_dt:
+            if is_trading_day(adjusted_start.strftime('%Y-%m-%d')):
+                break
+            adjusted_start += timedelta(days=1)
+        
+        # Find the last trading day up to end_date
+        adjusted_end = end_dt
+        while adjusted_end >= start_dt:
+            if is_trading_day(adjusted_end.strftime('%Y-%m-%d')):
+                break
+            adjusted_end -= timedelta(days=1)
+        
+        # Check if we found any trading days
+        if adjusted_start > adjusted_end:
+            return None
+        
+        adjusted_start_str = adjusted_start.strftime('%Y-%m-%d')
+        adjusted_end_str = adjusted_end.strftime('%Y-%m-%d')
+        
+        return (adjusted_start_str, adjusted_end_str)
+    except (ValueError, TypeError) as e:
+        print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Error adjusting date range: {e}{Style.RESET_ALL}")
+        return None
+
 class BaostockConnectionManager:
     """
     Context manager for Baostock connections.
@@ -80,10 +180,14 @@ class BaostockConnectionManager:
         baostock_logout()
         return False  # Don't suppress exceptions
 
-def fetch_stock_basics() -> pd.DataFrame:
+def fetch_stock_basics(use_local_database_first: Optional[bool] = None) -> pd.DataFrame:
     """
     Fetch basic information for all stocks.
-    First checks database, then fetches from API if needed.
+    First checks database (if enabled), then fetches from API if needed.
+    
+    Args:
+        use_local_database_first: If True, check database first. If False, fetch from API directly.
+                                 If None, use global default.
     
     Returns:
         pd.DataFrame: DataFrame containing stock basic information
@@ -92,16 +196,22 @@ def fetch_stock_basics() -> pd.DataFrame:
         ConnectionError: If Baostock connection fails
         ValueError: If no data is returned
     """
+    # Use parameter if provided, otherwise use global default
+    use_db_first = use_local_database_first if use_local_database_first is not None else _USE_LOCAL_DATABASE_FIRST
+    
     db = get_stock_database()
     
-    # Try to get from database first
-    df = db.get_stock_basics()
-    if df is not None and not df.empty:
-        print(f"{Fore.GREEN}Loaded stock basics from database ({len(df)} stocks){Style.RESET_ALL}")
-        return df
+    # Try to get from database first (if enabled)
+    if use_db_first:
+        df = db.get_stock_basics()
+        if df is not None and not df.empty:
+            print(f"{Fore.GREEN}Loaded stock basics from database ({len(df)} stocks){Style.RESET_ALL}")
+            return df
+        print(f"{Fore.CYAN}Database is empty, fetching stock basic information from API...{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}use_local_database_first=False, fetching stock basic information directly from API...{Style.RESET_ALL}")
     
-    # Database is empty or doesn't have data, fetch from API
-    print(f"{Fore.CYAN}Database is empty, fetching stock basic information from API...{Style.RESET_ALL}")
+    # Fetch from API
     with BaostockConnectionManager():
         rs = bs.query_stock_basic()
         
@@ -117,16 +227,20 @@ def fetch_stock_basics() -> pd.DataFrame:
         
         df = pd.DataFrame(stock_basics_list, columns=rs.fields)
         
-        # Save to database
+        # Always save to database (even if use_local_database_first=False)
         db.save_stock_basics(df)
         print(f"{Fore.GREEN}Saved {len(df)} stocks to database{Style.RESET_ALL}")
         
         return df
 
-def fetch_industry_data() -> pd.DataFrame:
+def fetch_industry_data(use_local_database_first: Optional[bool] = None) -> pd.DataFrame:
     """
     Fetch industry classification data for all stocks.
-    First checks database, then fetches from API if needed.
+    First checks database (if enabled), then fetches from API if needed.
+    
+    Args:
+        use_local_database_first: If True, check database first. If False, fetch from API directly.
+                                 If None, use global default.
     
     Returns:
         pd.DataFrame: DataFrame containing industry classification
@@ -135,16 +249,22 @@ def fetch_industry_data() -> pd.DataFrame:
         ConnectionError: If Baostock connection fails
         ValueError: If no data is returned
     """
+    # Use parameter if provided, otherwise use global default
+    use_db_first = use_local_database_first if use_local_database_first is not None else _USE_LOCAL_DATABASE_FIRST
+    
     db = get_stock_database()
     
-    # Try to get from database first
-    df = db.get_industry_data()
-    if df is not None and not df.empty:
-        print(f"{Fore.GREEN}Loaded industry data from database ({len(df)} stocks){Style.RESET_ALL}")
-        return df
+    # Try to get from database first (if enabled)
+    if use_db_first:
+        df = db.get_industry_data()
+        if df is not None and not df.empty:
+            print(f"{Fore.GREEN}Loaded industry data from database ({len(df)} stocks){Style.RESET_ALL}")
+            return df
+        print(f"{Fore.CYAN}Database is empty, fetching industry classification data from API...{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}use_local_database_first=False, fetching industry classification data directly from API...{Style.RESET_ALL}")
     
-    # Database is empty or doesn't have data, fetch from API
-    print(f"{Fore.CYAN}Database is empty, fetching industry classification data from API...{Style.RESET_ALL}")
+    # Fetch from API
     with BaostockConnectionManager():
         rs = bs.query_stock_industry()
         
@@ -160,7 +280,7 @@ def fetch_industry_data() -> pd.DataFrame:
         
         df = pd.DataFrame(industry_list, columns=rs.fields)
         
-        # Save to database
+        # Always save to database (even if use_local_database_first=False)
         db.save_industry_data(df)
         print(f"{Fore.GREEN}Saved industry data to database{Style.RESET_ALL}")
         
@@ -169,10 +289,12 @@ def fetch_industry_data() -> pd.DataFrame:
 def fetch_kline_data(code: str, start_date: str, end_date: str,
                      retry_attempts: int = 3,
                      retry_delay: int = 1,
-                     api_timeout: float = 5.0) -> pd.DataFrame:
+                     api_timeout: float = 5.0,
+                     use_local_database_first: Optional[bool] = None,
+                     return_source: bool = False) -> pd.DataFrame:
     """
     Fetch K-line data for a specific stock with retry logic.
-    First checks database, then fetches missing data from API.
+    First checks database (if enabled), then fetches missing data from API.
     
     Args:
         code: Stock code (e.g., 'sh.600000')
@@ -180,19 +302,35 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         end_date: End date in 'YYYY-MM-DD' format
         retry_attempts: Maximum number of retry attempts
         retry_delay: Delay between retries in seconds
+        api_timeout: Timeout for each API call in seconds
+        use_local_database_first: If True, check database first. If False, fetch from API directly.
+                                 If None, use global default.
+        return_source: If True, return tuple (DataFrame, source) where source is 'db', 'api', or 'mixed'.
+                      If False, return only DataFrame (default for backward compatibility).
     
     Returns:
-        pd.DataFrame: DataFrame containing K-line data
+        pd.DataFrame or tuple: DataFrame containing K-line data, or (DataFrame, source) if return_source=True
     """
     import threading
-    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📥 START fetch_kline_data for {code} (thread: {threading.current_thread().name}){Style.RESET_ALL}")
+    # Use parameter if provided, otherwise use global default
+    use_db_first = use_local_database_first if use_local_database_first is not None else _USE_LOCAL_DATABASE_FIRST
+    
+    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📥 START fetch_kline_data for {code} (thread: {threading.current_thread().name}, use_db_first={use_db_first}){Style.RESET_ALL}")
     
     db = get_stock_database()
     
-    # Try to get from database first
-    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔍 Querying database for {code}...{Style.RESET_ALL}")
-    df = db.get_kline_data(code, start_date, end_date)
-    print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Database query completed for {code}, got {len(df)} records{Style.RESET_ALL}")
+    # Try to get from database first (if enabled)
+    df = pd.DataFrame()
+    if use_db_first:
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔍 Querying database for {code} (requested range: {start_date} to {end_date})...{Style.RESET_ALL}")
+        df = db.get_kline_data(code, start_date, end_date)
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Database query completed for {code}, got {len(df)} records{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ⏭️ Skipping database query (use_local_database_first=False) for {code}{Style.RESET_ALL}")
+    
+    # Track data sources for logging
+    db_date_ranges = []
+    api_date_ranges = []
     
     # Check if we have all the data we need
     if not df.empty:
@@ -203,6 +341,12 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         
         min_date = df_dates.min()
         max_date = df_dates.max()
+        
+        # Log database date range
+        min_date_str = min_date.strftime('%Y-%m-%d')
+        max_date_str = max_date.strftime('%Y-%m-%d')
+        db_date_ranges.append((min_date_str, max_date_str))
+        print(f"{Fore.GREEN}[DATA_SOURCE] 📊 Database data for {code}: {min_date_str} to {max_date_str} ({len(df)} records){Style.RESET_ALL}")
         
         # Check if we need to fetch additional data
         # Use a small tolerance (1 day) to account for date comparison edge cases
@@ -232,6 +376,13 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
         if not need_earlier and not need_later and not data_seems_incomplete:
             # We have all the data we need
             print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Complete data for {code} from database ({len(df)} records){Style.RESET_ALL}")
+            print(f"{Fore.GREEN}[DATA_SOURCE] ✅ All data from DATABASE: {min_date_str} to {max_date_str} ({len(df)} records){Style.RESET_ALL}")
+            # Track data source: all from database
+            source = 'db'
+            with _data_source_lock:
+                _data_source_stats[code] = source
+            if return_source:
+                return df, source
             return df
         
         # We need to fetch additional data
@@ -253,19 +404,41 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
     else:
         # No data in database, need to fetch all
         missing_ranges = [(start_date, end_date)]
+        print(f"{Fore.YELLOW}[DATA_SOURCE] ⚠️ No database data for {code}, will fetch all from API: {start_date} to {end_date}{Style.RESET_ALL}")
     
     # Fetch missing data from API
     all_data = []
     
     for range_start, range_end in missing_ranges:
-        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🌐 Fetching missing K-line data for {code} from {range_start} to {range_end}...{Style.RESET_ALL}")
+        # Check if the date range contains any trading days
+        adjusted_range = adjust_date_range_to_trading_days(range_start, range_end)
+        
+        if adjusted_range is None:
+            # No trading days in this range (e.g., weekend only)
+            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⏭️ Skipping API request for {code}: no trading days in range {range_start} to {range_end} (likely weekend){Style.RESET_ALL}")
+            continue
+        
+        adjusted_start, adjusted_end = adjusted_range
+        
+        # Log if we adjusted the range
+        if adjusted_start != range_start or adjusted_end != range_end:
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📅 Adjusted date range for {code}: {range_start}~{range_end} -> {adjusted_start}~{adjusted_end} (excluded non-trading days){Style.RESET_ALL}")
+        
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🌐 Fetching missing K-line data for {code} from {adjusted_start} to {adjusted_end}...{Style.RESET_ALL}")
         
         fetched_df = _fetch_kline_data_from_api(
-            code, range_start, range_end, retry_attempts, retry_delay, api_timeout
+            code, adjusted_start, adjusted_end, retry_attempts, retry_delay, api_timeout
         )
         print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ API fetch completed for {code}, got {len(fetched_df)} records{Style.RESET_ALL}")
         
         if not fetched_df.empty:
+            # Log API date range
+            api_dates = pd.to_datetime(fetched_df['date'])
+            api_min_date = api_dates.min().strftime('%Y-%m-%d')
+            api_max_date = api_dates.max().strftime('%Y-%m-%d')
+            api_date_ranges.append((api_min_date, api_max_date))
+            print(f"{Fore.BLUE}[DATA_SOURCE] 🌐 API data for {code}: {api_min_date} to {api_max_date} ({len(fetched_df)} records){Style.RESET_ALL}")
+            
             # Save to database
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 💾 Saving {len(fetched_df)} records to database for {code}...{Style.RESET_ALL}")
             db.save_kline_data(code, fetched_df)
@@ -280,18 +453,70 @@ def fetch_kline_data(code: str, start_date: str, end_date: str,
             # Remove duplicates and sort by date
             combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
             combined_df = combined_df.sort_values('date').reset_index(drop=True)
+            
+            # Log final data source summary
+            final_dates = pd.to_datetime(combined_df['date'])
+            final_min = final_dates.min().strftime('%Y-%m-%d')
+            final_max = final_dates.max().strftime('%Y-%m-%d')
+            print(f"{Fore.GREEN}[DATA_SOURCE] 📋 Final combined data for {code}: {final_min} to {final_max} ({len(combined_df)} records){Style.RESET_ALL}")
+            if db_date_ranges:
+                db_ranges_str = ", ".join([f"{s}~{e}" for s, e in db_date_ranges])
+                print(f"{Fore.GREEN}[DATA_SOURCE]   └─ From DATABASE: {db_ranges_str}{Style.RESET_ALL}")
+            if api_date_ranges:
+                api_ranges_str = ", ".join([f"{s}~{e}" for s, e in api_date_ranges])
+                print(f"{Fore.BLUE}[DATA_SOURCE]   └─ From API: {api_ranges_str}{Style.RESET_ALL}")
+            
+            # Track data source: mixed (database + API)
+            source = 'mixed'
+            with _data_source_lock:
+                _data_source_stats[code] = source
+            
+            if return_source:
+                return combined_df, source
             return combined_df
         else:
             # Only newly fetched data
             combined_df = pd.concat(all_data, ignore_index=True)
             combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
             combined_df = combined_df.sort_values('date').reset_index(drop=True)
+            
+            # Log final data source summary (API only)
+            final_dates = pd.to_datetime(combined_df['date'])
+            final_min = final_dates.min().strftime('%Y-%m-%d')
+            final_max = final_dates.max().strftime('%Y-%m-%d')
+            print(f"{Fore.BLUE}[DATA_SOURCE] 📋 Final data for {code} (API only): {final_min} to {final_max} ({len(combined_df)} records){Style.RESET_ALL}")
+            if api_date_ranges:
+                api_ranges_str = ", ".join([f"{s}~{e}" for s, e in api_date_ranges])
+                print(f"{Fore.BLUE}[DATA_SOURCE]   └─ All from API: {api_ranges_str}{Style.RESET_ALL}")
+            
+            # Track data source: all from API
+            source = 'api'
+            with _data_source_lock:
+                _data_source_stats[code] = source
+            
+            if return_source:
+                return combined_df, source
             return combined_df
     
     # If we couldn't fetch new data but have database data, return it
     if not df.empty:
+        # Recalculate date range for logging
+        df_dates_final = pd.to_datetime(df['date'])
+        final_min_db = df_dates_final.min().strftime('%Y-%m-%d')
+        final_max_db = df_dates_final.max().strftime('%Y-%m-%d')
+        print(f"{Fore.GREEN}[DATA_SOURCE] 📋 Final data for {code} (Database only): {final_min_db} to {final_max_db} ({len(df)} records){Style.RESET_ALL}")
+        # Track data source: all from database (partial data, but no API fetch)
+        source = 'db'
+        with _data_source_lock:
+            _data_source_stats[code] = source
+        
+        if return_source:
+            return df, source
         return df
     
+    print(f"{Fore.RED}[DATA_SOURCE] ❌ No data available for {code} (requested: {start_date} to {end_date}){Style.RESET_ALL}")
+    if return_source:
+        return pd.DataFrame(), 'api'  # No data, but attempted API fetch
     return pd.DataFrame()
 
 
@@ -364,7 +589,9 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 📡 Calling Baostock API for {code} (timeout: {api_timeout}s)...{Style.RESET_ALL}")
             try:
                 rs = _call_baostock_api_with_timeout(code, start_date, end_date, timeout=api_timeout)
-                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Baostock API call returned for {code}, error_code: {rs.error_code}{Style.RESET_ALL}")
+                # Log error message even if error_code is '0' (might contain useful info)
+                error_msg = getattr(rs, 'error_msg', 'N/A')
+                print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Baostock API call returned for {code}, error_code: {rs.error_code}, error_msg: {error_msg}{Style.RESET_ALL}")
             except FutureTimeoutError:
                 # Timeout occurred, treat as error
                 retries += 1
@@ -429,7 +656,53 @@ def _fetch_kline_data_from_api(code: str, start_date: str, end_date: str,
             
             # Convert to DataFrame
             if not data_list:
+                # Get error message for diagnosis
+                error_msg = getattr(rs, 'error_msg', 'N/A')
+                
+                # Check if this might be a non-stock code (bond, fund, etc.)
+                code_num = code.split('.')[-1] if '.' in code else code
+                is_likely_bond = code_num.startswith('11') or code_num.startswith('12')
+                is_likely_fund = code_num.startswith('15') or code_num.startswith('16')
+                
+                diagnosis = []
+                if is_likely_bond:
+                    diagnosis.append("可能是债券代码（11xxxx/12xxxx），Baostock可能不提供债券K线数据")
+                if is_likely_fund:
+                    diagnosis.append("可能是基金代码（15xxxx/16xxxx），Baostock可能不提供基金K线数据")
+                if not is_likely_bond and not is_likely_fund:
+                    # Check if it's a valid stock code format
+                    if len(code_num) != 6 or not code_num.isdigit():
+                        diagnosis.append("股票代码格式异常（应为6位数字）")
+                    else:
+                        diagnosis.append("可能是股票代码，但该日期范围内无数据（可能已退市、停牌或代码不存在）")
+                
+                diagnosis_str = " | ".join(diagnosis) if diagnosis else "未知原因"
+                
                 print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ No data returned for {code} from {start_date} to {end_date}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   诊断: {diagnosis_str}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   API错误消息: {error_msg}{Style.RESET_ALL}")
+                
+                # Try to check if code exists in stock basics
+                try:
+                    db = get_stock_database()
+                    stock_basics_df = db.get_stock_basics()
+                    if stock_basics_df is not None and not stock_basics_df.empty:
+                        code_exists = code in stock_basics_df['code'].values
+                        if code_exists:
+                            stock_info = stock_basics_df[stock_basics_df['code'] == code].iloc[0]
+                            stock_type = stock_info.get('type', 'N/A')
+                            stock_status = stock_info.get('status', 'N/A')
+                            stock_name = stock_info.get('code_name') or stock_info.get('name', 'N/A')
+                            print(f"{Fore.CYAN}[SCAN_CHECKPOINT]   股票信息: 名称={stock_name}, 类型={stock_type}, 状态={stock_status}{Style.RESET_ALL}")
+                            if stock_type == '2':
+                                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   ⚠️ 这是指数代码（type=2），不提供K线数据{Style.RESET_ALL}")
+                            if stock_status == '0':
+                                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   ⚠️ 股票状态为0（非活跃），可能已退市或停牌{Style.RESET_ALL}")
+                        else:
+                            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   ⚠️ 代码不在股票基本信息列表中，可能不存在或不是股票代码{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}[SCAN_CHECKPOINT]   ⚠️ 无法检查股票基本信息: {e}{Style.RESET_ALL}")
+                
                 return pd.DataFrame()
             
             print(f"{Fore.CYAN}[SCAN_CHECKPOINT] 🔄 Converting to DataFrame for {code}...{Style.RESET_ALL}")

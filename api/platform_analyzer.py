@@ -54,7 +54,7 @@ def calculate_features(df: pd.DataFrame, window: int) -> Dict[str, float]:
         volatility = recent_df['pctChg'].std()
     else:
         # Calculate daily returns if pctChg not available
-        daily_returns = recent_df['close'].pct_change().dropna()
+        daily_returns = recent_df['close'].pct_change(fill_method=None).dropna()
         volatility = daily_returns.std() * 100  # Convert to percentage
     
     return {

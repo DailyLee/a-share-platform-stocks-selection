@@ -12,7 +12,7 @@ from tqdm import tqdm
 from colorama import Fore, Style
 import platform as platform_module
 
-from .data_fetcher import fetch_kline_data, baostock_login
+from .data_fetcher import fetch_kline_data, baostock_login, get_data_source_stats, clear_data_source_stats
 from .industry_filter import apply_industry_diversity_filter
 from .config import ScanConfig
 
@@ -44,7 +44,7 @@ def should_use_process_pool() -> bool:
 def prepare_stock_list(stock_basics_df: pd.DataFrame,
                        industry_df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    Prepare a list of stocks for scanning, excluding indices and merging industry data.
+    Prepare a list of stocks for scanning, excluding indices, bonds, and merging industry data.
 
     Args:
         stock_basics_df: DataFrame containing stock basic information
@@ -53,19 +53,30 @@ def prepare_stock_list(stock_basics_df: pd.DataFrame,
     Returns:
         List of dictionaries with stock information
     """
-    # Filter out indices (type=2) and non-active stocks (status=0)
+    # Filter out indices (type=2), non-active stocks (status=0), and convertible bonds
     stock_list = []
+    filtered_bonds_count = 0
 
     for _, row in stock_basics_df.iterrows():
+        code = row['code']
+        
         # Skip indices and inactive stocks
         if row['type'] == '2' or row['status'] == '0':
+            continue
+        
+        # Filter out convertible bonds (可转债)
+        # Shanghai: 11xxxx (convertible bonds)
+        # Shenzhen: 12xxxx (convertible bonds)
+        code_num = code.split('.')[-1] if '.' in code else code
+        if code_num.startswith('11') or code_num.startswith('12'):
+            filtered_bonds_count += 1
             continue
 
         # Support both 'code_name' (from API) and 'name' (from database)
         stock_name = row.get('code_name') or row.get('name', '')
 
         stock_info = {
-            'code': row['code'],
+            'code': code,
             'name': stock_name,
             'type': row['type'],
             'status': row['status'],
@@ -74,6 +85,10 @@ def prepare_stock_list(stock_basics_df: pd.DataFrame,
 
         # Add to list
         stock_list.append(stock_info)
+    
+    # Log filtered bonds count
+    if filtered_bonds_count > 0:
+        print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Filtered out {filtered_bonds_count} convertible bonds (11xxxx/12xxxx codes){Style.RESET_ALL}")
 
     # Add industry information if available
     if not industry_df.empty:
@@ -86,15 +101,17 @@ def prepare_stock_list(stock_basics_df: pd.DataFrame,
 
 
 def _fetch_kline_with_tracking(code: str, name: str, start_date: str, end_date: str,
-                                retry_attempts: int, retry_delay: int, api_timeout: float = 5.0) -> pd.DataFrame:
+                                retry_attempts: int, retry_delay: int, api_timeout: float = 5.0,
+                                use_local_database_first: bool = True):
     """
     Module-level function to fetch K-line data (can be pickled for ProcessPoolExecutor).
     This is a wrapper around fetch_kline_data that can be used in multiprocessing.
+    Returns (DataFrame, source) tuple where source is 'db', 'api', or 'mixed'.
     """
     from .data_fetcher import fetch_kline_data
     try:
-        result = fetch_kline_data(code, start_date, end_date, retry_attempts, retry_delay, api_timeout)
-        return result
+        result, source = fetch_kline_data(code, start_date, end_date, retry_attempts, retry_delay, api_timeout, use_local_database_first=use_local_database_first, return_source=True)
+        return result, source
     except Exception as e:
         # Re-raise to preserve error information
         raise
@@ -103,7 +120,8 @@ def _fetch_kline_with_tracking(code: str, name: str, start_date: str, end_date: 
 def scan_stocks(stock_list: List[Dict[str, Any]],
                 config: ScanConfig,
                 update_progress: Optional[callable] = None,
-                end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+                end_date: Optional[str] = None,
+                return_stats: bool = False) -> List[Dict[str, Any]]:
     """
     Scan stocks for platform consolidation patterns.
 
@@ -128,6 +146,9 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
     print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Starting stock platform scan{Style.RESET_ALL}")
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
+    
+    # Clear data source statistics at the start of scan
+    clear_data_source_stats()
     print(f"{Fore.YELLOW}Scan parameters:{Style.RESET_ALL}")
     print(
         f"  - Date range: {Fore.GREEN}{start_date} to {end_date}{Style.RESET_ALL}")
@@ -180,6 +201,16 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     empty_count = 0
     error_count = 0
     platform_count = 0
+    
+    # Data source statistics (collected from worker processes/threads)
+    collected_data_sources = {}  # {code: 'db'|'api'|'mixed'}
+    
+    # Data source statistics (thread-safe)
+    import threading as threading_module
+    db_fetch_count = 0  # Stocks fetched entirely from database
+    api_fetch_count = 0  # Stocks fetched entirely from API
+    mixed_fetch_count = 0  # Stocks fetched from both database and API
+    data_source_lock = threading_module.Lock()
 
     # List to store platform stocks
     platform_stocks = []
@@ -213,18 +244,22 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         # For ThreadPoolExecutor, we can still track execution
         if executor_class == ThreadPoolExecutor:
             # For ThreadPoolExecutor, use a wrapper with tracking
+            # Get use_local_database_first from config
+            use_db_first = getattr(config, 'use_local_database_first', True)
+            
             def fetch_with_tracking(code, name, start_date, end_date, retry_attempts, retry_delay, api_timeout=5.0):
                 """Wrapper to track when task actually starts executing in thread pool"""
                 import threading
+                from .data_fetcher import fetch_kline_data
                 with stocks_lock:
                     started_stocks.add(code)
                 print(f"{Fore.MAGENTA}[SCAN_CHECKPOINT] 🚀 TASK STARTED in thread {threading.current_thread().name} for {code} ({name}){Style.RESET_ALL}")
                 try:
-                    result = fetch_kline_data(code, start_date, end_date, retry_attempts, retry_delay, api_timeout)
+                    result, source = fetch_kline_data(code, start_date, end_date, retry_attempts, retry_delay, api_timeout, use_local_database_first=use_db_first, return_source=True)
                     with stocks_lock:
                         completed_stocks.add(code)
                     print(f"{Fore.MAGENTA}[SCAN_CHECKPOINT] ✅ TASK FINISHED for {code} ({name}), returning {len(result)} rows{Style.RESET_ALL}")
-                    return result
+                    return result, source
                 except Exception as e:
                     with stocks_lock:
                         completed_stocks.add(code)  # Mark as completed even if failed
@@ -239,11 +274,22 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
         print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Submitting {len(stock_list)} tasks to executor{Style.RESET_ALL}")
         # Use 5 second timeout for each API call
         api_timeout = 5.0
-        future_to_stock = {
-            executor.submit(fetch_func, s['code'], s['name'], start_date, end_date,
-                            config.retry_attempts, config.retry_delay, api_timeout): s
-            for s in stock_list
-        }
+        use_db_first = getattr(config, 'use_local_database_first', True)
+        
+        if executor_class == ThreadPoolExecutor:
+            # For ThreadPoolExecutor, use fetch_with_tracking (already has use_db_first)
+            future_to_stock = {
+                executor.submit(fetch_func, s['code'], s['name'], start_date, end_date,
+                                config.retry_attempts, config.retry_delay, api_timeout): s
+                for s in stock_list
+            }
+        else:
+            # For ProcessPoolExecutor, use _fetch_kline_with_tracking with use_db_first
+            future_to_stock = {
+                executor.submit(_fetch_kline_with_tracking, s['code'], s['name'], start_date, end_date,
+                                config.retry_attempts, config.retry_delay, api_timeout, use_db_first): s
+                for s in stock_list
+            }
         all_futures = set(future_to_stock.keys())  # Store reference outside executor block
 
         # Create progress bar
@@ -422,7 +468,19 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                     # Get K-line data with timeout to prevent indefinite waiting
                     # Use shorter timeout if watchdog has triggered
                     result_timeout = 5.0 if hang_detected[0] else 10.0
-                    df = future.result(timeout=result_timeout)
+                    result = future.result(timeout=result_timeout)
+                    
+                    # Handle both old format (DataFrame) and new format (DataFrame, source)
+                    if isinstance(result, tuple) and len(result) == 2:
+                        df, source = result
+                        collected_data_sources[stock_code] = source
+                    else:
+                        # Backward compatibility: if not tuple, assume it's just DataFrame
+                        df = result
+                        # Try to get source from global stats (works for ThreadPoolExecutor)
+                        data_source_stats = get_data_source_stats()
+                        if stock_code in data_source_stats:
+                            collected_data_sources[stock_code] = data_source_stats[stock_code]
 
                     if df.empty:
                         empty_count += 1
@@ -825,6 +883,24 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     
     print(f"{Fore.GREEN}[SCAN_CHECKPOINT] Sorting complete, preparing to return results{Style.RESET_ALL}")
 
+    # Get data source statistics
+    # For ProcessPoolExecutor, use collected_data_sources (from return values)
+    # For ThreadPoolExecutor, also check global stats as fallback
+    data_source_stats = collected_data_sources.copy()
+    global_stats = get_data_source_stats()
+    # Merge global stats (for ThreadPoolExecutor) with collected stats
+    for code, source in global_stats.items():
+        if code not in data_source_stats:
+            data_source_stats[code] = source
+    
+    # Count data sources
+    db_only_count = sum(1 for source in data_source_stats.values() if source == 'db')
+    api_only_count = sum(1 for source in data_source_stats.values() if source == 'api')
+    mixed_count = sum(1 for source in data_source_stats.values() if source == 'mixed')
+    
+    # Clear stats for next scan
+    clear_data_source_stats()
+
     # Print summary
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
     print(f"{Fore.CYAN}Scan completed{Style.RESET_ALL}")
@@ -834,6 +910,10 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"  - Success: {Fore.GREEN}{success_count}{Style.RESET_ALL}")
     print(f"  - Empty data: {Fore.YELLOW}{empty_count}{Style.RESET_ALL}")
     print(f"  - Errors: {Fore.RED}{error_count}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Data source statistics:{Style.RESET_ALL}")
+    print(f"  - From database only: {Fore.GREEN}{db_only_count}{Style.RESET_ALL}")
+    print(f"  - From API only: {Fore.BLUE}{api_only_count}{Style.RESET_ALL}")
+    print(f"  - Mixed (database + API): {Fore.YELLOW}{mixed_count}{Style.RESET_ALL}")
     print(
         f"Platform stocks found: {Fore.GREEN}{platform_count}{Style.RESET_ALL}")
     if config.use_fundamental_filter:
@@ -892,5 +972,12 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"{Fore.CYAN}[SCAN_CHECKPOINT] About to return from scan_stocks: {len(filtered_stocks)} stocks, type: {type(filtered_stocks)}{Style.RESET_ALL}")
     if filtered_stocks:
         print(f"{Fore.CYAN}[SCAN_CHECKPOINT] First stock code: {filtered_stocks[0].get('code', 'unknown') if isinstance(filtered_stocks[0], dict) else 'N/A'}{Style.RESET_ALL}")
+    
+    # Return statistics if requested
+    if return_stats:
+        return filtered_stocks, {
+            'total_scanned': total_stocks,
+            'success_count': success_count
+        }
     
     return filtered_stocks

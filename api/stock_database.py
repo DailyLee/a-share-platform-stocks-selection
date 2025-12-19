@@ -237,10 +237,23 @@ class StockDatabase:
                     scan_config TEXT NOT NULL,
                     backtest_date TEXT NOT NULL,
                     scanned_stocks TEXT NOT NULL,
+                    total_scanned INTEGER,
+                    success_count INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # Add new columns if they don't exist (for existing databases)
+            try:
+                cursor.execute('ALTER TABLE scan_cache ADD COLUMN total_scanned INTEGER')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            try:
+                cursor.execute('ALTER TABLE scan_cache ADD COLUMN success_count INTEGER')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             
             # Create index for scan_cache
             cursor.execute('''
@@ -278,22 +291,52 @@ class StockDatabase:
         """
         with self._lock:
             with self._transaction() as conn:
-                # Clear existing data
-                conn.execute('DELETE FROM stock_basics')
+                # Get list of new stock codes
+                new_codes = set(df['code'].tolist())
                 
-                # Insert new data
-                for _, row in df.iterrows():
-                    conn.execute('''
-                        INSERT OR REPLACE INTO stock_basics 
-                        (code, name, type, status, updated_at)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (
-                        row['code'],
-                        row.get('code_name', ''),
-                        row.get('type', ''),
-                        row.get('status', ''),
-                        datetime.now()
-                    ))
+                # Get list of existing stock codes
+                cursor = conn.cursor()
+                cursor.execute('SELECT code FROM stock_basics')
+                existing_codes = set(row[0] for row in cursor.fetchall())
+                
+                # Find codes that need to be removed (exist in DB but not in new data)
+                codes_to_remove = existing_codes - new_codes
+                
+                # Disable foreign key constraints temporarily to avoid constraint errors
+                conn.execute('PRAGMA foreign_keys=OFF')
+                
+                try:
+                    # Delete industry_data for removed stocks (if any)
+                    if codes_to_remove:
+                        placeholders = ','.join(['?'] * len(codes_to_remove))
+                        conn.execute(f'DELETE FROM industry_data WHERE code IN ({placeholders})', list(codes_to_remove))
+                        # Note: We don't delete kline_data to preserve historical data
+                        # K-line data can remain even if stock is removed from basics
+                    
+                    # Delete stock_basics for removed stocks (if any)
+                    if codes_to_remove:
+                        placeholders = ','.join(['?'] * len(codes_to_remove))
+                        conn.execute(f'DELETE FROM stock_basics WHERE code IN ({placeholders})', list(codes_to_remove))
+                    
+                    # Re-enable foreign key constraints
+                    conn.execute('PRAGMA foreign_keys=ON')
+                    
+                    # Insert or update new data
+                    for _, row in df.iterrows():
+                        conn.execute('''
+                            INSERT OR REPLACE INTO stock_basics 
+                            (code, name, type, status, updated_at)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (
+                            row['code'],
+                            row.get('code_name', ''),
+                            row.get('type', ''),
+                            row.get('status', ''),
+                            datetime.now()
+                        ))
+                finally:
+                    # Always re-enable foreign key constraints
+                    conn.execute('PRAGMA foreign_keys=ON')
     
     def get_stock_basics(self) -> Optional[pd.DataFrame]:
         """
@@ -892,7 +935,9 @@ class StockDatabase:
                 return count
     
     def save_scan_cache(self, cache_key: str, scan_config: Dict[str, Any], 
-                       backtest_date: str, scanned_stocks: List[Dict[str, Any]]) -> None:
+                       backtest_date: str, scanned_stocks: List[Dict[str, Any]],
+                       total_scanned: Optional[int] = None,
+                       success_count: Optional[int] = None) -> None:
         """
         Save scan results to cache.
         
@@ -901,6 +946,8 @@ class StockDatabase:
             scan_config: Scan configuration dictionary
             backtest_date: Backtest date string (YYYY-MM-DD)
             scanned_stocks: List of scanned stock dictionaries
+            total_scanned: Total number of stocks scanned
+            success_count: Number of stocks successfully analyzed
         """
         with self._lock:
             with self._transaction() as conn:
@@ -916,12 +963,15 @@ class StockDatabase:
                     # Update existing record, preserve created_at
                     cursor.execute('''
                         UPDATE scan_cache 
-                        SET scan_config = ?, backtest_date = ?, scanned_stocks = ?, updated_at = ?
+                        SET scan_config = ?, backtest_date = ?, scanned_stocks = ?, 
+                            total_scanned = ?, success_count = ?, updated_at = ?
                         WHERE cache_key = ?
                     ''', (
                         json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
                         backtest_date,
                         json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                        total_scanned,
+                        success_count,
                         now_utc,
                         cache_key
                     ))
@@ -929,13 +979,15 @@ class StockDatabase:
                     # Insert new record with both created_at and updated_at
                     cursor.execute('''
                         INSERT INTO scan_cache 
-                        (cache_key, scan_config, backtest_date, scanned_stocks, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        (cache_key, scan_config, backtest_date, scanned_stocks, total_scanned, success_count, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         cache_key,
                         json.dumps(scan_config, sort_keys=True, ensure_ascii=False),
                         backtest_date,
                         json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                        total_scanned,
+                        success_count,
                         now_utc,
                         now_utc
                     ))
@@ -1008,7 +1060,7 @@ class StockDatabase:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT cache_key, scan_config, backtest_date, scanned_stocks, created_at, updated_at
+                SELECT cache_key, scan_config, backtest_date, scanned_stocks, total_scanned, success_count, created_at, updated_at
                 FROM scan_cache
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -1029,11 +1081,13 @@ class StockDatabase:
                 record = {
                     'id': row[0],  # Use cache_key as id
                     'cacheKey': row[0],
-                    'createdAt': normalize_timestamp_to_utc(row[4]),
-                    'updatedAt': normalize_timestamp_to_utc(row[5]),
+                    'createdAt': normalize_timestamp_to_utc(row[6]),
+                    'updatedAt': normalize_timestamp_to_utc(row[7]),
                     'scanDate': row[2],  # backtest_date is the scan date
                     'stockCount': len(scanned_stocks) if isinstance(scanned_stocks, list) else 0,
-                    'scanConfig': scan_config
+                    'scanConfig': scan_config,
+                    'totalScanned': row[4],  # total_scanned
+                    'successCount': row[5]  # success_count
                 }
                 records.append(record)
             

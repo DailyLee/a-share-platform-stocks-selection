@@ -247,7 +247,7 @@ def is_platform_window(df: pd.DataFrame,
 
     # --- 3. Volatility Check (Standard Deviation of Daily Returns) ---
     # Calculate percentage change on the 'close' price for the window
-    daily_returns = recent_df['close'].pct_change().dropna()
+    daily_returns = recent_df['close'].pct_change(fill_method=None).dropna()
 
     # Need at least 2 returns to calculate standard deviation
     if len(daily_returns) < 2:

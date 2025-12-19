@@ -39,7 +39,7 @@ def quick_price_check(df: pd.DataFrame, window: int,
     
     # Calculate volatility (standard deviation of daily returns) - fast operation
     if len(recent_df) >= 3:
-        daily_returns = recent_df['close'].pct_change().dropna()
+        daily_returns = recent_df['close'].pct_change(fill_method=None).dropna()
         volatility = daily_returns.std()
     else:
         volatility = float('inf')
@@ -98,7 +98,7 @@ def calculate_price_features(df: pd.DataFrame, window: int) -> Dict[str, float]:
     
     # Calculate volatility (standard deviation of daily returns)
     if len(recent_df) >= 3:
-        daily_returns = recent_df['close'].pct_change().dropna()
+        daily_returns = recent_df['close'].pct_change(fill_method=None).dropna()
         volatility = daily_returns.std()
     else:
         volatility = float('inf')

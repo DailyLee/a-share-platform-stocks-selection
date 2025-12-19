@@ -126,6 +126,7 @@ def analyze_decline_speed(df: pd.DataFrame,
 
         # Calculate decline volatility (standard deviation of daily returns during decline)
         decline_volatility = after_high_df.loc[max_idx:min_idx]['close'].pct_change(
+            fill_method=None
         ).std()
 
         # Prepare result

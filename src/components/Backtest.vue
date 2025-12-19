@@ -725,7 +725,7 @@ const backtestConfig = ref({
   useStopLoss: true, // 使用止损
   useTakeProfit: true, // 使用止盈
   stopLossPercent: -2, // 止损百分比
-  takeProfitPercent: 15 // 止盈百分比
+  takeProfitPercent: 18 // 止盈百分比
 })
 
 // 选中的股票列表（从扫描工具页面获取）
@@ -780,6 +780,39 @@ const canRunBacktest = computed(() => {
          (backtestConfig.value.useStopLoss || backtestConfig.value.useTakeProfit)
 })
 
+// 计算给定日期后的第一个周五
+function getNextFriday(dateString) {
+  const date = new Date(dateString)
+  const dayOfWeek = date.getDay() // 0 = 周日, 1 = 周一, ..., 5 = 周五, 6 = 周六
+  
+  // 计算到下一个周五需要加的天数
+  // 如果今天是周五(5)，则加7天（下一个周五）
+  // 如果今天是周六(6)，则加6天
+  // 如果今天是周日(0)，则加5天
+  // 如果今天是周一(1)，则加4天
+  // 如果今天是周二(2)，则加3天
+  // 如果今天是周三(3)，则加2天
+  // 如果今天是周四(4)，则加1天
+  let daysToAdd
+  if (dayOfWeek === 5) {
+    // 如果是周五，使用下一个周五
+    daysToAdd = 7
+  } else if (dayOfWeek === 6) {
+    // 如果是周六
+    daysToAdd = 6
+  } else if (dayOfWeek === 0) {
+    // 如果是周日
+    daysToAdd = 5
+  } else {
+    // 周一(1)到周四(4)：到本周五的天数
+    daysToAdd = 5 - dayOfWeek
+  }
+  
+  const nextFriday = new Date(date)
+  nextFriday.setDate(date.getDate() + daysToAdd)
+  return nextFriday.toISOString().split('T')[0]
+}
+
 // 初始化日期
 function initDates() {
   const today = new Date()
@@ -794,7 +827,8 @@ function initDates() {
     backtestConfig.value.backtestDate = oneWeekAgo.toISOString().split('T')[0]
   }
   
-  backtestConfig.value.statDate = today.toISOString().split('T')[0]
+  // 统计日默认设置为回测日的未来第一个周五
+  backtestConfig.value.statDate = getNextFriday(backtestConfig.value.backtestDate)
 }
 
 // 切换单只股票的选择状态
