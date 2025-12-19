@@ -3878,9 +3878,11 @@ async function calculateStatistics() {
     let totalRecords = filteredRecords.length
     let profitableStocks = 0  // 盈利股票数
     let lossStocks = 0  // 亏损股票数
-    let totalInvestment = 0
-    let totalProfit = 0
-    let totalReturnRate = 0
+    
+    // 每次回测都是独立的，所以需要分别计算每次回测的收益率
+    const recordReturns = [] // 存储每次回测的收益率和投入资金
+    let totalInvestment = 0  // 所有回测的总投入资金（用于显示）
+    let totalProfit = 0  // 所有回测的总收益（用于显示）
 
     const recordDetails = []
 
@@ -3902,7 +3904,7 @@ async function calculateStatistics() {
         filteredStockCodes.has(detail.code)
       )
 
-      // 重新计算筛选后股票的统计数据
+      // 重新计算筛选后股票的统计数据（本次回测）
       let recordInvestment = 0
       let recordProfit = 0
       
@@ -3919,7 +3921,20 @@ async function calculateStatistics() {
         }
       })
 
-      // 累计到总体统计
+      // 计算本次回测的收益率
+      let recordReturnRate = 0
+      if (recordInvestment > 0) {
+        recordReturnRate = (recordProfit / recordInvestment) * 100
+      }
+      
+      // 保存本次回测的数据（用于后续计算整体收益率）
+      recordReturns.push({
+        investment: recordInvestment,
+        profit: recordProfit,
+        returnRate: recordReturnRate
+      })
+
+      // 累计总投入和总收益（用于显示）
       totalInvestment += recordInvestment
       totalProfit += recordProfit
 
@@ -4036,8 +4051,35 @@ async function calculateStatistics() {
     })
 
     // 计算整体收益率
-    if (totalInvestment > 0) {
-      totalReturnRate = (totalProfit / totalInvestment) * 100
+    // 因为每次回测都是独立的，所以整体收益率应该用复利方式计算
+    // 或者用加权平均的方式计算
+    let totalReturnRate = 0
+    if (recordReturns.length > 0) {
+      // 方法1：复利计算（更准确）
+      // 总收益率 = (1 + r1/100) * (1 + r2/100) * ... * (1 + rn/100) - 1
+      let compoundReturn = 1
+      recordReturns.forEach(r => {
+        if (r.investment > 0) {
+          compoundReturn *= (1 + r.returnRate / 100)
+        }
+      })
+      totalReturnRate = (compoundReturn - 1) * 100
+      
+      // 方法2：加权平均（按投入资金加权）
+      // 如果总投入为0，则使用简单平均
+      if (totalInvestment > 0) {
+        let weightedSum = 0
+        recordReturns.forEach(r => {
+          if (r.investment > 0) {
+            weightedSum += r.returnRate * (r.investment / totalInvestment)
+          }
+        })
+        totalReturnRate = weightedSum
+      } else {
+        // 如果总投入为0，使用简单平均
+        const avgReturn = recordReturns.reduce((sum, r) => sum + r.returnRate, 0) / recordReturns.length
+        totalReturnRate = avgReturn
+      }
     }
 
     // 计算胜率（基于股票数量）
