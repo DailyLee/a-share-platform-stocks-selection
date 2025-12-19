@@ -824,6 +824,38 @@
               </div>
               <!-- 图表容器 -->
               <div ref="chartRef" class="w-full h-[500px] min-h-[500px]"></div>
+              <!-- 数据窗口导航 -->
+              <div v-if="chartData && chartData.dates && chartData.dates.length > 0" class="flex items-center justify-center space-x-2 pt-2">
+                <button
+                  @click="goToPreviousPage"
+                  :disabled="getCurrentPage() === 1"
+                  :class="[
+                    'px-2 py-1 rounded text-xs',
+                    getCurrentPage() === 1
+                      ? 'text-muted-foreground cursor-not-allowed opacity-50'
+                      : 'text-foreground hover:bg-muted/50'
+                  ]"
+                  title="上一页"
+                >
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                <span class="text-xs text-muted-foreground px-2">
+                  {{ getCurrentPage() }} / {{ getTotalPages() }}
+                </span>
+                <button
+                  @click="goToNextPage"
+                  :disabled="getCurrentPage() >= getTotalPages()"
+                  :class="[
+                    'px-2 py-1 rounded text-xs',
+                    getCurrentPage() >= getTotalPages()
+                      ? 'text-muted-foreground cursor-not-allowed opacity-50'
+                      : 'text-foreground hover:bg-muted/50'
+                  ]"
+                  title="下一页"
+                >
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
             </div>
             <div v-else class="text-center py-8 text-muted-foreground">
               <i class="fas fa-chart-line text-4xl mb-4"></i>
@@ -832,40 +864,7 @@
           </div>
 
           <!-- 图表对话框底部 -->
-          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
-            <!-- 数据窗口导航 -->
-            <div v-if="chartData && chartData.dates && chartData.dates.length > maxChartItemsPerPage" class="flex items-center space-x-2">
-              <button
-                @click="chartWindowStart = Math.max(0, chartWindowStart - maxChartItemsPerPage)"
-                :disabled="chartWindowStart === 0"
-                :class="[
-                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                  chartWindowStart === 0
-                    ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/80'
-                ]"
-              >
-                <i class="fas fa-chevron-left mr-1"></i>
-                上一页
-              </button>
-              <span class="text-sm text-muted-foreground px-2">
-                {{ Math.floor(chartWindowStart / maxChartItemsPerPage) + 1 }} / {{ Math.ceil(chartData.dates.length / maxChartItemsPerPage) }}
-              </span>
-              <button
-                @click="chartWindowStart = Math.min(chartData.dates.length - maxChartItemsPerPage, chartWindowStart + maxChartItemsPerPage)"
-                :disabled="chartWindowStart + maxChartItemsPerPage >= chartData.dates.length"
-                :class="[
-                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                  chartWindowStart + maxChartItemsPerPage >= chartData.dates.length
-                    ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/80'
-                ]"
-              >
-                下一页
-                <i class="fas fa-chevron-right ml-1"></i>
-              </button>
-            </div>
-            <div v-else></div>
+          <div class="p-4 sm:p-6 border-t border-border flex justify-end">
             <button
               @click="showChartDialog = false"
               class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
@@ -1593,6 +1592,21 @@ const filteredBacktestHistoryGroupedByDate = computed(() => {
   return filtered
 })
 
+// 按年度筛选后的历史记录列表（用于生成折线图）
+const filteredBacktestHistory = computed(() => {
+  if (!selectedBacktestYear.value) {
+    return backtestHistory.value
+  }
+  
+  return backtestHistory.value.filter(record => {
+    const scanDate = record.backtestDate || ''
+    if (scanDate && scanDate !== '未知日期') {
+      return scanDate.startsWith(selectedBacktestYear.value)
+    }
+    return false
+  })
+})
+
 // 查看历史记录详情
 async function viewHistoryRecord(record) {
   try {
@@ -1804,7 +1818,10 @@ function formatDateTime(isoString) {
 
 // 生成回测折线图
 async function generateBacktestChart() {
-  if (backtestHistory.value.length === 0) {
+  // 使用筛选后的历史记录
+  const historyToUse = filteredBacktestHistory.value
+  
+  if (historyToUse.length === 0) {
     error.value = '没有回测历史记录'
     return
   }
@@ -1817,7 +1834,7 @@ async function generateBacktestChart() {
   try {
     // 需要获取完整的回测历史记录详情（包含大盘收益率）
     const fullRecords = []
-    for (const record of backtestHistory.value) {
+    for (const record of historyToUse) {
       try {
         const response = await axios.get(`/platform/api/backtest/history/${record.id}`)
         if (response.data.success) {
@@ -1873,11 +1890,8 @@ async function generateBacktestChart() {
         const returnRate = summary.totalReturnRate
         if (returnRate !== null && returnRate !== undefined) {
           const existingIndex = mergedDataRate.findIndex(item => item.timeKey === timeKey)
-          if (existingIndex >= 0) {
-            const existing = mergedDataRate[existingIndex]
-            existing.totalReturnRate = (existing.totalReturnRate + returnRate) / 2
-            existing.count += 1
-          } else {
+          if (existingIndex < 0) {
+            // 相同时间的数据，只取第一条
             mergedDataRate.push({
               timeKey,
               backtestDate,
@@ -1895,11 +1909,8 @@ async function generateBacktestChart() {
         const totalProfit = summary.totalProfit
         if (totalProfit !== null && totalProfit !== undefined) {
           const existingIndex = mergedDataProfit.findIndex(item => item.timeKey === timeKey)
-          if (existingIndex >= 0) {
-            const existing = mergedDataProfit[existingIndex]
-            existing.totalProfit = (existing.totalProfit + totalProfit) / 2
-            existing.count += 1
-          } else {
+          if (existingIndex < 0) {
+            // 相同时间的数据，只取第一条
             mergedDataProfit.push({
               timeKey,
               backtestDate,
@@ -1956,26 +1967,18 @@ async function generateBacktestChart() {
       
       // 处理大盘收益率数据
       if (marketReturnRate !== null && marketReturnRate !== undefined) {
-        dates.add(backtestDate)
-        
         const existingIndex = marketDataRate.findIndex(item => item.date === backtestDate)
-        if (existingIndex >= 0) {
-          marketDataRate[existingIndex].value = (marketDataRate[existingIndex].value + marketReturnRate) / 2
-          marketDataRate[existingIndex].investment = (marketDataRate[existingIndex].investment + totalInvestment) / 2
-        } else {
+        if (existingIndex < 0) {
+          // 相同日期的数据，只取第一条
+          dates.add(backtestDate)
           marketDataRate.push({
             date: backtestDate,
             value: marketReturnRate,
             investment: totalInvestment
           })
-        }
 
-        // 计算大盘收益金额（基于投入金额和收益率）
-        const marketProfit = (totalInvestment * marketReturnRate) / 100
-        const existingProfitIndex = marketDataProfit.findIndex(item => item.date === backtestDate)
-        if (existingProfitIndex >= 0) {
-          marketDataProfit[existingProfitIndex].value = (marketDataProfit[existingProfitIndex].value + marketProfit) / 2
-        } else {
+          // 计算大盘收益金额（基于投入金额和收益率）
+          const marketProfit = (totalInvestment * marketReturnRate) / 100
           marketDataProfit.push({
             date: backtestDate,
             value: marketProfit
@@ -2003,13 +2006,183 @@ async function generateBacktestChart() {
       return
     }
 
+    // 预先计算所有窗口的累计数据
+    // 从后往前计算窗口起始位置，保证最后一个窗口有12条数据
+    const allWindowStarts = []
+    const totalLength = sortedDates.length
+    
+    if (totalLength <= maxChartItemsPerPage) {
+      // 数据量小于等于12条，只有一个窗口
+      allWindowStarts.push(0)
+    } else {
+      // 数据量大于12条，从后往前计算
+      // 最后一个窗口：从 totalLength - 12 开始，包含12条数据
+      let currentStart = totalLength - maxChartItemsPerPage
+      allWindowStarts.push(currentStart)
+      
+      // 向前计算前面的窗口，每次向前移动12条
+      while (currentStart > 0) {
+        currentStart -= maxChartItemsPerPage
+        if (currentStart > 0) {
+          // 如果还有空间且大于0，添加窗口（包含12条数据）
+          allWindowStarts.push(currentStart)
+        } else {
+          // 如果 currentStart <= 0，说明第一个窗口不足12条
+          // 第一个窗口从0开始，只包含到下一个窗口之前的数据（不重叠）
+          // 但这里 currentStart 已经是 <= 0 了，所以第一个窗口应该从0开始
+          // 实际上，如果 currentStart == 0，说明正好对齐，不需要额外处理
+          // 如果 currentStart < 0，说明第一个窗口不足12条，从0开始
+          if (currentStart < 0) {
+            allWindowStarts.push(0)
+          }
+          break
+        }
+      }
+    }
+    
+    // 排序，确保窗口起始位置从小到大
+    allWindowStarts.sort((a, b) => a - b)
+
+    // 预先计算每个窗口的累计数据
+    const precomputedCumulativeData = {
+      rate: {}, // { seriesIndex: { windowStart: cumulativeData[] } }
+      profit: {}, // { seriesIndex: { windowStart: cumulativeData[] } }
+      marketRate: {}, // { windowStart: cumulativeData[] }
+      marketProfit: {} // { windowStart: cumulativeData[] }
+    }
+
+    // 计算每个系列在每个窗口的累计数据
+    const calculateCumulativeForWindow = (seriesItem, windowStart, isRateType, nextWindowStart = null) => {
+      // 如果有下一个窗口，第一个窗口只包含到下一个窗口之前的数据（避免重叠）
+      // 否则，窗口包含12条数据或到数据末尾
+      let windowEnd
+      if (nextWindowStart !== null && windowStart === 0 && nextWindowStart > 0) {
+        // 第一个窗口且不是唯一窗口，只包含到下一个窗口之前的数据
+        windowEnd = nextWindowStart
+      } else {
+        // 其他窗口，包含12条数据或到数据末尾
+        windowEnd = Math.min(windowStart + maxChartItemsPerPage, sortedDates.length)
+      }
+      const windowDates = sortedDates.slice(windowStart, windowEnd)
+      
+      if (isRateType) {
+        // 累计收益率
+        let cumulativeProfit = 0
+        let cumulativeInvestment = 0
+        return windowDates.map(date => {
+          const dataPoint = seriesItem.data.find(d => d.date === date)
+          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+            const investment = dataPoint.investment || 0
+            if (investment > 0) {
+              cumulativeInvestment += investment
+              const profit = (investment * dataPoint.value) / 100
+              cumulativeProfit += profit
+              return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+            }
+            return null
+          }
+          return null
+        })
+      } else {
+        // 累计盈亏金额
+        let cumulative = 0
+        return windowDates.map(date => {
+          const dataPoint = seriesItem.data.find(d => d.date === date)
+          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+            cumulative += dataPoint.value
+            return cumulative
+          }
+          return null
+        })
+      }
+    }
+
+    // 计算每个系列在每个窗口的累计数据
+    seriesDataRate.forEach((item, index) => {
+      precomputedCumulativeData.rate[index] = {}
+      allWindowStarts.forEach((windowStart, windowIndex) => {
+        // 获取下一个窗口的起始位置（用于避免第一个窗口重叠）
+        const nextWindowStart = windowIndex < allWindowStarts.length - 1 ? allWindowStarts[windowIndex + 1] : null
+        precomputedCumulativeData.rate[index][windowStart] = calculateCumulativeForWindow(item, windowStart, true, nextWindowStart)
+      })
+    })
+
+    seriesDataProfit.forEach((item, index) => {
+      precomputedCumulativeData.profit[index] = {}
+      allWindowStarts.forEach((windowStart, windowIndex) => {
+        // 获取下一个窗口的起始位置（用于避免第一个窗口重叠）
+        const nextWindowStart = windowIndex < allWindowStarts.length - 1 ? allWindowStarts[windowIndex + 1] : null
+        precomputedCumulativeData.profit[index][windowStart] = calculateCumulativeForWindow(item, windowStart, false, nextWindowStart)
+      })
+    })
+
+    // 计算大盘在每个窗口的累计数据
+    const sortedMarketRate = marketDataRate.sort((a, b) => a.date.localeCompare(b.date))
+    const sortedMarketProfit = marketDataProfit.sort((a, b) => a.date.localeCompare(b.date))
+    
+    allWindowStarts.forEach((windowStart, windowIndex) => {
+      // 获取下一个窗口的起始位置（用于避免第一个窗口重叠）
+      const nextWindowStart = windowIndex < allWindowStarts.length - 1 ? allWindowStarts[windowIndex + 1] : null
+      // 如果有下一个窗口，第一个窗口只包含到下一个窗口之前的数据（避免重叠）
+      let windowEnd
+      if (nextWindowStart !== null && windowStart === 0 && nextWindowStart > 0) {
+        // 第一个窗口且不是唯一窗口，只包含到下一个窗口之前的数据
+        windowEnd = nextWindowStart
+      } else {
+        // 其他窗口，包含12条数据或到数据末尾
+        windowEnd = Math.min(windowStart + maxChartItemsPerPage, sortedDates.length)
+      }
+      const windowDates = sortedDates.slice(windowStart, windowEnd)
+      
+      // 大盘收益率累计数据
+      let cumulativeProfit = 0
+      let cumulativeInvestment = 0
+      precomputedCumulativeData.marketRate[windowStart] = windowDates.map(date => {
+        const dataPoint = sortedMarketRate.find(d => d.date === date)
+        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+          const investment = dataPoint.investment || 0
+          if (investment > 0) {
+            cumulativeInvestment += investment
+            const profit = (investment * dataPoint.value) / 100
+            cumulativeProfit += profit
+            return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+          }
+          return null
+        }
+        return null
+      })
+      
+      // 大盘收益金额累计数据
+      let cumulative = 0
+      precomputedCumulativeData.marketProfit[windowStart] = windowDates.map(date => {
+        const dataPoint = sortedMarketProfit.find(d => d.date === date)
+        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+          cumulative += dataPoint.value
+          return cumulative
+        }
+        return null
+      })
+    })
+
     // 准备图表数据
     chartData.value = {
       dates: sortedDates,
       seriesRate: seriesDataRate,
       seriesProfit: seriesDataProfit,
-      marketRate: marketDataRate.sort((a, b) => a.date.localeCompare(b.date)),
-      marketProfit: marketDataProfit.sort((a, b) => a.date.localeCompare(b.date))
+      marketRate: sortedMarketRate,
+      marketProfit: sortedMarketProfit,
+      precomputedCumulativeData: precomputedCumulativeData, // 预先计算的累计数据
+      windowStarts: allWindowStarts // 所有窗口的起始位置数组
+    }
+
+    // 设置默认窗口位置为最后一页（最新的一页）
+    // 优先保证最新的窗口有12条数据（如果全部数据不足12条，就展示全部数据）
+    if (sortedDates.length > maxChartItemsPerPage) {
+      // 数据量大于12条，最后一个窗口从倒数第12条开始，包含12条数据
+      chartWindowStart.value = sortedDates.length - maxChartItemsPerPage
+    } else {
+      // 数据量小于等于12条，只有一个窗口，从0开始
+      chartWindowStart.value = 0
     }
 
     // 等待 DOM 更新后渲染图表
@@ -2040,15 +2213,15 @@ function getConditionKey(config) {
 function getConditionLabel(config) {
   const parts = []
   if (config.use_stop_loss) {
-    parts.push(`止损${config.stop_loss_percent}%`)
+    parts.push(`${config.stop_loss_percent}%`)
   }
   if (config.use_take_profit) {
-    parts.push(`止盈${config.take_profit_percent}%`)
+    parts.push(`${config.take_profit_percent}%`)
   }
   if (parts.length === 0) {
-    return '无止损止盈'
+    return '-'
   }
-  return parts.join(' / ')
+  return parts.join('/')
 }
 
 // 渲染图表
@@ -2091,7 +2264,33 @@ function renderChart() {
 
   // 计算当前窗口的日期范围
   const allDates = chartData.value.dates || []
-  const windowEnd = Math.min(chartWindowStart.value + maxChartItemsPerPage, allDates.length)
+  
+  // 确保窗口起始位置有效
+  if (chartWindowStart.value < 0) {
+    chartWindowStart.value = 0
+  }
+  if (chartWindowStart.value >= allDates.length) {
+    // 如果窗口起始位置超出范围，设置为最后一页的起始位置
+    if (allDates.length > maxChartItemsPerPage) {
+      chartWindowStart.value = allDates.length - maxChartItemsPerPage
+    } else {
+      chartWindowStart.value = 0
+    }
+  }
+  
+  // 计算窗口结束位置
+  // 如果当前窗口是第一个窗口（索引0），需要检查下一个窗口的起始位置，避免重叠
+  const windowStarts = chartData.value.windowStarts || []
+  const currentWindowIndex = windowStarts.indexOf(chartWindowStart.value)
+  let windowEnd
+  if (currentWindowIndex >= 0 && currentWindowIndex < windowStarts.length - 1 && chartWindowStart.value === 0) {
+    // 第一个窗口且不是唯一窗口，只包含到下一个窗口之前的数据（避免重叠）
+    const nextWindowStart = windowStarts[currentWindowIndex + 1]
+    windowEnd = nextWindowStart
+  } else {
+    // 其他窗口，包含12条数据或到数据末尾
+    windowEnd = Math.min(chartWindowStart.value + maxChartItemsPerPage, allDates.length)
+  }
   const visibleDates = allDates.slice(chartWindowStart.value, windowEnd)
   
   if (visibleDates.length === 0) {
@@ -2116,13 +2315,13 @@ function renderChart() {
 
   // 准备系列数据
   const series = []
-  // 自选组合使用绿色系，不同条件使用不同深浅的绿色
-  const greenColors = [
-    '#2ca02c', '#4caf50', '#66bb6a', '#81c784', '#a5d6a7',
-    '#388e3c', '#43a047', '#5cb85c', '#7cb342', '#9ccc65'
+  // 自选组合使用红色系，不同条件使用不同深浅的红色
+  const redColors = [
+    '#d32f2f', '#f44336', '#e57373', '#ef5350', '#e53935',
+    '#c62828', '#b71c1c', '#d50000', '#ff1744', '#ff5252'
   ]
 
-  // 添加回测数据系列（自选组合 - 绿色）
+  // 添加回测数据系列（自选组合 - 红色）
   if (seriesData && seriesData.length > 0) {
     seriesData.forEach((item, index) => {
       // 将数据映射到当前窗口的日期轴上
@@ -2131,59 +2330,52 @@ function renderChart() {
         return dataPoint ? dataPoint.value : null
       })
 
-      // 计算累计数据
+      // 从预先计算的数据中获取当前窗口的累计数据
       let cumulativeData = null
-      if (isRate) {
-        // 累计收益率：累计收益金额 / 累计投入金额 * 100
-        // 需要从窗口开始位置之前的数据开始累计
-        let cumulativeProfit = 0
-        let cumulativeInvestment = 0
+      if (chartData.value.precomputedCumulativeData) {
+        const precomputedData = isRate 
+          ? chartData.value.precomputedCumulativeData.rate[index]
+          : chartData.value.precomputedCumulativeData.profit[index]
         
-        // 先计算窗口开始位置之前的累计值
-        const datesBeforeWindow = allDates.slice(0, chartWindowStart.value)
-        datesBeforeWindow.forEach(date => {
-          const dataPoint = item.data.find(d => d.date === date)
-          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
-            const investment = dataPoint.investment || 0
-            if (investment > 0) {
-              cumulativeInvestment += investment
-              const profit = (investment * dataPoint.value) / 100
-              cumulativeProfit += profit
-            }
-          }
-        })
-        
-        // 然后计算窗口内的累计数据
-        cumulativeData = visibleDates.map((date, idx) => {
-          // 找到对应日期的数据点
-          const dataPoint = item.data.find(d => d.date === date)
-          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
-            const investment = dataPoint.investment || 0
-            if (investment > 0) {
-              cumulativeInvestment += investment
-              // 计算单期收益金额
-              const profit = (investment * dataPoint.value) / 100
-              cumulativeProfit += profit
-              // 计算累计收益率
-              return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+        if (precomputedData && precomputedData[chartWindowStart.value]) {
+          cumulativeData = precomputedData[chartWindowStart.value]
+        }
+      }
+      
+      // 如果没有预先计算的数据，则实时计算（向后兼容）
+      if (!cumulativeData) {
+        if (isRate) {
+          // 累计收益率：累计收益金额 / 累计投入金额 * 100
+          let cumulativeProfit = 0
+          let cumulativeInvestment = 0
+          cumulativeData = visibleDates.map((date, idx) => {
+            const dataPoint = item.data.find(d => d.date === date)
+            if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+              const investment = dataPoint.investment || 0
+              if (investment > 0) {
+                cumulativeInvestment += investment
+                const profit = (investment * dataPoint.value) / 100
+                cumulativeProfit += profit
+                return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+              }
+              return null
             }
             return null
-          }
-          return null
-        })
-      } else {
-        // 累计盈亏金额
-        let cumulative = 0
-        cumulativeData = data.map(value => {
-          if (value !== null && value !== undefined) {
-            cumulative += value
-            return cumulative
-          }
-          return null
-        })
+          })
+        } else {
+          // 累计盈亏金额
+          let cumulative = 0
+          cumulativeData = data.map(value => {
+            if (value !== null && value !== undefined) {
+              cumulative += value
+              return cumulative
+            }
+            return null
+          })
+        }
       }
 
-      // 单期盈亏 - 实线（绿色）
+      // 单期盈亏 - 实线（红色）- 默认隐藏
       series.push({
         name: item.name,
         type: 'line',
@@ -2197,7 +2389,7 @@ function renderChart() {
           opacity: 1
         },
         itemStyle: {
-          color: greenColors[index % greenColors.length],
+          color: redColors[index % redColors.length],
           borderWidth: 1,
           borderColor: '#fff'
         },
@@ -2207,12 +2399,13 @@ function renderChart() {
           },
           symbolSize: 10
         },
-        connectNulls: false
+        connectNulls: false,
+        show: false // 默认不显示非累计折线
       })
 
-      // 累计数据 - 虚线（绿色）
+      // 累计数据 - 虚线（红色）
       if (cumulativeData) {
-        const baseColor = greenColors[index % greenColors.length]
+        const baseColor = redColors[index % redColors.length]
         series.push({
           name: `${item.name}（累计）`,
           type: 'line',
@@ -2248,62 +2441,55 @@ function renderChart() {
       return dataPoint ? dataPoint.value : null
     })
 
-    // 计算大盘累计数据
+    // 从预先计算的数据中获取当前窗口的大盘累计数据
     let marketCumulativeData = null
-    if (isRate) {
-      // 累计收益率：累计收益金额 / 累计投入金额 * 100
-      // 需要从窗口开始位置之前的数据开始累计
-      let cumulativeProfit = 0
-      let cumulativeInvestment = 0
+    if (chartData.value.precomputedCumulativeData) {
+      const precomputedMarketData = isRate
+        ? chartData.value.precomputedCumulativeData.marketRate
+        : chartData.value.precomputedCumulativeData.marketProfit
       
-      // 先计算窗口开始位置之前的累计值
-      const datesBeforeWindow = allDates.slice(0, chartWindowStart.value)
-      datesBeforeWindow.forEach(date => {
-        const dataPoint = marketData.find(d => d.date === date)
-        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
-          const investment = dataPoint.investment || 0
-          if (investment > 0) {
-            cumulativeInvestment += investment
-            const profit = (investment * dataPoint.value) / 100
-            cumulativeProfit += profit
-          }
-        }
-      })
-      
-      // 然后计算窗口内的累计数据
-      marketCumulativeData = visibleDates.map((date, idx) => {
-        // 找到对应日期的数据点
-        const dataPoint = marketData.find(d => d.date === date)
-        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
-          const investment = dataPoint.investment || 0
-          if (investment > 0) {
-            cumulativeInvestment += investment
-            // 计算单期收益金额
-            const profit = (investment * dataPoint.value) / 100
-            cumulativeProfit += profit
-            // 计算累计收益率
-            return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+      if (precomputedMarketData && precomputedMarketData[chartWindowStart.value]) {
+        marketCumulativeData = precomputedMarketData[chartWindowStart.value]
+      }
+    }
+    
+    // 如果没有预先计算的数据，则实时计算（向后兼容）
+    if (!marketCumulativeData) {
+      if (isRate) {
+        // 累计收益率：累计收益金额 / 累计投入金额 * 100
+        let cumulativeProfit = 0
+        let cumulativeInvestment = 0
+        marketCumulativeData = visibleDates.map((date, idx) => {
+          const dataPoint = marketData.find(d => d.date === date)
+          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+            const investment = dataPoint.investment || 0
+            if (investment > 0) {
+              cumulativeInvestment += investment
+              const profit = (investment * dataPoint.value) / 100
+              cumulativeProfit += profit
+              return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+            }
+            return null
           }
           return null
-        }
-        return null
-      })
-    } else {
-      // 累计盈亏金额
-      let cumulative = 0
-      marketCumulativeData = marketDataPoints.map(value => {
-        if (value !== null && value !== undefined) {
-          cumulative += value
-          return cumulative
-        }
-        return null
-      })
+        })
+      } else {
+        // 累计盈亏金额
+        let cumulative = 0
+        marketCumulativeData = marketDataPoints.map(value => {
+          if (value !== null && value !== undefined) {
+            cumulative += value
+            return cumulative
+          }
+          return null
+        })
+      }
     }
 
-    // 大盘单期 - 实线（蓝色）
+    // 大盘单期 - 实线（蓝色）- 默认隐藏
     const marketBlueColor = '#2196F3' // 蓝色
     series.push({
-      name: '大盘（上证指数）',
+      name: '上证指数',
       type: 'line',
       data: marketDataPoints,
       smooth: true,
@@ -2325,13 +2511,14 @@ function renderChart() {
         },
         symbolSize: 10
       },
-      connectNulls: false
+      connectNulls: false,
+      show: false // 默认不显示非累计折线
     })
 
     // 大盘累计数据 - 虚线（蓝色）
     if (marketCumulativeData) {
       series.push({
-        name: '大盘（上证指数）累计',
+        name: '上证指数累计',
         type: 'line',
         data: marketCumulativeData,
         smooth: true,
@@ -2411,7 +2598,16 @@ function renderChart() {
     legend: {
       data: series.map(s => s.name),
       bottom: 10,
-      type: 'scroll'
+      type: 'scroll',
+      selected: (() => {
+        // 默认只显示累计折线，隐藏非累计折线
+        const selectedMap = {}
+        series.forEach(s => {
+          // 如果系列名称包含"累计"，则显示；否则隐藏
+          selectedMap[s.name] = s.name.includes('累计')
+        })
+        return selectedMap
+      })()
     },
     grid: {
       left: '3%',
@@ -2474,9 +2670,122 @@ watch(chartType, () => {
   }
 })
 
+// 计算当前页码
+function getCurrentPage() {
+  if (!chartData.value || !chartData.value.dates || chartData.value.dates.length === 0) {
+    return 1
+  }
+  
+  // 使用窗口起始位置数组来计算页码
+  const windowStarts = chartData.value.windowStarts
+  if (!windowStarts || windowStarts.length === 0) {
+    return 1
+  }
+  
+  // 找到当前窗口起始位置在数组中的索引
+  const currentIndex = windowStarts.indexOf(chartWindowStart.value)
+  if (currentIndex === -1) {
+    // 如果找不到，尝试找到最接近的窗口
+    const closestIndex = windowStarts.findIndex(start => start > chartWindowStart.value) - 1
+    return closestIndex >= 0 ? closestIndex + 1 : 1
+  }
+  
+  return currentIndex + 1
+}
+
+// 计算总页数
+function getTotalPages() {
+  if (!chartData.value || !chartData.value.dates || chartData.value.dates.length === 0) {
+    return 1
+  }
+  
+  // 使用窗口起始位置数组的长度作为总页数
+  const windowStarts = chartData.value.windowStarts
+  if (windowStarts && windowStarts.length > 0) {
+    return windowStarts.length
+  }
+  
+  // 如果没有窗口数组，使用原来的计算方法（向后兼容）
+  return Math.ceil(chartData.value.dates.length / maxChartItemsPerPage)
+}
+
+// 跳转到下一页
+function goToNextPage() {
+  if (!chartData.value || !chartData.value.dates || chartData.value.dates.length === 0) {
+    return
+  }
+  
+  // 使用窗口起始位置数组来切换
+  const windowStarts = chartData.value.windowStarts
+  if (!windowStarts || windowStarts.length === 0) {
+    return
+  }
+  
+  // 找到当前窗口起始位置在数组中的索引
+  const currentIndex = windowStarts.indexOf(chartWindowStart.value)
+  if (currentIndex === -1) {
+    // 如果找不到，尝试找到最接近的窗口
+    const closestIndex = windowStarts.findIndex(start => start > chartWindowStart.value) - 1
+    if (closestIndex >= 0 && closestIndex < windowStarts.length - 1) {
+      chartWindowStart.value = windowStarts[closestIndex + 1]
+    }
+    return
+  }
+  
+  // 移动到下一个窗口
+  if (currentIndex < windowStarts.length - 1) {
+    chartWindowStart.value = windowStarts[currentIndex + 1]
+  }
+}
+
+// 跳转到上一页
+function goToPreviousPage() {
+  if (!chartData.value || !chartData.value.dates || chartData.value.dates.length === 0) {
+    return
+  }
+  
+  // 使用窗口起始位置数组来切换
+  const windowStarts = chartData.value.windowStarts
+  if (!windowStarts || windowStarts.length === 0) {
+    // 如果没有数组，使用原来的方法（向后兼容）
+    chartWindowStart.value = Math.max(0, chartWindowStart.value - maxChartItemsPerPage)
+    return
+  }
+  
+  // 找到当前窗口起始位置在数组中的索引
+  const currentIndex = windowStarts.indexOf(chartWindowStart.value)
+  if (currentIndex === -1) {
+    // 如果找不到，尝试找到最接近的窗口
+    const closestIndex = windowStarts.findIndex(start => start > chartWindowStart.value) - 1
+    if (closestIndex > 0) {
+      chartWindowStart.value = windowStarts[closestIndex - 1]
+    } else if (closestIndex === 0) {
+      chartWindowStart.value = windowStarts[0]
+    }
+    return
+  }
+  
+  // 移动到上一个窗口
+  if (currentIndex > 0) {
+    chartWindowStart.value = windowStarts[currentIndex - 1]
+  }
+}
+
 // 监听窗口变化，重新渲染图表
 watch(chartWindowStart, () => {
   if (showChartDialog.value && chartData.value && chartData.value.dates && chartData.value.dates.length > 0) {
+    // 确保窗口位置有效
+    const allDates = chartData.value.dates
+    if (chartWindowStart.value < 0) {
+      chartWindowStart.value = 0
+    } else if (chartWindowStart.value >= allDates.length) {
+      // 如果窗口起始位置超出范围，设置为最后一页的起始位置
+      if (allDates.length > maxChartItemsPerPage) {
+        chartWindowStart.value = allDates.length - maxChartItemsPerPage
+      } else {
+        chartWindowStart.value = 0
+      }
+    }
     nextTick(() => {
       renderChart()
     })
@@ -2500,10 +2809,16 @@ watch(showChartDialog, (newVal) => {
     chartType.value = 'rate'
     chartWindowStart.value = 0
   } else {
-    // 对话框打开时，重置窗口位置
-    chartWindowStart.value = 0
+    // 对话框打开时，窗口位置会在generateBacktestChart中设置为最后一页
     // 如果数据已准备好，等待 DOM 更新后渲染
     if (chartData.value && chartData.value.dates && chartData.value.dates.length > 0 && !chartLoading.value) {
+      // 设置窗口位置为最后一页（最新的一页）
+      // 优先保证最新的窗口有12条数据（如果全部数据不足12条，就展示全部数据）
+      if (chartData.value.dates.length > maxChartItemsPerPage) {
+        chartWindowStart.value = chartData.value.dates.length - maxChartItemsPerPage
+      } else {
+        chartWindowStart.value = 0
+      }
       nextTick(() => {
         setTimeout(() => {
           if (chartRef.value && chartData.value) {
