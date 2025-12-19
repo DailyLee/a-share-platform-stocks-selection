@@ -1597,7 +1597,7 @@ const config = ref({
   sort_by_breakthrough: true, // 根据突破&突破前兆排序，默认开启
   
   // 系统设置
-  use_scan_cache: true, // 是否使用扫描结果缓存，默认为开启
+  use_scan_cache: false, // 是否使用扫描结果缓存，默认为关闭
   max_stock_count: null, // 扫描股票数量限制，null或0表示全量扫描
   use_local_database_first: true // 优先使用本地数据库数据，默认为开启
 });
@@ -2640,7 +2640,7 @@ async function fetchPlatformStocks () {
       fundamental_years_to_check: config.value.fundamental_years_to_check,
       
       // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true,
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : false,
       max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
       use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
     };
@@ -2750,7 +2750,7 @@ async function fetchPlatformStocksLegacy () {
       fundamental_years_to_check: config.value.fundamental_years_to_check,
       
       // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : true,
+      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : false,
       max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
       use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
     };
