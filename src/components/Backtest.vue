@@ -545,21 +545,31 @@
           </div>
 
           <!-- 对话框底部 -->
-          <div class="p-4 sm:p-6 border-t border-border flex justify-end space-x-2">
+          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
             <button
               v-if="backtestHistory.length > 0"
-              @click="showClearBacktestHistoryConfirm"
-              class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
-            >
-              <i class="fas fa-trash mr-2"></i>
-              清空历史
-            </button>
-            <button
-              @click="showHistoryDialog = false"
+              @click="generateBacktestChart"
               class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
             >
-              关闭
+              <i class="fas fa-chart-line mr-2"></i>
+              生成折线图
             </button>
+            <div class="flex space-x-2">
+              <button
+                v-if="backtestHistory.length > 0"
+                @click="showClearBacktestHistoryConfirm"
+                class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
+              >
+                <i class="fas fa-trash mr-2"></i>
+                清空历史
+              </button>
+              <button
+                @click="showHistoryDialog = false"
+                class="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors text-sm"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -689,6 +699,90 @@
       </div>
     </transition>
 
+    <!-- 回测折线图对话框 -->
+    <transition name="fade">
+      <div v-if="showChartDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showChartDialog = false">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <!-- 图表对话框头部 -->
+          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
+            <h2 class="text-lg font-semibold flex items-center">
+              <i class="fas fa-chart-line mr-2 text-primary"></i>
+              回测数据折线图
+            </h2>
+            <div class="flex items-center space-x-4">
+              <!-- 图表类型切换 -->
+              <div v-if="chartData && chartData.dates && chartData.dates.length > 0" class="flex items-center space-x-2 bg-muted/30 rounded-md p-1">
+                <button
+                  @click="chartType = 'rate'"
+                  :class="[
+                    'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+                    chartType === 'rate' 
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  ]"
+                >
+                  <i class="fas fa-percentage mr-1"></i>
+                  收益率
+                </button>
+                <button
+                  @click="chartType = 'profit'"
+                  :class="[
+                    'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+                    chartType === 'profit' 
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  ]"
+                >
+                  <i class="fas fa-yen-sign mr-1"></i>
+                  收益金额
+                </button>
+              </div>
+              <button
+                @click="showChartDialog = false"
+                class="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <i class="fas fa-times text-xl"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 图表内容 -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div v-if="chartLoading" class="text-center py-8">
+              <i class="fas fa-spinner fa-spin text-2xl mb-4 text-primary"></i>
+              <p class="text-muted-foreground">正在生成图表...</p>
+            </div>
+            <div v-else-if="chartError" class="text-center py-8">
+              <i class="fas fa-exclamation-circle text-2xl mb-4 text-destructive"></i>
+              <p class="text-destructive">{{ chartError }}</p>
+            </div>
+            <div v-else-if="chartData && chartData.dates && chartData.dates.length > 0" class="space-y-4">
+              <!-- 图表说明 -->
+              <div class="bg-muted/30 p-3 rounded-md text-sm text-muted-foreground">
+                <p><i class="fas fa-info-circle mr-2"></i>相同止损止盈条件的回测数据已自动合并，按时间顺序展示。大盘数据（上证指数）用于对比参考。</p>
+              </div>
+              <!-- 图表容器 -->
+              <div ref="chartRef" class="w-full h-[500px] min-h-[500px]"></div>
+            </div>
+            <div v-else class="text-center py-8 text-muted-foreground">
+              <i class="fas fa-chart-line text-4xl mb-4"></i>
+              <p>暂无数据可显示</p>
+            </div>
+          </div>
+
+          <!-- 图表对话框底部 -->
+          <div class="p-4 sm:p-6 border-t border-border flex justify-end">
+            <button
+              @click="showChartDialog = false"
+              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- 确认对话框 -->
     <ConfirmDialog
       v-model:show="confirmDialog.show"
@@ -703,11 +797,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import ThemeToggle from './ThemeToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+
+// 注册 ECharts 组件
+echarts.use([
+  LineChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+  CanvasRenderer
+])
 
 const route = useRoute()
 const router = useRouter()
@@ -754,6 +862,16 @@ const backtestHistoryGroupedByDate = ref({})
 
 // 筛选理由展开状态
 const expandedReasons = ref({})
+
+// 图表相关
+const showChartDialog = ref(false)
+const chartLoading = ref(false)
+const chartError = ref(null)
+const chartRef = ref(null)
+const chartData = ref([])
+const chartType = ref('rate') // 'rate' 收益率 或 'profit' 收益金额
+let chartInstance = null
+let chartResizeHandler = null
 
 // 计算最大日期（今天）
 const maxDate = computed(() => {
@@ -1256,11 +1374,680 @@ function formatDateTime(isoString) {
   })
 }
 
+// 生成回测折线图
+async function generateBacktestChart() {
+  if (backtestHistory.value.length === 0) {
+    error.value = '没有回测历史记录'
+    return
+  }
+
+  showChartDialog.value = true
+  chartLoading.value = true
+  chartError.value = null
+  chartData.value = []
+
+  try {
+    // 需要获取完整的回测历史记录详情（包含大盘收益率）
+    const fullRecords = []
+    for (const record of backtestHistory.value) {
+      try {
+        const response = await axios.get(`/platform/api/backtest/history/${record.id}`)
+        if (response.data.success) {
+          fullRecords.push(response.data.data)
+        }
+      } catch (e) {
+        console.warn(`获取回测记录 ${record.id} 详情失败:`, e)
+      }
+    }
+
+    if (fullRecords.length === 0) {
+      chartError.value = '无法获取回测历史记录详情'
+      chartLoading.value = false
+      return
+    }
+
+    // 按照止损止盈条件分组
+    const groupedByCondition = {}
+    fullRecords.forEach(record => {
+      const conditionKey = getConditionKey(record.config)
+      if (!groupedByCondition[conditionKey]) {
+        groupedByCondition[conditionKey] = []
+      }
+      groupedByCondition[conditionKey].push(record)
+    })
+
+    // 处理每个分组的数据
+    const seriesDataRate = [] // 收益率数据
+    const seriesDataProfit = [] // 收益金额数据
+    const marketDataRate = [] // 大盘收益率数据
+    const marketDataProfit = [] // 大盘收益金额数据（需要计算）
+    const dates = new Set()
+
+    // 处理回测数据
+    Object.entries(groupedByCondition).forEach(([conditionKey, records]) => {
+      // 按回测日排序
+      records.sort((a, b) => {
+        const dateA = a.config.backtest_date || ''
+        const dateB = b.config.backtest_date || ''
+        return dateA.localeCompare(dateB)
+      })
+
+      // 合并相同时间的数据（按回测日和统计日的时间）
+      const mergedDataRate = []
+      const mergedDataProfit = []
+      records.forEach(record => {
+        const backtestDate = record.config.backtest_date
+        const statDate = record.config.stat_date
+        const timeKey = `${backtestDate}_${statDate}`
+        const summary = record.result?.summary || {}
+        
+        // 处理收益率数据
+        const returnRate = summary.totalReturnRate
+        if (returnRate !== null && returnRate !== undefined) {
+          const existingIndex = mergedDataRate.findIndex(item => item.timeKey === timeKey)
+          if (existingIndex >= 0) {
+            const existing = mergedDataRate[existingIndex]
+            existing.totalReturnRate = (existing.totalReturnRate + returnRate) / 2
+            existing.count += 1
+          } else {
+            mergedDataRate.push({
+              timeKey,
+              backtestDate,
+              statDate,
+              totalReturnRate: returnRate,
+              count: 1
+            })
+            if (backtestDate) {
+              dates.add(backtestDate)
+            }
+          }
+        }
+
+        // 处理收益金额数据
+        const totalProfit = summary.totalProfit
+        if (totalProfit !== null && totalProfit !== undefined) {
+          const existingIndex = mergedDataProfit.findIndex(item => item.timeKey === timeKey)
+          if (existingIndex >= 0) {
+            const existing = mergedDataProfit[existingIndex]
+            existing.totalProfit = (existing.totalProfit + totalProfit) / 2
+            existing.count += 1
+          } else {
+            mergedDataProfit.push({
+              timeKey,
+              backtestDate,
+              statDate,
+              totalProfit: totalProfit,
+              count: 1
+            })
+          }
+        }
+      })
+
+      // 添加到系列数据
+      if (mergedDataRate.length > 0) {
+        const conditionLabel = getConditionLabel(records[0].config)
+        // 同时保存投入金额，用于计算累计收益率
+        seriesDataRate.push({
+          name: conditionLabel,
+          data: mergedDataRate.map(item => {
+            // 查找对应的投入金额
+            const profitItem = mergedDataProfit.find(p => p.timeKey === item.timeKey)
+            const investment = profitItem ? 
+              (records.find(r => {
+                const key = `${r.config.backtest_date}_${r.config.stat_date}`
+                return key === item.timeKey
+              })?.result?.summary?.totalInvestment || 0) : 0
+            
+            return {
+              date: item.backtestDate,
+              value: item.totalReturnRate,
+              investment: investment
+            }
+          })
+        })
+      }
+
+      if (mergedDataProfit.length > 0) {
+        const conditionLabel = getConditionLabel(records[0].config)
+        seriesDataProfit.push({
+          name: conditionLabel,
+          data: mergedDataProfit.map(item => ({
+            date: item.backtestDate,
+            value: item.totalProfit
+          }))
+        })
+      }
+    })
+
+    // 处理大盘数据
+    fullRecords.forEach(record => {
+      const backtestDate = record.config.backtest_date
+      const summary = record.result?.summary || {}
+      const marketReturnRate = summary.marketReturnRate
+      const totalInvestment = summary.totalInvestment || 0
+      
+      // 处理大盘收益率数据
+      if (marketReturnRate !== null && marketReturnRate !== undefined) {
+        dates.add(backtestDate)
+        
+        const existingIndex = marketDataRate.findIndex(item => item.date === backtestDate)
+        if (existingIndex >= 0) {
+          marketDataRate[existingIndex].value = (marketDataRate[existingIndex].value + marketReturnRate) / 2
+          marketDataRate[existingIndex].investment = (marketDataRate[existingIndex].investment + totalInvestment) / 2
+        } else {
+          marketDataRate.push({
+            date: backtestDate,
+            value: marketReturnRate,
+            investment: totalInvestment
+          })
+        }
+
+        // 计算大盘收益金额（基于投入金额和收益率）
+        const marketProfit = (totalInvestment * marketReturnRate) / 100
+        const existingProfitIndex = marketDataProfit.findIndex(item => item.date === backtestDate)
+        if (existingProfitIndex >= 0) {
+          marketDataProfit[existingProfitIndex].value = (marketDataProfit[existingProfitIndex].value + marketProfit) / 2
+        } else {
+          marketDataProfit.push({
+            date: backtestDate,
+            value: marketProfit
+          })
+        }
+      }
+    })
+
+    // 按日期排序
+    const sortedDates = Array.from(dates).sort()
+
+    console.log('图表数据准备完成:', {
+      datesCount: sortedDates.length,
+      seriesRateCount: seriesDataRate.length,
+      seriesProfitCount: seriesDataProfit.length,
+      marketRateCount: marketDataRate.length,
+      marketProfitCount: marketDataProfit.length,
+      dates: sortedDates
+    })
+
+    // 检查是否有有效数据
+    if (sortedDates.length === 0 && seriesDataRate.length === 0 && seriesDataProfit.length === 0) {
+      chartError.value = '没有有效的回测数据可显示'
+      chartLoading.value = false
+      return
+    }
+
+    // 准备图表数据
+    chartData.value = {
+      dates: sortedDates,
+      seriesRate: seriesDataRate,
+      seriesProfit: seriesDataProfit,
+      marketRate: marketDataRate.sort((a, b) => a.date.localeCompare(b.date)),
+      marketProfit: marketDataProfit.sort((a, b) => a.date.localeCompare(b.date))
+    }
+
+    // 等待 DOM 更新后渲染图表
+    // 需要等待多个 nextTick 确保 DOM 完全渲染
+    await nextTick()
+    await nextTick()
+    
+    // 使用 setTimeout 确保 DOM 完全准备好
+    setTimeout(() => {
+      renderChart()
+    }, 100)
+  } catch (e) {
+    console.error('生成图表失败:', e)
+    chartError.value = '生成图表失败: ' + (e.response?.data?.detail || e.message)
+  } finally {
+    chartLoading.value = false
+  }
+}
+
+// 获取止损止盈条件键
+function getConditionKey(config) {
+  const stopLoss = config.use_stop_loss ? config.stop_loss_percent : null
+  const takeProfit = config.use_take_profit ? config.take_profit_percent : null
+  return `${stopLoss}_${takeProfit}`
+}
+
+// 获取止损止盈条件标签
+function getConditionLabel(config) {
+  const parts = []
+  if (config.use_stop_loss) {
+    parts.push(`止损${config.stop_loss_percent}%`)
+  }
+  if (config.use_take_profit) {
+    parts.push(`止盈${config.take_profit_percent}%`)
+  }
+  if (parts.length === 0) {
+    return '无止损止盈'
+  }
+  return parts.join(' / ')
+}
+
+// 渲染图表
+function renderChart() {
+  if (!chartData.value) {
+    console.warn('图表数据不存在')
+    return
+  }
+
+  if (!chartRef.value) {
+    console.warn('图表容器不存在，等待 DOM 更新...')
+    // 如果容器不存在，延迟重试
+    setTimeout(() => {
+      if (chartRef.value) {
+        renderChart()
+      } else {
+        console.error('图表容器无法获取')
+        chartError.value = '图表容器初始化失败，请重试'
+      }
+    }, 200)
+    return
+  }
+
+  if (!chartData.value.dates || chartData.value.dates.length === 0) {
+    console.warn('图表日期数据为空:', chartData.value)
+    chartError.value = '没有可用的日期数据'
+    return
+  }
+
+  // 根据图表类型选择数据
+  const isRate = chartType.value === 'rate'
+  const seriesData = isRate ? chartData.value.seriesRate : chartData.value.seriesProfit
+  const marketData = isRate ? chartData.value.marketRate : chartData.value.marketProfit
+  
+  if (!seriesData || seriesData.length === 0) {
+    console.warn('图表系列数据为空:', chartData.value)
+    chartError.value = `没有可用的${isRate ? '收益率' : '收益金额'}数据`
+    return
+  }
+
+  // 销毁旧图表实例
+  if (chartInstance) {
+    chartInstance.dispose()
+    chartInstance = null
+  }
+
+  // 创建新图表实例
+  chartInstance = echarts.init(chartRef.value, null, {
+    width: 'auto',
+    height: 500
+  })
+  const yAxisName = isRate ? '收益率 (%)' : '收益金额 (元)'
+  const titleText = isRate ? '回测收益率趋势对比' : '回测收益金额趋势对比'
+
+  // 准备系列数据
+  const series = []
+  // 自选组合使用绿色系，不同条件使用不同深浅的绿色
+  const greenColors = [
+    '#2ca02c', '#4caf50', '#66bb6a', '#81c784', '#a5d6a7',
+    '#388e3c', '#43a047', '#5cb85c', '#7cb342', '#9ccc65'
+  ]
+
+  // 添加回测数据系列（自选组合 - 绿色）
+  if (seriesData && seriesData.length > 0) {
+    seriesData.forEach((item, index) => {
+      // 将数据映射到日期轴上
+      const data = chartData.value.dates.map(date => {
+        const dataPoint = item.data.find(d => d.date === date)
+        return dataPoint ? dataPoint.value : null
+      })
+
+      // 计算累计数据
+      let cumulativeData = null
+      if (isRate) {
+        // 累计收益率：累计收益金额 / 累计投入金额 * 100
+        let cumulativeProfit = 0
+        let cumulativeInvestment = 0
+        cumulativeData = chartData.value.dates.map((date, idx) => {
+          // 找到对应日期的数据点
+          const dataPoint = item.data.find(d => d.date === date)
+          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+            const investment = dataPoint.investment || 0
+            if (investment > 0) {
+              cumulativeInvestment += investment
+              // 计算单期收益金额
+              const profit = (investment * dataPoint.value) / 100
+              cumulativeProfit += profit
+              // 计算累计收益率
+              return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+            }
+            return null
+          }
+          return null
+        })
+      } else {
+        // 累计盈亏金额
+        let cumulative = 0
+        cumulativeData = data.map(value => {
+          if (value !== null && value !== undefined) {
+            cumulative += value
+            return cumulative
+          }
+          return null
+        })
+      }
+
+      // 单期盈亏 - 实线（绿色）
+      series.push({
+        name: item.name,
+        type: 'line',
+        data: data,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        lineStyle: {
+          width: 2,
+          type: 'solid', // 实线
+          opacity: 1
+        },
+        itemStyle: {
+          color: greenColors[index % greenColors.length],
+          borderWidth: 1,
+          borderColor: '#fff'
+        },
+        emphasis: {
+          lineStyle: {
+            width: 3
+          },
+          symbolSize: 10
+        },
+        connectNulls: false
+      })
+
+      // 累计数据 - 虚线（绿色）
+      if (cumulativeData) {
+        const baseColor = greenColors[index % greenColors.length]
+        series.push({
+          name: `${item.name}（累计）`,
+          type: 'line',
+          data: cumulativeData,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: {
+            width: 2,
+            type: [10, 5], // 虚线：10px实线，5px空白
+            opacity: 0.9
+          },
+          itemStyle: {
+            color: baseColor
+          },
+          emphasis: {
+            lineStyle: {
+              width: 3
+            },
+            symbolSize: 8
+          },
+          connectNulls: false,
+          z: 1 // 放在后面，避免遮挡
+        })
+      }
+    })
+  }
+
+  // 添加大盘数据系列（蓝色）
+  if (marketData && marketData.length > 0) {
+    const marketDataPoints = chartData.value.dates.map(date => {
+      const dataPoint = marketData.find(d => d.date === date)
+      return dataPoint ? dataPoint.value : null
+    })
+
+    // 计算大盘累计数据
+    let marketCumulativeData = null
+    if (isRate) {
+      // 累计收益率：累计收益金额 / 累计投入金额 * 100
+      let cumulativeProfit = 0
+      let cumulativeInvestment = 0
+      marketCumulativeData = chartData.value.dates.map((date, idx) => {
+        // 找到对应日期的数据点
+        const dataPoint = marketData.find(d => d.date === date)
+        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+          const investment = dataPoint.investment || 0
+          if (investment > 0) {
+            cumulativeInvestment += investment
+            // 计算单期收益金额
+            const profit = (investment * dataPoint.value) / 100
+            cumulativeProfit += profit
+            // 计算累计收益率
+            return cumulativeInvestment > 0 ? (cumulativeProfit / cumulativeInvestment) * 100 : 0
+          }
+          return null
+        }
+        return null
+      })
+    } else {
+      // 累计盈亏金额
+      let cumulative = 0
+      marketCumulativeData = marketDataPoints.map(value => {
+        if (value !== null && value !== undefined) {
+          cumulative += value
+          return cumulative
+        }
+        return null
+      })
+    }
+
+    // 大盘单期 - 实线（蓝色）
+    const marketBlueColor = '#2196F3' // 蓝色
+    series.push({
+      name: '大盘（上证指数）',
+      type: 'line',
+      data: marketDataPoints,
+      smooth: true,
+      symbol: 'square',
+      symbolSize: 8,
+      lineStyle: {
+        width: 2,
+        type: 'solid', // 实线
+        opacity: 1
+      },
+      itemStyle: {
+        color: marketBlueColor,
+        borderWidth: 1,
+        borderColor: '#fff'
+      },
+      emphasis: {
+        lineStyle: {
+          width: 3
+        },
+        symbolSize: 10
+      },
+      connectNulls: false
+    })
+
+    // 大盘累计数据 - 虚线（蓝色）
+    if (marketCumulativeData) {
+      series.push({
+        name: '大盘（上证指数）累计',
+        type: 'line',
+        data: marketCumulativeData,
+        smooth: true,
+        symbol: 'square',
+        symbolSize: 6,
+        lineStyle: {
+          width: 2,
+          type: [10, 5], // 虚线：10px实线，5px空白
+          opacity: 0.9
+        },
+        itemStyle: {
+          color: marketBlueColor
+        },
+        emphasis: {
+          lineStyle: {
+            width: 3
+          },
+          symbolSize: 8
+        },
+        connectNulls: false,
+        z: 1
+      })
+    }
+  }
+
+  // 配置图表选项
+  const option = {
+    title: {
+      text: titleText,
+      left: 'center',
+      textStyle: {
+        fontSize: 16,
+        fontWeight: 'bold'
+      }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let result = `<div style="margin-bottom: 4px;"><strong>${params[0].axisValue}</strong></div>`
+        
+        // 先显示单期数据
+        params.forEach(param => {
+          if (param.value !== null && param.value !== undefined && !param.seriesName.includes('累计')) {
+            let displayValue
+            if (isRate) {
+              displayValue = param.value >= 0 ? `+${param.value.toFixed(2)}%` : `${param.value.toFixed(2)}%`
+            } else {
+              displayValue = param.value >= 0 ? `+¥${formatNumber(param.value)}` : `-¥${formatNumber(Math.abs(param.value))}`
+            }
+            result += `<div style="margin: 2px 0;">
+              <span style="display:inline-block;width:10px;height:10px;background-color:${param.color};border-radius:50%;margin-right:5px;"></span>
+              ${param.seriesName}: <strong>${displayValue}</strong>
+            </div>`
+          }
+        })
+        
+        // 再显示累计数据（如果有，仅对收益金额类型）
+        if (!isRate) {
+          const hasCumulative = params.some(param => param.seriesName.includes('累计') && param.value !== null && param.value !== undefined)
+          if (hasCumulative) {
+            result += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(128,128,128,0.3);"><strong>累计盈亏：</strong></div>`
+            params.forEach(param => {
+              if (param.value !== null && param.value !== undefined && param.seriesName.includes('累计')) {
+                const displayValue = param.value >= 0 ? `+¥${formatNumber(param.value)}` : `-¥${formatNumber(Math.abs(param.value))}`
+                result += `<div style="margin: 2px 0;">
+                  <span style="display:inline-block;width:10px;height:10px;background-color:${param.color};border-radius:50%;margin-right:5px;"></span>
+                  ${param.seriesName}: <strong>${displayValue}</strong>
+                </div>`
+              }
+            })
+          }
+        }
+        
+        return result
+      }
+    },
+    legend: {
+      data: series.map(s => s.name),
+      bottom: 10,
+      type: 'scroll'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      top: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: chartData.value.dates,
+      axisLabel: {
+        rotate: 45,
+        interval: 0,
+        formatter: function(value) {
+          // 只显示月份和日期
+          return value.substring(5)
+        }
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: yAxisName,
+      axisLabel: {
+        formatter: isRate ? '{value}%' : function(value) {
+          if (value >= 10000) {
+            return (value / 10000).toFixed(1) + '万'
+          }
+          return value.toFixed(0)
+        }
+      }
+    },
+    series: series
+  }
+
+  // 设置图表选项
+  chartInstance.setOption(option)
+
+  // 响应式调整
+  // 先移除旧的监听器（如果存在）
+  if (chartResizeHandler) {
+    window.removeEventListener('resize', chartResizeHandler)
+  }
+  
+  chartResizeHandler = () => {
+    if (chartInstance) {
+      chartInstance.resize()
+    }
+  }
+  window.addEventListener('resize', chartResizeHandler)
+}
+
+// 监听图表类型变化，重新渲染图表
+watch(chartType, () => {
+  if (showChartDialog.value && chartData.value && chartData.value.dates && chartData.value.dates.length > 0) {
+    nextTick(() => {
+      renderChart()
+    })
+  }
+})
+
+// 监听图表对话框关闭，清理图表实例
+watch(showChartDialog, (newVal) => {
+  if (!newVal) {
+    // 对话框关闭时清理
+    if (chartInstance) {
+      chartInstance.dispose()
+      chartInstance = null
+    }
+    // 移除 resize 监听器
+    if (chartResizeHandler) {
+      window.removeEventListener('resize', chartResizeHandler)
+      chartResizeHandler = null
+    }
+    // 重置图表类型
+    chartType.value = 'rate'
+  } else {
+    // 对话框打开时，如果数据已准备好，等待 DOM 更新后渲染
+    if (chartData.value && chartData.value.dates && chartData.value.dates.length > 0 && !chartLoading.value) {
+      nextTick(() => {
+        setTimeout(() => {
+          if (chartRef.value && chartData.value) {
+            renderChart()
+          }
+        }, 150)
+      })
+    }
+  }
+})
+
 onMounted(() => {
   // 加载选中的股票和扫描配置
   loadSelectedStocksAndConfig()
   // 初始化日期（会使用扫描配置中的扫描日期作为默认回测日）
   initDates()
+})
+
+onBeforeUnmount(() => {
+  // 清理图表实例
+  if (chartInstance) {
+    chartInstance.dispose()
+    chartInstance = null
+  }
+  // 移除 resize 监听器
+  if (chartResizeHandler) {
+    window.removeEventListener('resize', chartResizeHandler)
+    chartResizeHandler = null
+  }
 })
 </script>
 
