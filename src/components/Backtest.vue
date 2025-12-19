@@ -3712,6 +3712,25 @@ async function calculateStatistics() {
       boxQualityThreshold: statisticsFilters.value.boxQualityThreshold
     })
     
+    // 调试：检查前几只股票的突破前兆和确认突破数据
+    if (allStocks.length > 0) {
+      console.log('前3只股票的突破前兆和确认突破数据示例:')
+      allStocks.slice(0, 3).forEach((stock, idx) => {
+        const bp = stock.breakthrough_prediction
+        console.log(`股票${idx + 1} (${stock.code}):`, {
+          hasBreakthroughPrediction: !!bp,
+          signals: bp?.signals,
+          signalKeys: bp?.signals ? Object.keys(bp.signals) : [],
+          signalValues: bp?.signals ? Object.values(bp.signals) : [],
+          RSI: bp?.signals?.RSI,
+          '布林带': bp?.signals?.['布林带'],
+          hasBreakthroughConfirmation: stock.has_breakthrough_confirmation,
+          confirmationType: typeof stock.has_breakthrough_confirmation,
+          confirmationValue: stock.has_breakthrough_confirmation
+        })
+      })
+    }
+    
     const filteredStocks = allStocks.filter(stock => {
       // 平台期筛选
       if (statisticsFilters.value.platformPeriods.length > 0) {
@@ -3763,9 +3782,25 @@ async function calculateStatistics() {
           if (statisticsFilters.value.breakthroughBollinger) requiredSignals.push('布林带')
 
           if (requiredSignals.length > 0) {
-            // 检查股票是否有选中的突破前兆（至少有一个匹配）
-            const hasMatchingSignal = requiredSignals.some(signal => signals[signal] === true)
-            if (!hasMatchingSignal) {
+            // 检查股票是否有选中的突破前兆（交集逻辑：必须同时具备所有选中的信号）
+            // 注意：signals中的值可能是布尔值true/false，字符串'True'/'False'，或数字1/0
+            // 使用 every() 方法实现交集（AND）逻辑：选择多个突破前兆时，股票必须同时具备所有选中的信号
+            const hasAllMatchingSignals = requiredSignals.every(signal => {
+              const signalValue = signals[signal]
+              // 检查信号值是否为true或truthy值
+              // 支持：true, 1, 'True', 'true', 'TRUE'
+              if (signalValue === true || signalValue === 1) {
+                return true
+              }
+              if (typeof signalValue === 'string') {
+                return signalValue.toLowerCase() === 'true'
+              }
+              if (typeof signalValue === 'boolean') {
+                return signalValue === true
+              }
+              return false
+            })
+            if (!hasAllMatchingSignals) {
               return false
             }
           }
@@ -3779,7 +3814,16 @@ async function calculateStatistics() {
           // 没有数据，排除股票（因为用户明确选择了筛选条件）
           return false
         } else {
-          const hasConfirmation = stock.has_breakthrough_confirmation === true
+          // 检查确认突破值是否为true（支持布尔值、数字1、字符串'True'等）
+          const isConfirmationTrue = (value) => {
+            if (value === true || value === 1) return true
+            if (typeof value === 'string') return value.toLowerCase() === 'true'
+            if (typeof value === 'boolean') return value === true
+            return false
+          }
+          
+          const hasConfirmation = isConfirmationTrue(stock.has_breakthrough_confirmation)
+          // statisticsFilters.value.breakthroughConfirmation 是布尔值 true/false
           if (statisticsFilters.value.breakthroughConfirmation !== hasConfirmation) {
             return false
           }
@@ -3986,14 +4030,27 @@ async function calculateStatistics() {
             const breakthroughPrediction = filteredStock.breakthrough_prediction
             if (breakthroughPrediction && breakthroughPrediction.signals) {
               const signals = breakthroughPrediction.signals
-              if (signals.MACD === true) breakthroughSignals.push('MACD')
-              if (signals.RSI === true) breakthroughSignals.push('RSI')
-              if (signals.KDJ === true) breakthroughSignals.push('KDJ')
-              if (signals['布林带'] === true) breakthroughSignals.push('布林带')
+              // 检查信号值是否为true（支持布尔值、数字1、字符串'True'等）
+              const isSignalTrue = (value) => {
+                if (value === true || value === 1) return true
+                if (typeof value === 'string') return value.toLowerCase() === 'true'
+                return false
+              }
+              if (isSignalTrue(signals.MACD)) breakthroughSignals.push('MACD')
+              if (isSignalTrue(signals.RSI)) breakthroughSignals.push('RSI')
+              if (isSignalTrue(signals.KDJ)) breakthroughSignals.push('KDJ')
+              if (isSignalTrue(signals['布林带'])) breakthroughSignals.push('布林带')
             }
             
             // 提取确认突破信息
-            const hasBreakthroughConfirmation = filteredStock.has_breakthrough_confirmation === true
+            // 检查确认突破值是否为true（支持布尔值、数字1、字符串'True'等）
+            const isConfirmationTrue = (value) => {
+              if (value === true || value === 1) return true
+              if (typeof value === 'string') return value.toLowerCase() === 'true'
+              if (typeof value === 'boolean') return value === true
+              return false
+            }
+            const hasBreakthroughConfirmation = isConfirmationTrue(filteredStock.has_breakthrough_confirmation)
             
             // 提取箱体质量信息
             let boxQuality = null
