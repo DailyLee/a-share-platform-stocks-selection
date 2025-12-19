@@ -921,11 +921,11 @@
 
     <!-- 数据统计对话框 -->
     <transition name="fade">
-      <div v-if="showStatisticsDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showStatisticsDialog = false">
-        <div class="bg-card border border-border rounded-lg shadow-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div v-if="showStatisticsDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 sm:p-4" @click.self="showStatisticsDialog = false">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
           <!-- 对话框头部 -->
-          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
-            <h2 class="text-lg font-semibold flex items-center">
+          <div class="p-3 sm:p-6 border-b border-border flex justify-between items-center flex-shrink-0">
+            <h2 class="text-base sm:text-lg font-semibold flex items-center">
               <i class="fas fa-chart-bar mr-2 text-primary"></i>
               数据统计
             </h2>
@@ -938,7 +938,7 @@
           </div>
 
           <!-- 筛选条件 -->
-          <div class="p-2 sm:p-3 border-b border-border">
+          <div class="p-2 sm:p-3 border-b border-border flex-shrink-0 overflow-y-auto max-h-[35vh] sm:max-h-[40vh]">
             <div class="flex justify-between items-center mb-2">
               <div class="flex items-center space-x-2">
                 <button
@@ -991,6 +991,7 @@
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughMACD"
+                      @change="handleBreakthroughSignalChange"
                       class="checkbox mr-1"
                     />
                     <span class="text-xs whitespace-nowrap">MACD</span>
@@ -999,6 +1000,7 @@
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughRSI"
+                      @change="handleBreakthroughSignalChange"
                       class="checkbox mr-1"
                     />
                     <span class="text-xs whitespace-nowrap">RSI</span>
@@ -1007,6 +1009,7 @@
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughKDJ"
+                      @change="handleBreakthroughSignalChange"
                       class="checkbox mr-1"
                     />
                     <span class="text-xs whitespace-nowrap">KDJ</span>
@@ -1015,9 +1018,19 @@
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughBollinger"
+                      @change="handleBreakthroughSignalChange"
                       class="checkbox mr-1"
                     />
                     <span class="text-xs whitespace-nowrap">布林带</span>
+                  </label>
+                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
+                    <input
+                      type="checkbox"
+                      v-model="statisticsFilters.breakthroughNone"
+                      @change="handleBreakthroughNoneChange"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs whitespace-nowrap">无突破前兆</span>
                   </label>
                 </div>
               </div>
@@ -1075,7 +1088,7 @@
           </div>
 
           <!-- 统计结果 -->
-          <div class="flex-1 flex flex-col overflow-hidden p-2 sm:p-3">
+          <div class="flex-1 flex flex-col overflow-hidden p-2 sm:p-3 min-h-0">
             <h3 class="text-sm font-semibold mb-2 flex items-center flex-shrink-0">
               <i class="fas fa-calculator mr-1 text-primary"></i>
               统计结果
@@ -1088,78 +1101,78 @@
               <i class="fas fa-exclamation-triangle text-xl mb-2 text-destructive"></i>
               <p class="text-destructive text-sm">{{ statisticsError }}</p>
             </div>
-            <div v-else-if="statisticsResult" class="flex flex-col flex-1 min-h-0">
-              <div class="space-y-2 flex-shrink-0">
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">总记录数</div>
-                    <div class="text-lg font-bold">{{ statisticsResult.totalRecords }}</div>
+            <div v-else-if="statisticsResult" class="flex flex-col flex-1 min-h-0 overflow-y-auto">
+              <div class="space-y-1.5 flex-shrink-0">
+                <div class="grid grid-cols-3 gap-1.5">
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总记录数</div>
+                    <div class="text-base sm:text-lg font-bold">{{ statisticsResult.totalRecords }}</div>
                   </div>
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">盈利股票数</div>
-                    <div class="text-lg font-bold text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</div>
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">盈利股票数</div>
+                    <div class="text-base sm:text-lg font-bold text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</div>
                   </div>
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">亏损股票数</div>
-                    <div class="text-lg font-bold text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</div>
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">亏损股票数</div>
+                    <div class="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</div>
                   </div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">整体胜率</div>
-                    <div class="text-lg font-bold" :class="statisticsResult.winRate >= 50 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                <div class="grid grid-cols-3 gap-1.5">
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体胜率</div>
+                    <div class="text-base sm:text-lg font-bold" :class="statisticsResult.winRate >= 50 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                       {{ formatPercent(statisticsResult.winRate) }}%
                     </div>
                   </div>
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">整体收益率</div>
-                    <div class="text-lg font-bold" :class="statisticsResult.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体收益率</div>
+                    <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                       {{ statisticsResult.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalReturnRate) }}%
                     </div>
                   </div>
-                  <div class="p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5">整体收益额</div>
-                    <div class="text-lg font-bold" :class="statisticsResult.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体收益额</div>
+                    <div class="text-base sm:text-lg font-bold truncate" :class="statisticsResult.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                       {{ statisticsResult.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(statisticsResult.totalProfit) }}
                     </div>
                   </div>
                 </div>
-                <div class="p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5">总投入资金</div>
-                  <div class="text-base font-bold">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
+                <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总投入资金</div>
+                  <div class="text-sm sm:text-base font-bold truncate">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
                 </div>
               </div>
 
               <!-- 筛选出的股票详情 -->
-              <div v-if="statisticsResult.filteredRecords && statisticsResult.filteredRecords.length > 0" class="mt-2 flex-1 min-h-0 flex flex-col">
-                <h4 class="text-sm font-semibold mb-2 flex items-center flex-shrink-0">
+              <div v-if="statisticsResult.filteredRecords && statisticsResult.filteredRecords.length > 0" class="mt-2 flex-shrink-0">
+                <h4 class="text-xs sm:text-sm font-semibold mb-2 flex items-center flex-shrink-0">
                   <i class="fas fa-list mr-1 text-primary"></i>
                   筛选出的股票详情
                 </h4>
-                <div class="space-y-4 overflow-y-auto flex-1">
+                <div class="space-y-2 sm:space-y-4 -mx-2 sm:mx-0 px-2 sm:px-0">
                   <div 
                     v-for="(record, index) in statisticsResult.filteredRecords" 
                     :key="index"
                     class="border border-border rounded-md overflow-hidden"
                   >
-                    <div class="bg-muted/50 p-3 border-b border-border">
-                      <div class="flex items-center justify-between">
-                        <span class="font-medium">扫描日期: {{ record.scanDate }}</span>
-                        <span class="text-sm text-muted-foreground">共 {{ record.stocks ? record.stocks.length : 0 }} 只股票</span>
+                    <div class="bg-muted/50 p-2 sm:p-3 border-b border-border">
+                      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
+                        <span class="text-xs sm:text-sm font-medium">扫描日期: {{ record.scanDate }}</span>
+                        <span class="text-xs text-muted-foreground">共 {{ record.stocks ? record.stocks.length : 0 }} 只股票</span>
                       </div>
                     </div>
-                    <div v-if="record.stocks && record.stocks.length > 0" class="overflow-x-auto">
-                      <table class="w-full text-sm">
+                    <div v-if="record.stocks && record.stocks.length > 0" class="overflow-x-auto -mx-2 sm:mx-0">
+                      <table class="w-full text-xs sm:text-sm">
                         <thead>
                           <tr class="border-b border-border bg-muted/30">
-                            <th class="text-left p-3 font-medium sticky left-0 bg-muted/30 z-10">股票代码</th>
-                            <th class="text-left p-3 font-medium sticky left-[120px] bg-muted/30 z-10">股票名称</th>
-                            <th class="text-left p-3 font-medium">行业</th>
-                            <th class="text-left p-3 font-medium">平台期(天)</th>
-                            <th class="text-left p-3 font-medium">突破前兆</th>
-                            <th class="text-left p-3 font-medium">确认突破</th>
-                            <th class="text-left p-3 font-medium">箱体质量</th>
-                            <th class="text-left p-3 font-medium">收益率</th>
+                            <th class="text-left p-2 sm:p-3 font-medium sticky left-0 bg-muted/30 z-10">股票代码</th>
+                            <th class="text-left p-2 sm:p-3 font-medium sticky left-[100px] sm:left-[120px] bg-muted/30 z-10">股票名称</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">行业</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">平台期(天)</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">突破前兆</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">确认突破</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">箱体质量</th>
+                            <th class="text-left p-2 sm:p-3 font-medium">收益率</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1168,10 +1181,10 @@
                             :key="stockIndex"
                             class="border-b border-border/50 hover:bg-muted/30 transition-colors"
                           >
-                            <td class="p-3 font-mono sticky left-0 bg-background z-10">{{ stock.code }}</td>
-                            <td class="p-3 sticky left-[120px] bg-background z-10">{{ stock.name }}</td>
-                            <td class="p-3 text-muted-foreground">{{ stock.industry || '-' }}</td>
-                            <td class="p-3">
+                            <td class="p-2 sm:p-3 font-mono sticky left-0 bg-background z-10 text-xs sm:text-sm">{{ stock.code }}</td>
+                            <td class="p-2 sm:p-3 sticky left-[100px] sm:left-[120px] bg-background z-10 text-xs sm:text-sm">{{ stock.name }}</td>
+                            <td class="p-2 sm:p-3 text-muted-foreground text-xs sm:text-sm">{{ stock.industry || '-' }}</td>
+                            <td class="p-2 sm:p-3">
                               <span v-if="stock.platformPeriods && stock.platformPeriods.length > 0" class="inline-flex items-center gap-1">
                                 <span v-for="(period, idx) in stock.platformPeriods" :key="idx" class="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">
                                   {{ period }}天
@@ -1179,38 +1192,38 @@
                               </span>
                               <span v-else class="text-muted-foreground">-</span>
                             </td>
-                            <td class="p-3">
+                            <td class="p-2 sm:p-3">
                               <span v-if="stock.breakthroughSignals && stock.breakthroughSignals.length > 0" class="inline-flex items-center gap-1 flex-wrap">
-                                <span v-for="(signal, idx) in stock.breakthroughSignals" :key="idx" class="px-2 py-1 rounded bg-green-100 text-green-800 text-xs">
+                                <span v-for="(signal, idx) in stock.breakthroughSignals" :key="idx" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-green-100 text-green-800 text-xs">
                                   {{ signal }}
                                 </span>
                               </span>
-                              <span v-else class="text-muted-foreground">-</span>
+                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
                             </td>
-                            <td class="p-3">
+                            <td class="p-2 sm:p-3">
                               <span v-if="stock.hasBreakthroughConfirmation !== undefined && stock.hasBreakthroughConfirmation !== null">
-                                <span v-if="stock.hasBreakthroughConfirmation" class="px-2 py-1 rounded bg-purple-100 text-purple-800 text-xs">是</span>
-                                <span v-else class="px-2 py-1 rounded bg-gray-100 text-gray-800 text-xs">否</span>
+                                <span v-if="stock.hasBreakthroughConfirmation" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-purple-100 text-purple-800 text-xs">是</span>
+                                <span v-else class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gray-100 text-gray-800 text-xs">否</span>
                               </span>
-                              <span v-else class="text-muted-foreground">-</span>
+                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
                             </td>
-                            <td class="p-3">
-                              <span v-if="stock.boxQuality !== null && stock.boxQuality !== undefined" class="px-2 py-1 rounded bg-orange-100 text-orange-800 text-xs">
+                            <td class="p-2 sm:p-3">
+                              <span v-if="stock.boxQuality !== null && stock.boxQuality !== undefined" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-orange-100 text-orange-800 text-xs">
                                 {{ stock.boxQuality.toFixed(3) }}
                               </span>
                               <span v-else class="text-muted-foreground text-xs" title="该股票在扫描时未启用箱体检测或不是基本平台期，因此没有箱体质量数据">-</span>
                             </td>
-                            <td class="p-3">
+                            <td class="p-2 sm:p-3 text-xs sm:text-sm">
                               <span v-if="stock.returnRate !== null && stock.returnRate !== undefined" 
                                     :class="[
-                                      'px-2 py-1 rounded text-xs font-medium',
+                                      'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium',
                                       stock.returnRate >= 0 
                                         ? 'bg-green-100 text-green-800' 
                                         : 'bg-red-100 text-red-800'
                                     ]">
                                 {{ stock.returnRate >= 0 ? '+' : '' }}{{ stock.returnRate.toFixed(2) }}%
                               </span>
-                              <span v-else class="text-muted-foreground">-</span>
+                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
                             </td>
                           </tr>
                         </tbody>
@@ -1597,6 +1610,7 @@ const statisticsFilters = ref({
   breakthroughRSI: false,
   breakthroughKDJ: false,
   breakthroughBollinger: false,
+  breakthroughNone: false, // 是否筛选完全没有突破前兆的股票
   breakthroughConfirmation: null, // true/false/null (null表示不筛选)
   boxQualityThreshold: 0,
   industries: [] // 选中的行业列表
@@ -3475,6 +3489,26 @@ function findScanConfigByDate(scanDate, scanHistory) {
   return null
 }
 
+// 处理突破前兆信号变化（当选择具体信号时，取消"无突破前兆"选项）
+function handleBreakthroughSignalChange() {
+  if (statisticsFilters.value.breakthroughMACD || 
+      statisticsFilters.value.breakthroughRSI || 
+      statisticsFilters.value.breakthroughKDJ || 
+      statisticsFilters.value.breakthroughBollinger) {
+    statisticsFilters.value.breakthroughNone = false
+  }
+}
+
+// 处理"无突破前兆"选项变化（当选择"无突破前兆"时，取消所有具体信号选项）
+function handleBreakthroughNoneChange() {
+  if (statisticsFilters.value.breakthroughNone) {
+    statisticsFilters.value.breakthroughMACD = false
+    statisticsFilters.value.breakthroughRSI = false
+    statisticsFilters.value.breakthroughKDJ = false
+    statisticsFilters.value.breakthroughBollinger = false
+  }
+}
+
 // 计算统计数据
 async function calculateStatistics() {
   statisticsLoading.value = true
@@ -3765,43 +3799,76 @@ async function calculateStatistics() {
       const hasBreakthroughFilter = statisticsFilters.value.breakthroughMACD || 
                                     statisticsFilters.value.breakthroughRSI || 
                                     statisticsFilters.value.breakthroughKDJ || 
-                                    statisticsFilters.value.breakthroughBollinger
+                                    statisticsFilters.value.breakthroughBollinger ||
+                                    statisticsFilters.value.breakthroughNone
+      
       if (hasBreakthroughFilter) {
         const breakthroughPrediction = stock.breakthrough_prediction
         const signals = breakthroughPrediction?.signals || {}
         
-        // 如果用户选择了突破前兆筛选，但股票没有突破前兆数据，应该排除该股票
-        if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
-          // 没有数据，排除股票（因为用户明确选择了筛选条件）
-          return false
-        } else {
-          const requiredSignals = []
-          if (statisticsFilters.value.breakthroughMACD) requiredSignals.push('MACD')
-          if (statisticsFilters.value.breakthroughRSI) requiredSignals.push('RSI')
-          if (statisticsFilters.value.breakthroughKDJ) requiredSignals.push('KDJ')
-          if (statisticsFilters.value.breakthroughBollinger) requiredSignals.push('布林带')
-
-          if (requiredSignals.length > 0) {
-            // 检查股票是否有选中的突破前兆（交集逻辑：必须同时具备所有选中的信号）
-            // 注意：signals中的值可能是布尔值true/false，字符串'True'/'False'，或数字1/0
-            // 使用 every() 方法实现交集（AND）逻辑：选择多个突破前兆时，股票必须同时具备所有选中的信号
-            const hasAllMatchingSignals = requiredSignals.every(signal => {
+        // 如果用户选择了"无突破前兆"
+        if (statisticsFilters.value.breakthroughNone) {
+          // 检查股票是否完全没有突破前兆数据，或者所有信号都为false
+          if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
+            // 没有数据，视为无突破前兆，通过筛选
+            // 继续其他筛选
+          } else {
+            // 检查所有信号是否都为false
+            const allSignalsFalse = ['MACD', 'RSI', 'KDJ', '布林带'].every(signal => {
               const signalValue = signals[signal]
-              // 检查信号值是否为true或truthy值
-              // 支持：true, 1, 'True', 'true', 'TRUE'
-              if (signalValue === true || signalValue === 1) {
+              // 检查信号值是否为false或falsy值
+              if (signalValue === false || signalValue === 0) {
                 return true
               }
               if (typeof signalValue === 'string') {
-                return signalValue.toLowerCase() === 'true'
-              }
-              if (typeof signalValue === 'boolean') {
-                return signalValue === true
+                return signalValue.toLowerCase() === 'false'
               }
               return false
             })
-            if (!hasAllMatchingSignals) {
+            if (!allSignalsFalse) {
+              // 有任何一个信号为true，排除该股票
               return false
+            }
+          }
+        } 
+        // 如果用户选择了具体的突破前兆（MACD、RSI等）
+        else if (statisticsFilters.value.breakthroughMACD || 
+                 statisticsFilters.value.breakthroughRSI || 
+                 statisticsFilters.value.breakthroughKDJ || 
+                 statisticsFilters.value.breakthroughBollinger) {
+          // 如果股票没有突破前兆数据，应该排除该股票
+          if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            const requiredSignals = []
+            if (statisticsFilters.value.breakthroughMACD) requiredSignals.push('MACD')
+            if (statisticsFilters.value.breakthroughRSI) requiredSignals.push('RSI')
+            if (statisticsFilters.value.breakthroughKDJ) requiredSignals.push('KDJ')
+            if (statisticsFilters.value.breakthroughBollinger) requiredSignals.push('布林带')
+
+            if (requiredSignals.length > 0) {
+              // 检查股票是否有选中的突破前兆（交集逻辑：必须同时具备所有选中的信号）
+              // 注意：signals中的值可能是布尔值true/false，字符串'True'/'False'，或数字1/0
+              // 使用 every() 方法实现交集（AND）逻辑：选择多个突破前兆时，股票必须同时具备所有选中的信号
+              const hasAllMatchingSignals = requiredSignals.every(signal => {
+                const signalValue = signals[signal]
+                // 检查信号值是否为true或truthy值
+                // 支持：true, 1, 'True', 'true', 'TRUE'
+                if (signalValue === true || signalValue === 1) {
+                  return true
+                }
+                if (typeof signalValue === 'string') {
+                  return signalValue.toLowerCase() === 'true'
+                }
+                if (typeof signalValue === 'boolean') {
+                  return signalValue === true
+                }
+                return false
+              })
+              if (!hasAllMatchingSignals) {
+                return false
+              }
             }
           }
         }
