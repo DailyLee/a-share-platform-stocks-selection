@@ -1913,6 +1913,8 @@ async function loadBacktestHistory() {
     const response = await axios.get('/platform/api/backtest/history')
     if (response.data.success) {
       backtestHistory.value = response.data.data || []
+      // 清除回测记录缓存（因为历史记录已更新）
+      clearBacktestRecordsCache()
       // 按扫描日期分组
       groupBacktestHistoryByDate()
     } else {
@@ -3388,6 +3390,8 @@ watch(showBatchBacktestDialog, (newVal) => {
 
 // 获取扫描历史记录（用于查找扫描配置）
 let scanHistoryCache = null
+let scanHistoryDetailsCache = new Map() // key: record.id, value: record data with scannedStocks
+
 async function loadScanHistoryForStatistics() {
   if (scanHistoryCache) {
     return scanHistoryCache
@@ -3402,6 +3406,54 @@ async function loadScanHistoryForStatistics() {
     console.warn('加载扫描历史记录失败:', e)
   }
   return []
+}
+
+// 获取扫描历史记录详情（带缓存）
+async function getScanHistoryDetail(recordId) {
+  // 如果缓存中有，直接返回
+  if (scanHistoryDetailsCache.has(recordId)) {
+    return scanHistoryDetailsCache.get(recordId)
+  }
+  
+  // 否则从API获取
+  try {
+    const response = await axios.get(`/platform/api/scan/history/${recordId}`)
+    if (response.data.success && response.data.data) {
+      const detail = response.data.data
+      // 存入缓存
+      scanHistoryDetailsCache.set(recordId, detail)
+      return detail
+    }
+  } catch (e) {
+    console.warn(`获取扫描历史记录 ${recordId} 详情失败:`, e)
+  }
+  return null
+}
+
+// 清除扫描历史记录缓存
+function clearScanHistoryCache() {
+  scanHistoryCache = null
+  scanHistoryDetailsCache.clear()
+}
+
+// 缓存回测历史记录详情
+let backtestRecordsCache = new Map() // key: record.id, value: record data
+let cachedBacktestHistoryIds = null // 缓存的回测历史记录ID列表
+
+// 检查回测历史记录是否发生变化
+function hasBacktestHistoryChanged() {
+  const currentIds = filteredBacktestHistory.value.map(r => r.id).sort().join(',')
+  if (cachedBacktestHistoryIds !== currentIds) {
+    cachedBacktestHistoryIds = currentIds
+    return true
+  }
+  return false
+}
+
+// 清除缓存（当回测历史记录变化时）
+function clearBacktestRecordsCache() {
+  backtestRecordsCache.clear()
+  cachedBacktestHistoryIds = null
 }
 
 // 根据扫描日期查找对应的扫描配置
@@ -3442,31 +3494,40 @@ async function calculateStatistics() {
     // 加载扫描历史记录（用于查找扫描配置和股票详细信息）
     const scanHistory = await loadScanHistoryForStatistics()
     
-    // 对于没有完整股票数据的扫描历史记录，尝试获取详情
+    // 对于没有完整股票数据的扫描历史记录，尝试获取详情（使用缓存）
     for (let i = 0; i < scanHistory.length; i++) {
       const record = scanHistory[i]
       if (!record.scannedStocks || record.scannedStocks.length === 0) {
-        try {
-          const response = await axios.get(`/platform/api/scan/history/${record.id}`)
-          if (response.data.success && response.data.data) {
-            scanHistory[i] = response.data.data
-          }
-        } catch (e) {
-          console.warn(`获取扫描历史记录 ${record.id} 详情失败:`, e)
+        // 使用缓存函数获取详情
+        const detail = await getScanHistoryDetail(record.id)
+        if (detail) {
+          scanHistory[i] = detail
         }
       }
     }
 
-    // 获取完整的回测历史记录详情
+    // 检查回测历史记录是否发生变化
+    const historyChanged = hasBacktestHistoryChanged()
+    
+    // 获取完整的回测历史记录详情（使用缓存）
     const fullRecords = []
     for (const record of historyToUse) {
-      try {
-        const response = await axios.get(`/platform/api/backtest/history/${record.id}`)
-        if (response.data.success) {
-          fullRecords.push(response.data.data)
+      // 如果缓存中有且历史记录未变化，直接使用缓存
+      if (!historyChanged && backtestRecordsCache.has(record.id)) {
+        fullRecords.push(backtestRecordsCache.get(record.id))
+      } else {
+        // 否则从API获取
+        try {
+          const response = await axios.get(`/platform/api/backtest/history/${record.id}`)
+          if (response.data.success) {
+            const recordData = response.data.data
+            // 存入缓存
+            backtestRecordsCache.set(record.id, recordData)
+            fullRecords.push(recordData)
+          }
+        } catch (e) {
+          console.warn(`获取回测记录 ${record.id} 详情失败:`, e)
         }
-      } catch (e) {
-        console.warn(`获取回测记录 ${record.id} 详情失败:`, e)
       }
     }
 
