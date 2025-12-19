@@ -469,21 +469,56 @@
                 <i class="fas fa-times text-xl"></i>
               </button>
             </div>
-            <!-- 年度筛选 -->
-            <div class="flex items-center space-x-2">
-              <label class="text-sm text-muted-foreground whitespace-nowrap">
-                <i class="fas fa-filter mr-1"></i>
-                年度筛选：
-              </label>
-              <select
-                v-model="selectedBacktestYear"
-                class="input text-sm px-3 py-1.5 min-w-[120px]"
-              >
-                <option value="">全部年度</option>
-                <option v-for="year in availableBacktestYears" :key="year" :value="year">
-                  {{ year }}年
-                </option>
-              </select>
+            <!-- 筛选器 -->
+            <div class="flex flex-wrap items-center gap-3">
+              <!-- 年度筛选 -->
+              <div class="flex items-center space-x-2">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  <i class="fas fa-filter mr-1"></i>
+                  年度：
+                </label>
+                <select
+                  v-model="selectedBacktestYear"
+                  @change="selectedBacktestQuarter = ''; selectedBacktestMonth = ''"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部年度</option>
+                  <option v-for="year in availableBacktestYears" :key="year" :value="year">
+                    {{ year }}年
+                  </option>
+                </select>
+              </div>
+              <!-- 季度筛选 -->
+              <div class="flex items-center space-x-2" v-if="selectedBacktestYear">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  季度：
+                </label>
+                <select
+                  v-model="selectedBacktestQuarter"
+                  @change="selectedBacktestMonth = ''"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部季度</option>
+                  <option v-for="quarter in availableBacktestQuarters" :key="quarter" :value="quarter">
+                    {{ quarter }}
+                  </option>
+                </select>
+              </div>
+              <!-- 月度筛选 -->
+              <div class="flex items-center space-x-2" v-if="selectedBacktestYear">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  月度：
+                </label>
+                <select
+                  v-model="selectedBacktestMonth"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部月度</option>
+                  <option v-for="month in availableBacktestMonths" :key="month" :value="month">
+                    {{ month }}月
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -599,14 +634,14 @@
           <!-- 对话框底部 -->
           <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
             <div class="flex space-x-2">
-              <button
+              <!-- <button
                 @click="showBatchBacktestDialog = true"
                 :disabled="selectedStocks.length === 0"
                 class="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
               >
                 <i class="fas fa-layer-group mr-2"></i>
                 批量回测
-              </button>
+              </button> -->
               <button
                 v-if="backtestHistory.length > 0"
                 @click="generateBacktestChart"
@@ -614,6 +649,14 @@
               >
                 <i class="fas fa-chart-line mr-2"></i>
                 生成折线图
+              </button>
+              <button
+                v-if="backtestHistory.length > 0"
+                @click="showStatisticsDialog = true; calculateStatistics()"
+                class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm"
+              >
+                <i class="fas fa-chart-bar mr-2"></i>
+                数据统计
               </button>
             </div>
             <div class="flex space-x-2">
@@ -867,6 +910,325 @@
           <div class="p-4 sm:p-6 border-t border-border flex justify-end">
             <button
               @click="showChartDialog = false"
+              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 数据统计对话框 -->
+    <transition name="fade">
+      <div v-if="showStatisticsDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showStatisticsDialog = false">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <!-- 对话框头部 -->
+          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
+            <h2 class="text-lg font-semibold flex items-center">
+              <i class="fas fa-chart-bar mr-2 text-primary"></i>
+              数据统计
+            </h2>
+            <button
+              @click="showStatisticsDialog = false"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- 筛选条件 -->
+          <div class="p-2 sm:p-3 border-b border-border">
+            <div class="flex justify-between items-center mb-2">
+              <div class="flex items-center space-x-2">
+                <button
+                  @click="statisticsFiltersExpanded = !statisticsFiltersExpanded"
+                  class="text-muted-foreground hover:text-foreground transition-colors"
+                  title="收起/展开筛选条件"
+                >
+                  <i :class="statisticsFiltersExpanded ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
+                </button>
+                <h3 class="text-sm font-semibold flex items-center">
+                  <i class="fas fa-filter mr-1 text-primary"></i>
+                  筛选条件
+                </h3>
+              </div>
+              <button
+                @click="calculateStatistics"
+                class="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-xs"
+              >
+                <i class="fas fa-check mr-1"></i>
+                确认
+              </button>
+            </div>
+            <div v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <!-- 平台期 -->
+              <div>
+                <label class="block text-xs font-medium mb-1">平台期</label>
+                <div class="flex flex-wrap gap-1.5">
+                  <label 
+                    v-for="period in Array.from(allStockAttributes.platformPeriods).sort((a, b) => a - b)" 
+                    :key="period"
+                    class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="period"
+                      v-model="statisticsFilters.platformPeriods"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs">{{ period }}天</span>
+                  </label>
+                  <p v-if="allStockAttributes.platformPeriods.size === 0" class="text-xs text-muted-foreground">暂无数据</p>
+                </div>
+              </div>
+
+              <!-- 突破前兆 -->
+              <div>
+                <label class="block text-xs font-medium mb-1">突破前兆</label>
+                <div class="flex flex-wrap gap-1.5">
+                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
+                    <input
+                      type="checkbox"
+                      v-model="statisticsFilters.breakthroughMACD"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs whitespace-nowrap">MACD</span>
+                  </label>
+                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
+                    <input
+                      type="checkbox"
+                      v-model="statisticsFilters.breakthroughRSI"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs whitespace-nowrap">RSI</span>
+                  </label>
+                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
+                    <input
+                      type="checkbox"
+                      v-model="statisticsFilters.breakthroughKDJ"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs whitespace-nowrap">KDJ</span>
+                  </label>
+                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
+                    <input
+                      type="checkbox"
+                      v-model="statisticsFilters.breakthroughBollinger"
+                      class="checkbox mr-1"
+                    />
+                    <span class="text-xs whitespace-nowrap">布林带</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 确认突破 -->
+              <div>
+                <label class="block text-xs font-medium mb-1">确认突破</label>
+                <select
+                  v-model="statisticsFilters.breakthroughConfirmation"
+                  class="input w-full text-xs py-1"
+                >
+                  <option :value="null">不筛选</option>
+                  <option :value="true">是（已确认突破）</option>
+                  <option :value="false">否（未确认突破）</option>
+                </select>
+              </div>
+
+              <!-- 最小箱体质量 -->
+              <div>
+                <label class="block text-xs font-medium mb-1">最小箱体质量</label>
+                <input
+                  type="number"
+                  v-model.number="statisticsFilters.boxQualityThreshold"
+                  step="0.01"
+                  :min="allStockAttributes.minBoxQuality"
+                  :max="allStockAttributes.maxBoxQuality"
+                  class="input w-full text-xs py-1"
+                />
+                <p class="text-xs text-muted-foreground mt-0.5">
+                  范围: {{ allStockAttributes.minBoxQuality.toFixed(2) }} - {{ allStockAttributes.maxBoxQuality.toFixed(2) }}
+                </p>
+              </div>
+
+              <!-- 行业信息 -->
+              <div>
+                <label class="block text-xs font-medium mb-1">行业信息</label>
+                <div class="max-h-24 overflow-y-auto border border-border rounded p-1.5">
+                  <label 
+                    v-for="industry in Array.from(allStockAttributes.industries).sort()" 
+                    :key="industry"
+                    class="flex items-center cursor-pointer mb-0.5 px-1.5 py-0.5 rounded hover:bg-muted/30 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="industry"
+                      v-model="statisticsFilters.industries"
+                      class="checkbox mr-1.5"
+                    />
+                    <span class="text-xs">{{ industry || '未知行业' }}</span>
+                  </label>
+                  <p v-if="allStockAttributes.industries.size === 0" class="text-xs text-muted-foreground text-center py-1">暂无数据</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 统计结果 -->
+          <div class="flex-1 flex flex-col overflow-hidden p-2 sm:p-3">
+            <h3 class="text-sm font-semibold mb-2 flex items-center flex-shrink-0">
+              <i class="fas fa-calculator mr-1 text-primary"></i>
+              统计结果
+            </h3>
+            <div v-if="statisticsLoading" class="text-center py-4 flex-shrink-0">
+              <i class="fas fa-spinner fa-spin text-xl mb-2 text-primary"></i>
+              <p class="text-muted-foreground text-sm">计算中...</p>
+            </div>
+            <div v-else-if="statisticsError" class="text-center py-4 flex-shrink-0">
+              <i class="fas fa-exclamation-triangle text-xl mb-2 text-destructive"></i>
+              <p class="text-destructive text-sm">{{ statisticsError }}</p>
+            </div>
+            <div v-else-if="statisticsResult" class="flex flex-col flex-1 min-h-0">
+              <div class="space-y-2 flex-shrink-0">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">总记录数</div>
+                    <div class="text-lg font-bold">{{ statisticsResult.totalRecords }}</div>
+                  </div>
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">盈利股票数</div>
+                    <div class="text-lg font-bold text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</div>
+                  </div>
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">亏损股票数</div>
+                    <div class="text-lg font-bold text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</div>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">整体胜率</div>
+                    <div class="text-lg font-bold" :class="statisticsResult.winRate >= 50 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ formatPercent(statisticsResult.winRate) }}%
+                    </div>
+                  </div>
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">整体收益率</div>
+                    <div class="text-lg font-bold" :class="statisticsResult.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ statisticsResult.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalReturnRate) }}%
+                    </div>
+                  </div>
+                  <div class="p-2 bg-muted/30 rounded-md">
+                    <div class="text-xs text-muted-foreground mb-0.5">整体收益额</div>
+                    <div class="text-lg font-bold" :class="statisticsResult.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                      {{ statisticsResult.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(statisticsResult.totalProfit) }}
+                    </div>
+                  </div>
+                </div>
+                <div class="p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5">总投入资金</div>
+                  <div class="text-base font-bold">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
+                </div>
+              </div>
+
+              <!-- 筛选出的股票详情 -->
+              <div v-if="statisticsResult.filteredRecords && statisticsResult.filteredRecords.length > 0" class="mt-2 flex-1 min-h-0 flex flex-col">
+                <h4 class="text-sm font-semibold mb-2 flex items-center flex-shrink-0">
+                  <i class="fas fa-list mr-1 text-primary"></i>
+                  筛选出的股票详情
+                </h4>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                  <div 
+                    v-for="(record, index) in statisticsResult.filteredRecords" 
+                    :key="index"
+                    class="border border-border rounded-md overflow-hidden"
+                  >
+                    <div class="bg-muted/50 p-3 border-b border-border">
+                      <div class="flex items-center justify-between">
+                        <span class="font-medium">扫描日期: {{ record.scanDate }}</span>
+                        <span class="text-sm text-muted-foreground">共 {{ record.stocks ? record.stocks.length : 0 }} 只股票</span>
+                      </div>
+                    </div>
+                    <div v-if="record.stocks && record.stocks.length > 0" class="overflow-x-auto">
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr class="border-b border-border bg-muted/30">
+                            <th class="text-left p-3 font-medium sticky left-0 bg-muted/30 z-10">股票代码</th>
+                            <th class="text-left p-3 font-medium sticky left-[120px] bg-muted/30 z-10">股票名称</th>
+                            <th class="text-left p-3 font-medium">行业</th>
+                            <th class="text-left p-3 font-medium">平台期(天)</th>
+                            <th class="text-left p-3 font-medium">突破前兆</th>
+                            <th class="text-left p-3 font-medium">确认突破</th>
+                            <th class="text-left p-3 font-medium">箱体质量</th>
+                            <th class="text-left p-3 font-medium">收益率</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr 
+                            v-for="(stock, stockIndex) in record.stocks" 
+                            :key="stockIndex"
+                            class="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <td class="p-3 font-mono sticky left-0 bg-background z-10">{{ stock.code }}</td>
+                            <td class="p-3 sticky left-[120px] bg-background z-10">{{ stock.name }}</td>
+                            <td class="p-3 text-muted-foreground">{{ stock.industry || '-' }}</td>
+                            <td class="p-3">
+                              <span v-if="stock.platformPeriods && stock.platformPeriods.length > 0" class="inline-flex items-center gap-1">
+                                <span v-for="(period, idx) in stock.platformPeriods" :key="idx" class="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">
+                                  {{ period }}天
+                                </span>
+                              </span>
+                              <span v-else class="text-muted-foreground">-</span>
+                            </td>
+                            <td class="p-3">
+                              <span v-if="stock.breakthroughSignals && stock.breakthroughSignals.length > 0" class="inline-flex items-center gap-1 flex-wrap">
+                                <span v-for="(signal, idx) in stock.breakthroughSignals" :key="idx" class="px-2 py-1 rounded bg-green-100 text-green-800 text-xs">
+                                  {{ signal }}
+                                </span>
+                              </span>
+                              <span v-else class="text-muted-foreground">-</span>
+                            </td>
+                            <td class="p-3">
+                              <span v-if="stock.hasBreakthroughConfirmation !== undefined && stock.hasBreakthroughConfirmation !== null">
+                                <span v-if="stock.hasBreakthroughConfirmation" class="px-2 py-1 rounded bg-purple-100 text-purple-800 text-xs">是</span>
+                                <span v-else class="px-2 py-1 rounded bg-gray-100 text-gray-800 text-xs">否</span>
+                              </span>
+                              <span v-else class="text-muted-foreground">-</span>
+                            </td>
+                            <td class="p-3">
+                              <span v-if="stock.boxQuality !== null && stock.boxQuality !== undefined" class="px-2 py-1 rounded bg-orange-100 text-orange-800 text-xs">
+                                {{ stock.boxQuality.toFixed(3) }}
+                              </span>
+                              <span v-else class="text-muted-foreground text-xs" title="该股票在扫描时未启用箱体检测或不是基本平台期，因此没有箱体质量数据">-</span>
+                            </td>
+                            <td class="p-3">
+                              <span v-if="stock.returnRate !== null && stock.returnRate !== undefined" 
+                                    :class="[
+                                      'px-2 py-1 rounded text-xs font-medium',
+                                      stock.returnRate >= 0 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-red-100 text-red-800'
+                                    ]">
+                                {{ stock.returnRate >= 0 ? '+' : '' }}{{ stock.returnRate.toFixed(2) }}%
+                              </span>
+                              <span v-else class="text-muted-foreground">-</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div v-else class="p-4 text-center text-muted-foreground">
+                      该记录中没有股票信息
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 对话框底部 -->
+          <div class="p-4 sm:p-6 border-t border-border flex justify-end">
+            <button
+              @click="showStatisticsDialog = false"
               class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
             >
               关闭
@@ -1183,6 +1545,8 @@ const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
 const selectedBacktestYear = ref('')
+const selectedBacktestQuarter = ref('')
+const selectedBacktestMonth = ref('')
 
 // 批量回测相关
 const showBatchBacktestDialog = ref(false)
@@ -1220,6 +1584,31 @@ const chartWindowStart = ref(0) // 当前窗口起始索引
 const maxChartItemsPerPage = 12 // 每页最多显示的数据条数
 let chartInstance = null
 let chartResizeHandler = null
+
+// 数据统计相关
+const showStatisticsDialog = ref(false)
+const statisticsLoading = ref(false)
+const statisticsError = ref(null)
+const statisticsResult = ref(null)
+const statisticsFiltersExpanded = ref(true) // 筛选条件区域是否展开
+const statisticsFilters = ref({
+  platformPeriods: [], // 选中的平台期，如[30, 60, 90]
+  breakthroughMACD: false,
+  breakthroughRSI: false,
+  breakthroughKDJ: false,
+  breakthroughBollinger: false,
+  breakthroughConfirmation: null, // true/false/null (null表示不筛选)
+  boxQualityThreshold: 0,
+  industries: [] // 选中的行业列表
+})
+
+// 所有股票的属性集合（用于筛选条件选项）
+const allStockAttributes = ref({
+  platformPeriods: new Set(), // 所有出现的平台期
+  industries: new Set(), // 所有行业
+  minBoxQuality: 1, // 最小箱体质量
+  maxBoxQuality: 0 // 最大箱体质量
+})
 
 // 计算最大日期（今天）
 const maxDate = computed(() => {
@@ -1577,33 +1966,131 @@ const availableBacktestYears = computed(() => {
   return Array.from(years).sort((a, b) => b.localeCompare(a))
 })
 
-// 按年度筛选后的分组历史记录
-const filteredBacktestHistoryGroupedByDate = computed(() => {
+// 获取可用的季度列表（基于选中的年度）
+const availableBacktestQuarters = computed(() => {
   if (!selectedBacktestYear.value) {
-    return backtestHistoryGroupedByDate.value
+    return []
+  }
+  const quarters = new Set()
+  backtestHistory.value.forEach(record => {
+    const scanDate = record.backtestDate || ''
+    if (scanDate && scanDate !== '未知日期' && scanDate.startsWith(selectedBacktestYear.value)) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month >= 1 && month <= 12) {
+        const quarter = Math.ceil(month / 3)
+        quarters.add(`Q${quarter}`)
+      }
+    }
+  })
+  return Array.from(quarters).sort()
+})
+
+// 获取可用的月度列表（基于选中的年度和季度）
+const availableBacktestMonths = computed(() => {
+  if (!selectedBacktestYear.value) {
+    return []
+  }
+  const months = new Set()
+  let targetMonths = []
+  
+  // 如果选择了季度，只显示该季度的月份
+  if (selectedBacktestQuarter.value) {
+    const quarterNum = parseInt(selectedBacktestQuarter.value.substring(1))
+    if (quarterNum === 1) targetMonths = [1, 2, 3]
+    else if (quarterNum === 2) targetMonths = [4, 5, 6]
+    else if (quarterNum === 3) targetMonths = [7, 8, 9]
+    else if (quarterNum === 4) targetMonths = [10, 11, 12]
+  } else {
+    // 如果没有选择季度，显示该年度所有月份
+    targetMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
   }
   
+  backtestHistory.value.forEach(record => {
+    const scanDate = record.backtestDate || ''
+    if (scanDate && scanDate !== '未知日期' && scanDate.startsWith(selectedBacktestYear.value)) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month >= 1 && month <= 12 && targetMonths.includes(month)) {
+        months.add(month)
+      }
+    }
+  })
+  return Array.from(months).sort((a, b) => a - b)
+})
+
+// 按年度、季度、月度筛选后的分组历史记录
+const filteredBacktestHistoryGroupedByDate = computed(() => {
   const filtered = {}
   Object.keys(backtestHistoryGroupedByDate.value).forEach(date => {
-    if (date && date !== '未知日期' && date.startsWith(selectedBacktestYear.value)) {
-      filtered[date] = backtestHistoryGroupedByDate.value[date]
+    if (date === '未知日期') {
+      return
     }
+    
+    // 年度筛选
+    if (selectedBacktestYear.value && !date.startsWith(selectedBacktestYear.value)) {
+      return
+    }
+    
+    // 季度筛选
+    if (selectedBacktestQuarter.value) {
+      const month = parseInt(date.substring(5, 7))
+      if (month >= 1 && month <= 12) {
+        const quarter = Math.ceil(month / 3)
+        const selectedQuarter = parseInt(selectedBacktestQuarter.value.substring(1))
+        if (quarter !== selectedQuarter) {
+          return
+        }
+      }
+    }
+    
+    // 月度筛选
+    if (selectedBacktestMonth.value) {
+      const month = parseInt(date.substring(5, 7))
+      if (month !== parseInt(selectedBacktestMonth.value)) {
+        return
+      }
+    }
+    
+    filtered[date] = backtestHistoryGroupedByDate.value[date]
   })
   return filtered
 })
 
-// 按年度筛选后的历史记录列表（用于生成折线图）
+// 按年度、季度、月度筛选后的历史记录列表（用于生成折线图）
 const filteredBacktestHistory = computed(() => {
-  if (!selectedBacktestYear.value) {
-    return backtestHistory.value
-  }
-  
   return backtestHistory.value.filter(record => {
     const scanDate = record.backtestDate || ''
-    if (scanDate && scanDate !== '未知日期') {
-      return scanDate.startsWith(selectedBacktestYear.value)
+    if (!scanDate || scanDate === '未知日期') {
+      return false
     }
-    return false
+    
+    // 年度筛选
+    if (selectedBacktestYear.value && !scanDate.startsWith(selectedBacktestYear.value)) {
+      return false
+    }
+    
+    // 季度筛选
+    if (selectedBacktestQuarter.value) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month >= 1 && month <= 12) {
+        const quarter = Math.ceil(month / 3)
+        const selectedQuarter = parseInt(selectedBacktestQuarter.value.substring(1))
+        if (quarter !== selectedQuarter) {
+          return false
+        }
+      } else {
+        return false
+      }
+    }
+    
+    // 月度筛选
+    if (selectedBacktestMonth.value) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month !== parseInt(selectedBacktestMonth.value)) {
+        return false
+      }
+    }
+    
+    return true
   })
 })
 
@@ -2898,6 +3385,621 @@ watch(showBatchBacktestDialog, (newVal) => {
     batchBacktestResult.value = null
   }
 })
+
+// 获取扫描历史记录（用于查找扫描配置）
+let scanHistoryCache = null
+async function loadScanHistoryForStatistics() {
+  if (scanHistoryCache) {
+    return scanHistoryCache
+  }
+  try {
+    const response = await axios.get('/platform/api/scan/history')
+    if (response.data.success) {
+      scanHistoryCache = response.data.data || []
+      return scanHistoryCache
+    }
+  } catch (e) {
+    console.warn('加载扫描历史记录失败:', e)
+  }
+  return []
+}
+
+// 根据扫描日期查找对应的扫描配置
+function findScanConfigByDate(scanDate, scanHistory) {
+  if (!scanDate || !scanHistory || scanHistory.length === 0) {
+    return null
+  }
+  // 查找相同扫描日期的记录，返回最新的
+  const matchingRecords = scanHistory.filter(record => record.scanDate === scanDate)
+  if (matchingRecords.length > 0) {
+    // 按创建时间排序，返回最新的
+    matchingRecords.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime()
+      const timeB = new Date(b.createdAt || 0).getTime()
+      return timeB - timeA
+    })
+    return matchingRecords[0].scanConfig || null
+  }
+  return null
+}
+
+// 计算统计数据
+async function calculateStatistics() {
+  statisticsLoading.value = true
+  statisticsError.value = null
+  statisticsResult.value = null
+
+  try {
+    // 使用筛选后的历史记录
+    const historyToUse = filteredBacktestHistory.value
+    
+    if (historyToUse.length === 0) {
+      statisticsError.value = '没有回测历史记录'
+      statisticsLoading.value = false
+      return
+    }
+
+    // 加载扫描历史记录（用于查找扫描配置和股票详细信息）
+    const scanHistory = await loadScanHistoryForStatistics()
+    
+    // 对于没有完整股票数据的扫描历史记录，尝试获取详情
+    for (let i = 0; i < scanHistory.length; i++) {
+      const record = scanHistory[i]
+      if (!record.scannedStocks || record.scannedStocks.length === 0) {
+        try {
+          const response = await axios.get(`/platform/api/scan/history/${record.id}`)
+          if (response.data.success && response.data.data) {
+            scanHistory[i] = response.data.data
+          }
+        } catch (e) {
+          console.warn(`获取扫描历史记录 ${record.id} 详情失败:`, e)
+        }
+      }
+    }
+
+    // 获取完整的回测历史记录详情
+    const fullRecords = []
+    for (const record of historyToUse) {
+      try {
+        const response = await axios.get(`/platform/api/backtest/history/${record.id}`)
+        if (response.data.success) {
+          fullRecords.push(response.data.data)
+        }
+      } catch (e) {
+        console.warn(`获取回测记录 ${record.id} 详情失败:`, e)
+      }
+    }
+
+    if (fullRecords.length === 0) {
+      statisticsError.value = '无法获取回测历史记录详情'
+      statisticsLoading.value = false
+      return
+    }
+
+    // 按扫描日期分组，每个扫描日期选第一条记录
+    const recordsByDate = {}
+    fullRecords.forEach(record => {
+      const scanDate = record.config.backtest_date
+      if (!scanDate) return
+      
+      if (!recordsByDate[scanDate]) {
+        recordsByDate[scanDate] = []
+      }
+      recordsByDate[scanDate].push(record)
+    })
+
+    // 每个扫描日期选第一条记录
+    const selectedRecords = []
+    Object.keys(recordsByDate).sort().forEach(date => {
+      const records = recordsByDate[date]
+      if (records.length > 0) {
+        // 按创建时间排序，选第一条
+        records.sort((a, b) => {
+          const timeA = new Date(a.createdAt || 0).getTime()
+          const timeB = new Date(b.createdAt || 0).getTime()
+          return timeA - timeB
+        })
+        selectedRecords.push(records[0])
+      }
+    })
+
+    // 收集所有股票的属性
+    const allStocks = []
+    selectedRecords.forEach(record => {
+      const config = record.config || {}
+      const scanDate = config.backtest_date
+      
+      // 尝试从扫描历史记录中获取股票的详细信息
+      let scanHistoryRecord = null
+      if (scanDate) {
+        scanHistoryRecord = scanHistory.find(sh => sh.scanDate === scanDate)
+        // 如果列表中没有完整数据，尝试获取详情
+        if (scanHistoryRecord && (!scanHistoryRecord.scannedStocks || scanHistoryRecord.scannedStocks.length === 0)) {
+          // 需要获取详情，但这里先跳过，因为需要异步调用
+          scanHistoryRecord = null
+        }
+      }
+      
+      // 从config中获取股票列表
+      if (config.selected_stocks && Array.isArray(config.selected_stocks)) {
+        config.selected_stocks.forEach(stock => {
+          // 尝试从扫描历史记录中获取该股票的详细信息
+          let stockDetails = null
+          if (scanHistoryRecord && scanHistoryRecord.scannedStocks) {
+            stockDetails = scanHistoryRecord.scannedStocks.find(s => s.code === stock.code)
+          }
+          
+          allStocks.push({
+            ...stock,
+            // 合并扫描历史记录中的详细信息
+            platform_windows: stockDetails?.platform_windows || stock.platform_windows,
+            selection_reasons: stockDetails?.selection_reasons || stock.selection_reasons,
+            breakthrough_prediction: stockDetails?.breakthrough_prediction || stock.breakthrough_prediction,
+            has_breakthrough_confirmation: stockDetails?.has_breakthrough_confirmation !== undefined 
+              ? stockDetails.has_breakthrough_confirmation 
+              : stock.has_breakthrough_confirmation,
+            details: stockDetails?.details || stock.details,
+            box_analysis: stockDetails?.box_analysis || stock.box_analysis,
+            industry: stockDetails?.industry || stock.industry || '',
+            scanDate: scanDate,
+            record: record
+          })
+        })
+      }
+      // 如果没有selected_stocks，尝试从result中提取
+      else if (record.result && record.result.buyRecords) {
+        record.result.buyRecords.forEach(buyRecord => {
+          // 尝试从扫描历史记录中获取该股票的详细信息
+          let stockDetails = null
+          if (scanHistoryRecord && scanHistoryRecord.scannedStocks) {
+            stockDetails = scanHistoryRecord.scannedStocks.find(s => s.code === buyRecord.code)
+          }
+          
+          allStocks.push({
+            code: buyRecord.code || '',
+            name: buyRecord.name || '',
+            industry: stockDetails?.industry || '',
+            platform_windows: stockDetails?.platform_windows,
+            selection_reasons: stockDetails?.selection_reasons,
+            breakthrough_prediction: stockDetails?.breakthrough_prediction,
+            has_breakthrough_confirmation: stockDetails?.has_breakthrough_confirmation,
+            details: stockDetails?.details,
+            box_analysis: stockDetails?.box_analysis,
+            scanDate: scanDate,
+            record: record
+          })
+        })
+      }
+    })
+
+    // 收集所有股票的属性值（用于筛选条件选项）
+    const platformPeriodsSet = new Set()
+    const industriesSet = new Set()
+    const boxQualities = []
+
+    allStocks.forEach(stock => {
+      // 收集平台期
+      if (stock.selection_reasons) {
+        Object.keys(stock.selection_reasons).forEach(key => {
+          const period = parseInt(key)
+          if (!isNaN(period)) {
+            platformPeriodsSet.add(period)
+          }
+        })
+      }
+      if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+        stock.platform_windows.forEach(period => {
+          platformPeriodsSet.add(period)
+        })
+      }
+
+      // 收集行业
+      if (stock.industry) {
+        industriesSet.add(stock.industry)
+      }
+
+      // 收集箱体质量
+      // 首先检查股票对象上的 box_analysis
+      if (stock.box_analysis && typeof stock.box_analysis === 'object') {
+        if (stock.box_analysis.box_quality !== undefined) {
+          const quality = stock.box_analysis.box_quality
+          if (typeof quality === 'number' && !isNaN(quality)) {
+            boxQualities.push(quality)
+          }
+        }
+      }
+      // 然后检查 details 中每个窗口的 box_analysis
+      if (stock.details && typeof stock.details === 'object') {
+        Object.values(stock.details).forEach(windowDetail => {
+          if (windowDetail && typeof windowDetail === 'object') {
+            if (windowDetail.box_analysis && typeof windowDetail.box_analysis === 'object' && windowDetail.box_analysis.box_quality !== undefined) {
+              const quality = windowDetail.box_analysis.box_quality
+              if (typeof quality === 'number' && !isNaN(quality)) {
+                boxQualities.push(quality)
+              }
+            }
+            if (windowDetail.box_quality !== undefined) {
+              const quality = windowDetail.box_quality
+              if (typeof quality === 'number' && !isNaN(quality)) {
+                boxQualities.push(quality)
+              }
+            }
+          }
+        })
+      }
+    })
+
+    // 更新属性集合
+    allStockAttributes.value.platformPeriods = platformPeriodsSet
+    allStockAttributes.value.industries = industriesSet
+    if (boxQualities.length > 0) {
+      allStockAttributes.value.minBoxQuality = Math.min(...boxQualities)
+      allStockAttributes.value.maxBoxQuality = Math.max(...boxQualities)
+      // 最小箱体质量默认值保持为0，不自动设置
+    }
+
+    // 根据股票属性筛选股票
+    console.log('开始筛选股票，总股票数:', allStocks.length)
+    console.log('筛选条件:', {
+      platformPeriods: statisticsFilters.value.platformPeriods,
+      breakthroughMACD: statisticsFilters.value.breakthroughMACD,
+      breakthroughRSI: statisticsFilters.value.breakthroughRSI,
+      breakthroughKDJ: statisticsFilters.value.breakthroughKDJ,
+      breakthroughBollinger: statisticsFilters.value.breakthroughBollinger,
+      breakthroughConfirmation: statisticsFilters.value.breakthroughConfirmation,
+      industries: statisticsFilters.value.industries,
+      boxQualityThreshold: statisticsFilters.value.boxQualityThreshold
+    })
+    
+    const filteredStocks = allStocks.filter(stock => {
+      // 平台期筛选
+      if (statisticsFilters.value.platformPeriods.length > 0) {
+        const stockPlatformPeriods = []
+        // 从 platform_windows 中收集平台期
+        if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+          stockPlatformPeriods.push(...stock.platform_windows)
+        }
+        // 从 selection_reasons 的键中收集平台期（一个股票可能同时满足多个平台期条件）
+        if (stock.selection_reasons) {
+          Object.keys(stock.selection_reasons).forEach(key => {
+            const period = parseInt(key)
+            if (!isNaN(period)) {
+              stockPlatformPeriods.push(period)
+            }
+          })
+        }
+        
+        // 去重，确保每个平台期只出现一次
+        const uniqueStockPlatformPeriods = [...new Set(stockPlatformPeriods)]
+        
+        // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑：只要有一个匹配就通过）
+        const hasMatchingPeriod = statisticsFilters.value.platformPeriods.some(period => 
+          uniqueStockPlatformPeriods.includes(period)
+        )
+        if (!hasMatchingPeriod) {
+          return false
+        }
+      }
+
+      // 突破前兆筛选
+      const hasBreakthroughFilter = statisticsFilters.value.breakthroughMACD || 
+                                    statisticsFilters.value.breakthroughRSI || 
+                                    statisticsFilters.value.breakthroughKDJ || 
+                                    statisticsFilters.value.breakthroughBollinger
+      if (hasBreakthroughFilter) {
+        const breakthroughPrediction = stock.breakthrough_prediction
+        const signals = breakthroughPrediction?.signals || {}
+        
+        // 如果用户选择了突破前兆筛选，但股票没有突破前兆数据，应该排除该股票
+        if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
+          // 没有数据，排除股票（因为用户明确选择了筛选条件）
+          return false
+        } else {
+          const requiredSignals = []
+          if (statisticsFilters.value.breakthroughMACD) requiredSignals.push('MACD')
+          if (statisticsFilters.value.breakthroughRSI) requiredSignals.push('RSI')
+          if (statisticsFilters.value.breakthroughKDJ) requiredSignals.push('KDJ')
+          if (statisticsFilters.value.breakthroughBollinger) requiredSignals.push('布林带')
+
+          if (requiredSignals.length > 0) {
+            // 检查股票是否有选中的突破前兆（至少有一个匹配）
+            const hasMatchingSignal = requiredSignals.some(signal => signals[signal] === true)
+            if (!hasMatchingSignal) {
+              return false
+            }
+          }
+        }
+      }
+
+      // 确认突破筛选
+      if (statisticsFilters.value.breakthroughConfirmation !== null) {
+        // 如果用户选择了确认突破筛选，但股票没有确认突破数据，应该排除该股票
+        if (stock.has_breakthrough_confirmation === undefined || stock.has_breakthrough_confirmation === null) {
+          // 没有数据，排除股票（因为用户明确选择了筛选条件）
+          return false
+        } else {
+          const hasConfirmation = stock.has_breakthrough_confirmation === true
+          if (statisticsFilters.value.breakthroughConfirmation !== hasConfirmation) {
+            return false
+          }
+        }
+      }
+
+      // 行业筛选
+      if (statisticsFilters.value.industries.length > 0) {
+        const stockIndustry = stock.industry
+        // 如果用户选择了行业筛选，但股票没有行业数据，应该排除该股票
+        if (!stockIndustry || stockIndustry === '' || stockIndustry === '未知行业') {
+          // 没有行业数据，排除股票（因为用户明确选择了筛选条件）
+          return false
+        } else {
+          if (!statisticsFilters.value.industries.includes(stockIndustry)) {
+            return false
+          }
+        }
+      }
+
+      // 箱体质量筛选
+      if (statisticsFilters.value.boxQualityThreshold > 0) {
+        let stockBoxQuality = 0
+        let hasBoxQualityData = false
+        
+        // 首先检查股票对象上的 box_analysis
+        if (stock.box_analysis && typeof stock.box_analysis === 'object') {
+          if (stock.box_analysis.box_quality !== undefined) {
+            const quality = stock.box_analysis.box_quality
+            if (typeof quality === 'number' && !isNaN(quality)) {
+              stockBoxQuality = Math.max(stockBoxQuality, quality)
+              hasBoxQualityData = true
+            }
+          }
+        }
+        
+        // 然后检查 details 中每个窗口的 box_analysis
+        if (stock.details && typeof stock.details === 'object') {
+          Object.values(stock.details).forEach(windowDetail => {
+            if (windowDetail && typeof windowDetail === 'object') {
+              if (windowDetail.box_analysis && typeof windowDetail.box_analysis === 'object' && windowDetail.box_analysis.box_quality !== undefined) {
+                const quality = windowDetail.box_analysis.box_quality
+                if (typeof quality === 'number' && !isNaN(quality)) {
+                  stockBoxQuality = Math.max(stockBoxQuality, quality)
+                  hasBoxQualityData = true
+                }
+              }
+              if (windowDetail.box_quality !== undefined) {
+                const quality = windowDetail.box_quality
+                if (typeof quality === 'number' && !isNaN(quality)) {
+                  stockBoxQuality = Math.max(stockBoxQuality, quality)
+                  hasBoxQualityData = true
+                }
+              }
+            }
+          })
+        }
+        
+        // 如果用户选择了箱体质量筛选，但股票没有箱体质量数据，应该排除该股票
+        if (!hasBoxQualityData) {
+          // 没有数据，排除股票（因为用户明确选择了筛选条件）
+          return false
+        } else {
+          if (stockBoxQuality < statisticsFilters.value.boxQualityThreshold) {
+            return false
+          }
+        }
+      }
+
+      return true
+    })
+
+    // 根据筛选后的股票，筛选记录（记录必须包含至少一只筛选后的股票）
+    const filteredRecords = selectedRecords.filter(record => {
+      const config = record.config || {}
+      const recordStocks = []
+      
+      if (config.selected_stocks && Array.isArray(config.selected_stocks)) {
+        recordStocks.push(...config.selected_stocks)
+      } else if (record.result && record.result.buyRecords) {
+        record.result.buyRecords.forEach(buyRecord => {
+          recordStocks.push({
+            code: buyRecord.code || '',
+            name: buyRecord.name || ''
+          })
+        })
+      }
+
+      // 检查记录中是否有筛选后的股票
+      return filteredStocks.some(filteredStock => 
+        recordStocks.some(recordStock => recordStock.code === filteredStock.code)
+      )
+    })
+
+    // 计算统计数据并保存记录详情
+    let totalRecords = filteredRecords.length
+    let profitableStocks = 0  // 盈利股票数
+    let lossStocks = 0  // 亏损股票数
+    let totalInvestment = 0
+    let totalProfit = 0
+    let totalReturnRate = 0
+
+    const recordDetails = []
+
+    filteredRecords.forEach(record => {
+      const config = record.config || {}
+      const result = record.result || {}
+      
+      // 获取该记录中筛选后的股票代码列表
+      const filteredStockCodes = new Set()
+      filteredStocks.forEach(filteredStock => {
+        if (filteredStock.record === record) {
+          filteredStockCodes.add(filteredStock.code)
+        }
+      })
+
+      // 从stockDetails中获取筛选后股票的收益数据
+      const stockDetails = result.stockDetails || []
+      const filteredStockDetails = stockDetails.filter(detail => 
+        filteredStockCodes.has(detail.code)
+      )
+
+      // 重新计算筛选后股票的统计数据
+      let recordInvestment = 0
+      let recordProfit = 0
+      
+      filteredStockDetails.forEach(detail => {
+        const buyAmount = detail.buyAmount || 0
+        recordInvestment += buyAmount
+        recordProfit += (detail.profit || 0)
+        
+        // 统计盈利和亏损股票数
+        if (detail.profit > 0) {
+          profitableStocks++
+        } else if (detail.profit < 0) {
+          lossStocks++
+        }
+      })
+
+      // 累计到总体统计
+      totalInvestment += recordInvestment
+      totalProfit += recordProfit
+
+      // 保存记录详情（只包含筛选后的股票信息）
+      const stocks = []
+      const recordStocks = []
+      
+      // 从config中获取股票列表
+      if (config.selected_stocks && Array.isArray(config.selected_stocks)) {
+        recordStocks.push(...config.selected_stocks)
+      }
+      // 如果没有selected_stocks，尝试从result中提取
+      else if (result.buyRecords) {
+        result.buyRecords.forEach(buyRecord => {
+          recordStocks.push({
+            code: buyRecord.code || '',
+            name: buyRecord.name || '',
+            industry: ''
+          })
+        })
+      }
+
+      // 只保存筛选后的股票（包含筛选条件信息）
+      filteredStocks.forEach(filteredStock => {
+        if (filteredStock.record === record) {
+          const matchingStock = recordStocks.find(rs => rs.code === filteredStock.code)
+          if (matchingStock) {
+            // 从stockDetails中获取该股票的收益率
+            const stockDetail = filteredStockDetails.find(detail => detail.code === filteredStock.code)
+            const returnRate = stockDetail?.returnRate !== undefined ? stockDetail.returnRate : null
+            
+            // 提取平台期信息
+            const platformPeriods = []
+            if (filteredStock.platform_windows && Array.isArray(filteredStock.platform_windows)) {
+              platformPeriods.push(...filteredStock.platform_windows)
+            }
+            if (filteredStock.selection_reasons) {
+              Object.keys(filteredStock.selection_reasons).forEach(key => {
+                const period = parseInt(key)
+                if (!isNaN(period)) {
+                  platformPeriods.push(period)
+                }
+              })
+            }
+            const uniquePlatformPeriods = [...new Set(platformPeriods)].sort((a, b) => a - b)
+            
+            // 提取突破前兆信息
+            const breakthroughSignals = []
+            const breakthroughPrediction = filteredStock.breakthrough_prediction
+            if (breakthroughPrediction && breakthroughPrediction.signals) {
+              const signals = breakthroughPrediction.signals
+              if (signals.MACD === true) breakthroughSignals.push('MACD')
+              if (signals.RSI === true) breakthroughSignals.push('RSI')
+              if (signals.KDJ === true) breakthroughSignals.push('KDJ')
+              if (signals['布林带'] === true) breakthroughSignals.push('布林带')
+            }
+            
+            // 提取确认突破信息
+            const hasBreakthroughConfirmation = filteredStock.has_breakthrough_confirmation === true
+            
+            // 提取箱体质量信息
+            let boxQuality = null
+            // 首先检查股票对象上的 box_analysis
+            if (filteredStock.box_analysis && typeof filteredStock.box_analysis === 'object') {
+              if (filteredStock.box_analysis.box_quality !== undefined) {
+                const quality = filteredStock.box_analysis.box_quality
+                if (typeof quality === 'number' && !isNaN(quality)) {
+                  boxQuality = quality
+                }
+              }
+            }
+            // 然后检查 details 中每个窗口的 box_analysis
+            if (filteredStock.details && typeof filteredStock.details === 'object') {
+              Object.values(filteredStock.details).forEach(windowDetail => {
+                if (windowDetail && typeof windowDetail === 'object') {
+                  if (windowDetail.box_analysis && typeof windowDetail.box_analysis === 'object' && windowDetail.box_analysis.box_quality !== undefined) {
+                    const quality = windowDetail.box_analysis.box_quality
+                    if (typeof quality === 'number' && !isNaN(quality)) {
+                      if (boxQuality === null || quality > boxQuality) {
+                        boxQuality = quality
+                      }
+                    }
+                  }
+                  if (windowDetail.box_quality !== undefined) {
+                    const quality = windowDetail.box_quality
+                    if (typeof quality === 'number' && !isNaN(quality)) {
+                      if (boxQuality === null || quality > boxQuality) {
+                        boxQuality = quality
+                      }
+                    }
+                  }
+                }
+              })
+            }
+            
+            stocks.push({
+              code: filteredStock.code || '',
+              name: filteredStock.name || '',
+              industry: filteredStock.industry || matchingStock.industry || '',
+              platformPeriods: uniquePlatformPeriods,
+              breakthroughSignals: breakthroughSignals,
+              hasBreakthroughConfirmation: hasBreakthroughConfirmation,
+              boxQuality: boxQuality,
+              returnRate: returnRate
+            })
+          }
+        }
+      })
+
+      recordDetails.push({
+        scanDate: config.backtest_date || '',
+        stocks: stocks
+      })
+    })
+
+    // 计算整体收益率
+    if (totalInvestment > 0) {
+      totalReturnRate = (totalProfit / totalInvestment) * 100
+    }
+
+    // 计算胜率（基于股票数量）
+    const totalStocks = profitableStocks + lossStocks
+    const winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
+
+    statisticsResult.value = {
+      totalRecords,
+      profitableRecords: profitableStocks,  // 使用盈利股票数
+      lossRecords: lossStocks,  // 使用亏损股票数
+      winRate,
+      totalInvestment,
+      totalProfit,
+      totalReturnRate,
+      filteredRecords: recordDetails
+    }
+  } catch (e) {
+    console.error('计算统计数据失败:', e)
+    statisticsError.value = '计算统计数据失败: ' + (e.response?.data?.detail || e.message)
+  } finally {
+    statisticsLoading.value = false
+  }
+}
 
 onMounted(() => {
   // 加载选中的股票和扫描配置

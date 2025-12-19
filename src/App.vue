@@ -79,21 +79,56 @@
                 <i class="fas fa-times text-xl"></i>
               </button>
             </div>
-            <!-- 年度筛选 -->
-            <div class="flex items-center space-x-2">
-              <label class="text-sm text-muted-foreground whitespace-nowrap">
-                <i class="fas fa-filter mr-1"></i>
-                年度筛选：
-              </label>
-              <select
-                v-model="selectedScanYear"
-                class="input text-sm px-3 py-1.5 min-w-[120px]"
-              >
-                <option value="">全部年度</option>
-                <option v-for="year in availableScanYears" :key="year" :value="year">
-                  {{ year }}年
-                </option>
-              </select>
+            <!-- 筛选器 -->
+            <div class="flex flex-wrap items-center gap-3">
+              <!-- 年度筛选 -->
+              <div class="flex items-center space-x-2">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  <i class="fas fa-filter mr-1"></i>
+                  年度：
+                </label>
+                <select
+                  v-model="selectedScanYear"
+                  @change="selectedScanQuarter = ''; selectedScanMonth = ''"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部年度</option>
+                  <option v-for="year in availableScanYears" :key="year" :value="year">
+                    {{ year }}年
+                  </option>
+                </select>
+              </div>
+              <!-- 季度筛选 -->
+              <div class="flex items-center space-x-2" v-if="selectedScanYear">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  季度：
+                </label>
+                <select
+                  v-model="selectedScanQuarter"
+                  @change="selectedScanMonth = ''"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部季度</option>
+                  <option v-for="quarter in availableScanQuarters" :key="quarter" :value="quarter">
+                    {{ quarter }}
+                  </option>
+                </select>
+              </div>
+              <!-- 月度筛选 -->
+              <div class="flex items-center space-x-2" v-if="selectedScanYear">
+                <label class="text-sm text-muted-foreground whitespace-nowrap">
+                  月度：
+                </label>
+                <select
+                  v-model="selectedScanMonth"
+                  class="input text-sm px-3 py-1.5 min-w-[120px]"
+                >
+                  <option value="">全部月度</option>
+                  <option v-for="month in availableScanMonths" :key="month" :value="month">
+                    {{ month }}月
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1685,6 +1720,8 @@ const scanHistoryLoading = ref(false);
 const selectedScanHistoryRecord = ref(null);
 const scanHistoryGroupedByDate = ref({});
 const selectedScanYear = ref('');
+const selectedScanQuarter = ref('');
+const selectedScanMonth = ref('');
 const showScanConfigDetails = ref(false); // 控制配置详情展开/折叠
 
 // 确认对话框相关
@@ -2905,17 +2942,91 @@ const availableScanYears = computed(() => {
   return Array.from(years).sort((a, b) => b.localeCompare(a))
 })
 
-// 按年度筛选后的分组历史记录
-const filteredScanHistoryGroupedByDate = computed(() => {
+// 获取可用的季度列表（基于选中的年度）
+const availableScanQuarters = computed(() => {
   if (!selectedScanYear.value) {
-    return scanHistoryGroupedByDate.value
+    return []
+  }
+  const quarters = new Set()
+  scanHistory.value.forEach(record => {
+    const scanDate = record.scanDate || ''
+    if (scanDate && scanDate !== '未知日期' && scanDate.startsWith(selectedScanYear.value)) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month >= 1 && month <= 12) {
+        const quarter = Math.ceil(month / 3)
+        quarters.add(`Q${quarter}`)
+      }
+    }
+  })
+  return Array.from(quarters).sort()
+})
+
+// 获取可用的月度列表（基于选中的年度和季度）
+const availableScanMonths = computed(() => {
+  if (!selectedScanYear.value) {
+    return []
+  }
+  const months = new Set()
+  let targetMonths = []
+  
+  // 如果选择了季度，只显示该季度的月份
+  if (selectedScanQuarter.value) {
+    const quarterNum = parseInt(selectedScanQuarter.value.substring(1))
+    if (quarterNum === 1) targetMonths = [1, 2, 3]
+    else if (quarterNum === 2) targetMonths = [4, 5, 6]
+    else if (quarterNum === 3) targetMonths = [7, 8, 9]
+    else if (quarterNum === 4) targetMonths = [10, 11, 12]
+  } else {
+    // 如果没有选择季度，显示该年度所有月份
+    targetMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
   }
   
+  scanHistory.value.forEach(record => {
+    const scanDate = record.scanDate || ''
+    if (scanDate && scanDate !== '未知日期' && scanDate.startsWith(selectedScanYear.value)) {
+      const month = parseInt(scanDate.substring(5, 7))
+      if (month >= 1 && month <= 12 && targetMonths.includes(month)) {
+        months.add(month)
+      }
+    }
+  })
+  return Array.from(months).sort((a, b) => a - b)
+})
+
+// 按年度、季度、月度筛选后的分组历史记录
+const filteredScanHistoryGroupedByDate = computed(() => {
   const filtered = {}
   Object.keys(scanHistoryGroupedByDate.value).forEach(date => {
-    if (date && date !== '未知日期' && date.startsWith(selectedScanYear.value)) {
-      filtered[date] = scanHistoryGroupedByDate.value[date]
+    if (date === '未知日期') {
+      return
     }
+    
+    // 年度筛选
+    if (selectedScanYear.value && !date.startsWith(selectedScanYear.value)) {
+      return
+    }
+    
+    // 季度筛选
+    if (selectedScanQuarter.value) {
+      const month = parseInt(date.substring(5, 7))
+      if (month >= 1 && month <= 12) {
+        const quarter = Math.ceil(month / 3)
+        const selectedQuarter = parseInt(selectedScanQuarter.value.substring(1))
+        if (quarter !== selectedQuarter) {
+          return
+        }
+      }
+    }
+    
+    // 月度筛选
+    if (selectedScanMonth.value) {
+      const month = parseInt(date.substring(5, 7))
+      if (month !== parseInt(selectedScanMonth.value)) {
+        return
+      }
+    }
+    
+    filtered[date] = scanHistoryGroupedByDate.value[date]
   })
   return filtered
 })
