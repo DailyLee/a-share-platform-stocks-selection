@@ -66,17 +66,35 @@
       <div v-if="showScanHistoryDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showScanHistoryDialog = false">
         <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
           <!-- 对话框头部 -->
-          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
-            <h2 class="text-lg font-semibold flex items-center">
-              <i class="fas fa-history mr-2 text-primary"></i>
-              扫描历史记录
-            </h2>
-            <button
-              @click="showScanHistoryDialog = false"
-              class="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <i class="fas fa-times text-xl"></i>
-            </button>
+          <div class="p-4 sm:p-6 border-b border-border">
+            <div class="flex justify-between items-center mb-4">
+              <h2 class="text-lg font-semibold flex items-center">
+                <i class="fas fa-history mr-2 text-primary"></i>
+                扫描历史记录
+              </h2>
+              <button
+                @click="showScanHistoryDialog = false"
+                class="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <i class="fas fa-times text-xl"></i>
+              </button>
+            </div>
+            <!-- 年度筛选 -->
+            <div class="flex items-center space-x-2">
+              <label class="text-sm text-muted-foreground whitespace-nowrap">
+                <i class="fas fa-filter mr-1"></i>
+                年度筛选：
+              </label>
+              <select
+                v-model="selectedScanYear"
+                class="input text-sm px-3 py-1.5 min-w-[120px]"
+              >
+                <option value="">全部年度</option>
+                <option v-for="year in availableScanYears" :key="year" :value="year">
+                  {{ year }}年
+                </option>
+              </select>
+            </div>
           </div>
 
           <!-- 对话框内容 -->
@@ -91,7 +109,7 @@
             </div>
             <div v-else class="space-y-6">
               <!-- 按日期分组显示 -->
-              <div v-for="(records, scanDate) in scanHistoryGroupedByDate" :key="scanDate" class="space-y-3">
+              <div v-for="(records, scanDate) in filteredScanHistoryGroupedByDate" :key="scanDate" class="space-y-3">
                 <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3">
                   <h3 class="text-md font-semibold text-primary flex items-center">
                     <i class="fas fa-calendar-alt mr-2"></i>
@@ -1666,6 +1684,7 @@ const scanHistory = ref([]);
 const scanHistoryLoading = ref(false);
 const selectedScanHistoryRecord = ref(null);
 const scanHistoryGroupedByDate = ref({});
+const selectedScanYear = ref('');
 const showScanConfigDetails = ref(false); // 控制配置详情展开/折叠
 
 // 确认对话框相关
@@ -2870,6 +2889,36 @@ function groupScanHistoryByDate() {
   })
   scanHistoryGroupedByDate.value = sortedGrouped
 }
+
+// 获取可用的年度列表
+const availableScanYears = computed(() => {
+  const years = new Set()
+  scanHistory.value.forEach(record => {
+    const scanDate = record.scanDate || ''
+    if (scanDate && scanDate !== '未知日期') {
+      const year = scanDate.substring(0, 4)
+      if (year && /^\d{4}$/.test(year)) {
+        years.add(year)
+      }
+    }
+  })
+  return Array.from(years).sort((a, b) => b.localeCompare(a))
+})
+
+// 按年度筛选后的分组历史记录
+const filteredScanHistoryGroupedByDate = computed(() => {
+  if (!selectedScanYear.value) {
+    return scanHistoryGroupedByDate.value
+  }
+  
+  const filtered = {}
+  Object.keys(scanHistoryGroupedByDate.value).forEach(date => {
+    if (date && date !== '未知日期' && date.startsWith(selectedScanYear.value)) {
+      filtered[date] = scanHistoryGroupedByDate.value[date]
+    }
+  })
+  return filtered
+})
 
 // 查看扫描历史记录详情
 async function viewScanHistoryRecord(record) {

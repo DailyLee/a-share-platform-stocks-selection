@@ -456,17 +456,35 @@
       <div v-if="showHistoryDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showHistoryDialog = false">
         <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
           <!-- 对话框头部 -->
-          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
-            <h2 class="text-lg font-semibold flex items-center">
-              <i class="fas fa-history mr-2 text-primary"></i>
-              回测历史记录
-            </h2>
-            <button
-              @click="showHistoryDialog = false"
-              class="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <i class="fas fa-times text-xl"></i>
-            </button>
+          <div class="p-4 sm:p-6 border-b border-border">
+            <div class="flex justify-between items-center mb-4">
+              <h2 class="text-lg font-semibold flex items-center">
+                <i class="fas fa-history mr-2 text-primary"></i>
+                回测历史记录
+              </h2>
+              <button
+                @click="showHistoryDialog = false"
+                class="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <i class="fas fa-times text-xl"></i>
+              </button>
+            </div>
+            <!-- 年度筛选 -->
+            <div class="flex items-center space-x-2">
+              <label class="text-sm text-muted-foreground whitespace-nowrap">
+                <i class="fas fa-filter mr-1"></i>
+                年度筛选：
+              </label>
+              <select
+                v-model="selectedBacktestYear"
+                class="input text-sm px-3 py-1.5 min-w-[120px]"
+              >
+                <option value="">全部年度</option>
+                <option v-for="year in availableBacktestYears" :key="year" :value="year">
+                  {{ year }}年
+                </option>
+              </select>
+            </div>
           </div>
 
           <!-- 历史记录列表 -->
@@ -481,7 +499,7 @@
             </div>
             <div v-else class="space-y-6">
               <!-- 按日期分组显示 -->
-              <div v-for="(records, scanDate) in backtestHistoryGroupedByDate" :key="scanDate" class="space-y-3">
+              <div v-for="(records, scanDate) in filteredBacktestHistoryGroupedByDate" :key="scanDate" class="space-y-3">
                 <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3 flex justify-between items-center">
                   <h3 class="text-md font-semibold text-primary flex items-center">
                     <i class="fas fa-calendar-alt mr-2"></i>
@@ -500,52 +518,78 @@
                 <div
                   v-for="(record, index) in records"
                   :key="record.id"
-                  class="card p-4 hover:bg-muted/30 transition-colors cursor-pointer"
-                  @click="viewHistoryRecord(record)"
+                  class="card p-3 hover:bg-muted/30 transition-colors relative"
                 >
-                  <div class="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 class="font-semibold text-sm sm:text-base">
-                        回测 #{{ records.length - index }}
-                      </h3>
-                      <p class="text-xs text-muted-foreground mt-1">
-                        {{ formatDateTime(record.createdAt) }}
-                      </p>
-                    </div>
-                    <div class="text-right">
-                      <div class="text-lg font-bold" :class="record.summary.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                        {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(record.summary.totalReturnRate) }}%
+                  <!-- 删除按钮 -->
+                  <button
+                    @click.stop="showDeleteHistoryConfirm(record.id)"
+                    class="absolute top-2 right-2 p-1.5 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors z-10"
+                    title="删除记录"
+                  >
+                    <i class="fas fa-trash text-xs"></i>
+                  </button>
+
+                  <!-- 可点击区域 -->
+                  <div class="cursor-pointer" @click="viewHistoryRecord(record)">
+                    <!-- 顶部：标题和主要收益信息 -->
+                    <div class="flex justify-between items-start mb-2 pr-8">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                          <h3 class="font-semibold text-sm">
+                            回测 #{{ records.length - index }}
+                          </h3>
+                          <span class="text-xs text-muted-foreground">
+                            {{ formatDateTime(record.createdAt) }}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                          <span class="text-muted-foreground">回测日: {{ record.backtestDate }}</span>
+                          <span class="text-muted-foreground">统计日: {{ record.statDate }}</span>
+                        </div>
                       </div>
-                      <div class="text-xs text-muted-foreground">
-                        {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary.totalProfit) }}
+                      <div class="text-right ml-3 flex-shrink-0">
+                        <div class="text-lg font-bold leading-tight" :class="record.summary.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(record.summary.totalReturnRate) }}%
+                        </div>
+                        <div class="text-xs text-muted-foreground leading-tight">
+                          {{ record.summary.totalReturnRate >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary.totalProfit) }}
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
+
+                  <!-- 中间：详细信息网格 -->
+                  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-1.5 text-xs border-t border-border/50 pt-2 mt-2 cursor-pointer" @click="viewHistoryRecord(record)">
                     <div>
-                      <span class="text-muted-foreground">回测日：</span>
-                      <span>{{ record.backtestDate }}</span>
+                      <span class="text-muted-foreground">股票数:</span>
+                      <span class="ml-1 font-medium">{{ record.summary.totalStocks }}</span>
                     </div>
                     <div>
-                      <span class="text-muted-foreground">统计日：</span>
-                      <span>{{ record.statDate }}</span>
+                      <span class="text-muted-foreground">投入:</span>
+                      <span class="ml-1 font-medium">¥{{ formatNumber(record.summary.totalInvestment) }}</span>
                     </div>
-                    <div>
-                      <span class="text-muted-foreground">股票数：</span>
-                      <span>{{ record.summary.totalStocks }}</span>
+                    <!-- 大盘信息 -->
+                    <div v-if="record.summary.marketReturnRate !== null && record.summary.marketReturnRate !== undefined">
+                      <span class="text-muted-foreground">大盘:</span>
+                      <span class="ml-1 font-medium" :class="record.summary.marketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                        {{ record.summary.marketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(record.summary.marketReturnRate) }}%
+                      </span>
                     </div>
-                    <div>
-                      <span class="text-muted-foreground">投入：</span>
-                      <span>¥{{ formatNumber(record.summary.totalInvestment) }}</span>
+                    <div v-if="record.summary.marketReturnRate !== null && record.summary.marketReturnRate !== undefined">
+                      <span class="text-muted-foreground">超额:</span>
+                      <span class="ml-1 font-medium" :class="(record.summary.totalReturnRate - record.summary.marketReturnRate) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'">
+                        {{ (record.summary.totalReturnRate - record.summary.marketReturnRate) >= 0 ? '+' : '' }}{{ formatPercent(record.summary.totalReturnRate - record.summary.marketReturnRate) }}%
+                      </span>
                     </div>
-                  </div>
-                  <div class="mt-2 flex flex-wrap gap-2">
-                    <span v-if="record.useStopLoss" class="px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-700 dark:text-blue-400">
-                      止损: {{ record.stopLossPercent }}%
-                    </span>
-                    <span v-if="record.useTakeProfit" class="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-700 dark:text-red-400">
-                      止盈: {{ record.takeProfitPercent }}%
-                    </span>
+                    <!-- 止损止盈 -->
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <span v-if="record.useStopLoss" class="px-1.5 py-0.5 rounded text-xs bg-blue-500/20 text-blue-700 dark:text-blue-400 whitespace-nowrap">
+                        止损{{ record.stopLossPercent }}%
+                      </span>
+                      <span v-if="record.useTakeProfit" class="px-1.5 py-0.5 rounded text-xs bg-red-500/20 text-red-700 dark:text-red-400 whitespace-nowrap">
+                        止盈{{ record.takeProfitPercent }}%
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -698,13 +742,6 @@
                   加载到当前回测
                 </button>
                 <button
-                  @click="showDeleteHistoryConfirm(selectedHistoryRecord.id)"
-                  class="px-4 py-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-sm"
-                >
-                  <i class="fas fa-trash mr-2"></i>
-                  删除记录
-                </button>
-                <button
                   @click="selectedHistoryRecord = null"
                   class="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors text-sm"
                 >
@@ -779,6 +816,12 @@
               <div class="bg-muted/30 p-3 rounded-md text-sm text-muted-foreground">
                 <p><i class="fas fa-info-circle mr-2"></i>相同止损止盈条件的回测数据已自动合并，按时间顺序展示。大盘数据（上证指数）用于对比参考。</p>
               </div>
+              <!-- 数据窗口信息 -->
+              <div v-if="chartData.dates && chartData.dates.length > maxChartItemsPerPage" class="flex items-center justify-between text-sm text-muted-foreground bg-muted/20 p-2 rounded-md">
+                <span>
+                  显示第 {{ chartWindowStart + 1 }} - {{ Math.min(chartWindowStart + maxChartItemsPerPage, chartData.dates.length) }} 条，共 {{ chartData.dates.length }} 条数据
+                </span>
+              </div>
               <!-- 图表容器 -->
               <div ref="chartRef" class="w-full h-[500px] min-h-[500px]"></div>
             </div>
@@ -789,7 +832,40 @@
           </div>
 
           <!-- 图表对话框底部 -->
-          <div class="p-4 sm:p-6 border-t border-border flex justify-end">
+          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
+            <!-- 数据窗口导航 -->
+            <div v-if="chartData && chartData.dates && chartData.dates.length > maxChartItemsPerPage" class="flex items-center space-x-2">
+              <button
+                @click="chartWindowStart = Math.max(0, chartWindowStart - maxChartItemsPerPage)"
+                :disabled="chartWindowStart === 0"
+                :class="[
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  chartWindowStart === 0
+                    ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/80'
+                ]"
+              >
+                <i class="fas fa-chevron-left mr-1"></i>
+                上一页
+              </button>
+              <span class="text-sm text-muted-foreground px-2">
+                {{ Math.floor(chartWindowStart / maxChartItemsPerPage) + 1 }} / {{ Math.ceil(chartData.dates.length / maxChartItemsPerPage) }}
+              </span>
+              <button
+                @click="chartWindowStart = Math.min(chartData.dates.length - maxChartItemsPerPage, chartWindowStart + maxChartItemsPerPage)"
+                :disabled="chartWindowStart + maxChartItemsPerPage >= chartData.dates.length"
+                :class="[
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  chartWindowStart + maxChartItemsPerPage >= chartData.dates.length
+                    ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/80'
+                ]"
+              >
+                下一页
+                <i class="fas fa-chevron-right ml-1"></i>
+              </button>
+            </div>
+            <div v-else></div>
             <button
               @click="showChartDialog = false"
               class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
@@ -1107,6 +1183,7 @@ const scanConfig = ref(null)
 const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
+const selectedBacktestYear = ref('')
 
 // 批量回测相关
 const showBatchBacktestDialog = ref(false)
@@ -1140,6 +1217,8 @@ const chartError = ref(null)
 const chartRef = ref(null)
 const chartData = ref([])
 const chartType = ref('rate') // 'rate' 收益率 或 'profit' 收益金额
+const chartWindowStart = ref(0) // 当前窗口起始索引
+const maxChartItemsPerPage = 12 // 每页最多显示的数据条数
 let chartInstance = null
 let chartResizeHandler = null
 
@@ -1483,6 +1562,36 @@ function groupBacktestHistoryByDate() {
   })
   backtestHistoryGroupedByDate.value = sortedGrouped
 }
+
+// 获取可用的年度列表
+const availableBacktestYears = computed(() => {
+  const years = new Set()
+  backtestHistory.value.forEach(record => {
+    const scanDate = record.backtestDate || ''
+    if (scanDate && scanDate !== '未知日期') {
+      const year = scanDate.substring(0, 4)
+      if (year && /^\d{4}$/.test(year)) {
+        years.add(year)
+      }
+    }
+  })
+  return Array.from(years).sort((a, b) => b.localeCompare(a))
+})
+
+// 按年度筛选后的分组历史记录
+const filteredBacktestHistoryGroupedByDate = computed(() => {
+  if (!selectedBacktestYear.value) {
+    return backtestHistoryGroupedByDate.value
+  }
+  
+  const filtered = {}
+  Object.keys(backtestHistoryGroupedByDate.value).forEach(date => {
+    if (date && date !== '未知日期' && date.startsWith(selectedBacktestYear.value)) {
+      filtered[date] = backtestHistoryGroupedByDate.value[date]
+    }
+  })
+  return filtered
+})
 
 // 查看历史记录详情
 async function viewHistoryRecord(record) {
@@ -1980,6 +2089,17 @@ function renderChart() {
     return
   }
 
+  // 计算当前窗口的日期范围
+  const allDates = chartData.value.dates || []
+  const windowEnd = Math.min(chartWindowStart.value + maxChartItemsPerPage, allDates.length)
+  const visibleDates = allDates.slice(chartWindowStart.value, windowEnd)
+  
+  if (visibleDates.length === 0) {
+    console.warn('当前窗口没有可用的日期数据')
+    chartError.value = '当前窗口没有可用的数据'
+    return
+  }
+
   // 销毁旧图表实例
   if (chartInstance) {
     chartInstance.dispose()
@@ -2005,8 +2125,8 @@ function renderChart() {
   // 添加回测数据系列（自选组合 - 绿色）
   if (seriesData && seriesData.length > 0) {
     seriesData.forEach((item, index) => {
-      // 将数据映射到日期轴上
-      const data = chartData.value.dates.map(date => {
+      // 将数据映射到当前窗口的日期轴上
+      const data = visibleDates.map(date => {
         const dataPoint = item.data.find(d => d.date === date)
         return dataPoint ? dataPoint.value : null
       })
@@ -2015,9 +2135,26 @@ function renderChart() {
       let cumulativeData = null
       if (isRate) {
         // 累计收益率：累计收益金额 / 累计投入金额 * 100
+        // 需要从窗口开始位置之前的数据开始累计
         let cumulativeProfit = 0
         let cumulativeInvestment = 0
-        cumulativeData = chartData.value.dates.map((date, idx) => {
+        
+        // 先计算窗口开始位置之前的累计值
+        const datesBeforeWindow = allDates.slice(0, chartWindowStart.value)
+        datesBeforeWindow.forEach(date => {
+          const dataPoint = item.data.find(d => d.date === date)
+          if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+            const investment = dataPoint.investment || 0
+            if (investment > 0) {
+              cumulativeInvestment += investment
+              const profit = (investment * dataPoint.value) / 100
+              cumulativeProfit += profit
+            }
+          }
+        })
+        
+        // 然后计算窗口内的累计数据
+        cumulativeData = visibleDates.map((date, idx) => {
           // 找到对应日期的数据点
           const dataPoint = item.data.find(d => d.date === date)
           if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
@@ -2106,7 +2243,7 @@ function renderChart() {
 
   // 添加大盘数据系列（蓝色）
   if (marketData && marketData.length > 0) {
-    const marketDataPoints = chartData.value.dates.map(date => {
+    const marketDataPoints = visibleDates.map(date => {
       const dataPoint = marketData.find(d => d.date === date)
       return dataPoint ? dataPoint.value : null
     })
@@ -2115,9 +2252,26 @@ function renderChart() {
     let marketCumulativeData = null
     if (isRate) {
       // 累计收益率：累计收益金额 / 累计投入金额 * 100
+      // 需要从窗口开始位置之前的数据开始累计
       let cumulativeProfit = 0
       let cumulativeInvestment = 0
-      marketCumulativeData = chartData.value.dates.map((date, idx) => {
+      
+      // 先计算窗口开始位置之前的累计值
+      const datesBeforeWindow = allDates.slice(0, chartWindowStart.value)
+      datesBeforeWindow.forEach(date => {
+        const dataPoint = marketData.find(d => d.date === date)
+        if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
+          const investment = dataPoint.investment || 0
+          if (investment > 0) {
+            cumulativeInvestment += investment
+            const profit = (investment * dataPoint.value) / 100
+            cumulativeProfit += profit
+          }
+        }
+      })
+      
+      // 然后计算窗口内的累计数据
+      marketCumulativeData = visibleDates.map((date, idx) => {
         // 找到对应日期的数据点
         const dataPoint = marketData.find(d => d.date === date)
         if (dataPoint && dataPoint.value !== null && dataPoint.value !== undefined) {
@@ -2269,7 +2423,7 @@ function renderChart() {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: chartData.value.dates,
+      data: visibleDates,
       axisLabel: {
         rotate: 45,
         interval: 0,
@@ -2320,6 +2474,15 @@ watch(chartType, () => {
   }
 })
 
+// 监听窗口变化，重新渲染图表
+watch(chartWindowStart, () => {
+  if (showChartDialog.value && chartData.value && chartData.value.dates && chartData.value.dates.length > 0) {
+    nextTick(() => {
+      renderChart()
+    })
+  }
+})
+
 // 监听图表对话框关闭，清理图表实例
 watch(showChartDialog, (newVal) => {
   if (!newVal) {
@@ -2333,10 +2496,13 @@ watch(showChartDialog, (newVal) => {
       window.removeEventListener('resize', chartResizeHandler)
       chartResizeHandler = null
     }
-    // 重置图表类型
+    // 重置图表类型和窗口位置
     chartType.value = 'rate'
+    chartWindowStart.value = 0
   } else {
-    // 对话框打开时，如果数据已准备好，等待 DOM 更新后渲染
+    // 对话框打开时，重置窗口位置
+    chartWindowStart.value = 0
+    // 如果数据已准备好，等待 DOM 更新后渲染
     if (chartData.value && chartData.value.dates && chartData.value.dates.length > 0 && !chartLoading.value) {
       nextTick(() => {
         setTimeout(() => {
