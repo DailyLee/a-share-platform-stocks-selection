@@ -80,3 +80,33 @@ def clear_all_backtest_history() -> int:
     print(f"All backtest history cleared: {count} records deleted")
     return count
 
+
+def check_backtest_exists(config: Dict[str, Any]) -> Optional[str]:
+    """
+    Check if a backtest record already exists based on configuration.
+    
+    Args:
+        config: Backtest configuration dictionary
+    
+    Returns:
+        The ID of existing record if found, None otherwise
+    """
+    db = get_stock_database()
+    return db.check_backtest_exists(config)
+
+
+def delete_backtest_history_by_date(backtest_date: str) -> int:
+    """
+    Delete all backtest history records for a specific backtest date.
+    
+    Args:
+        backtest_date: Backtest date string (YYYY-MM-DD)
+    
+    Returns:
+        Number of records deleted
+    """
+    db = get_stock_database()
+    count = db.delete_backtest_history_by_date(backtest_date)
+    print(f"Deleted {count} backtest history records for date: {backtest_date}")
+    return count
+

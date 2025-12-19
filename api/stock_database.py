@@ -934,6 +934,98 @@ class StockDatabase:
                 cursor.execute('DELETE FROM backtest_history')
                 return count
     
+    def delete_backtest_history_by_date(self, backtest_date: str) -> int:
+        """
+        Delete all backtest history records for a specific backtest date.
+        
+        Args:
+            backtest_date: Backtest date string (YYYY-MM-DD)
+        
+        Returns:
+            Number of records deleted
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                # Get all records and filter by backtest_date in config JSON
+                cursor.execute('SELECT id, config FROM backtest_history')
+                rows = cursor.fetchall()
+                
+                deleted_ids = []
+                for row in rows:
+                    try:
+                        config = json.loads(row[1])
+                        if config.get('backtest_date') == backtest_date:
+                            deleted_ids.append(row[0])
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                
+                if deleted_ids:
+                    placeholders = ','.join(['?'] * len(deleted_ids))
+                    cursor.execute(f'DELETE FROM backtest_history WHERE id IN ({placeholders})', deleted_ids)
+                    return len(deleted_ids)
+                return 0
+    
+    def check_backtest_exists(self, config: Dict[str, Any]) -> Optional[str]:
+        """
+        Check if a backtest record already exists based on configuration.
+        
+        Args:
+            config: Backtest configuration dictionary containing:
+                - backtest_date: str
+                - stat_date: str
+                - use_stop_loss: bool
+                - use_take_profit: bool
+                - stop_loss_percent: float
+                - take_profit_percent: float
+                - selected_stocks: List[Dict] (optional, for comparison)
+        
+        Returns:
+            The ID of existing record if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Get all backtest history records
+            cursor.execute('''
+                SELECT id, config
+                FROM backtest_history
+            ''')
+            rows = cursor.fetchall()
+            
+            # Compare each record's config
+            for row in rows:
+                try:
+                    existing_config = json.loads(row[1])
+                    
+                    # Compare key fields
+                    if (existing_config.get('backtest_date') == config.get('backtest_date') and
+                        existing_config.get('stat_date') == config.get('stat_date') and
+                        existing_config.get('use_stop_loss') == config.get('use_stop_loss') and
+                        existing_config.get('use_take_profit') == config.get('use_take_profit') and
+                        existing_config.get('stop_loss_percent') == config.get('stop_loss_percent') and
+                        existing_config.get('take_profit_percent') == config.get('take_profit_percent')):
+                        
+                        # Optionally compare selected_stocks if provided
+                        if 'selected_stocks' in config:
+                            existing_stocks = existing_config.get('selected_stocks', [])
+                            new_stocks = config.get('selected_stocks', [])
+                            
+                            # Compare stock codes
+                            existing_codes = set(s.get('code') for s in existing_stocks if isinstance(s, dict))
+                            new_codes = set(s.get('code') for s in new_stocks if isinstance(s, dict))
+                            
+                            if existing_codes == new_codes:
+                                return row[0]  # Found matching record
+                        else:
+                            # If selected_stocks not provided in config, just match on other fields
+                            return row[0]
+                except (json.JSONDecodeError, TypeError):
+                    continue  # Skip invalid records
+            
+            return None  # No matching record found
+    
     def save_scan_cache(self, cache_key: str, scan_config: Dict[str, Any], 
                        backtest_date: str, scanned_stocks: List[Dict[str, Any]],
                        total_scanned: Optional[int] = None,

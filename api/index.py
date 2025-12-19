@@ -29,7 +29,8 @@ try:
     from api.analyzers.fundamental_analyzer import get_stock_fundamentals
     from api.backtest_history_manager import (
         save_backtest_history, get_backtest_history_list, 
-        get_backtest_history, delete_backtest_history, clear_all_backtest_history
+        get_backtest_history, delete_backtest_history, clear_all_backtest_history,
+        check_backtest_exists, delete_backtest_history_by_date
     )
     from api.scan_history_manager import (
         get_scan_history_list, get_scan_history,
@@ -46,7 +47,8 @@ except ImportError:
     from .analyzers.fundamental_analyzer import get_stock_fundamentals
     from .backtest_history_manager import (
         save_backtest_history, get_backtest_history_list, 
-        get_backtest_history, delete_backtest_history, clear_all_backtest_history
+        get_backtest_history, delete_backtest_history, clear_all_backtest_history,
+        check_backtest_exists, delete_backtest_history_by_date
     )
     from .scan_history_manager import (
         get_scan_history_list, get_scan_history,
@@ -1253,27 +1255,91 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         progress_callback(5, "开始回测，准备股票数据...")
     
     # 1. 直接使用传入的股票列表（不再执行扫描）
+    # 回测功能不进行股票扫描，直接使用前端页面选中的股票列表
     print(f"{Fore.CYAN}开始回测: 回测日={request.backtest_date}, 统计日={request.stat_date}{Style.RESET_ALL}")
     
     # 验证股票列表
     if not request.selected_stocks or len(request.selected_stocks) == 0:
         raise HTTPException(status_code=400, detail="未选择股票，请至少选择一只股票进行回测")
     
-    scanned_stocks = request.selected_stocks
-    print(f"{Fore.GREEN}使用传入的股票列表，共 {len(scanned_stocks)} 只股票{Style.RESET_ALL}")
+    # 过滤掉指数代码和非活跃股票（从选中的股票列表中过滤）
+    valid_stocks = []  # 有效的股票列表（过滤后的选中股票）
+    filtered_indices = 0
+    filtered_inactive = 0
+    
+    # 获取股票基本信息用于类型检查
+    db = get_stock_database()
+    stock_basics_df = db.get_stock_basics()
+    stock_type_map = {}
+    stock_status_map = {}
+    
+    if stock_basics_df is not None and not stock_basics_df.empty:
+        # 数据库返回的列名可能是 'code_name' 而不是 'name'
+        for _, row in stock_basics_df.iterrows():
+            code = row['code']
+            # 尝试多种可能的列名
+            stock_type = row.get('type', row.get('stock_type', '1'))
+            stock_status = row.get('status', row.get('stock_status', '1'))
+            stock_type_map[code] = str(stock_type)  # 确保是字符串类型
+            stock_status_map[code] = str(stock_status)  # 确保是字符串类型
+    
+    for stock in request.selected_stocks:
+        code = stock.get('code', '')
+        if not code:
+            continue
+        
+        # 优先使用数据库中的类型，如果没有则使用股票对象中的类型，最后默认为'1'（普通股票）
+        stock_type = stock_type_map.get(code)
+        if stock_type is None:
+            stock_type = str(stock.get('type', '1'))
+        
+        stock_status = stock_status_map.get(code)
+        if stock_status is None:
+            stock_status = str(stock.get('status', '1'))
+        
+        # 跳过指数代码（type=2）
+        if stock_type == '2' or stock_type == 2:
+            filtered_indices += 1
+            print(f"{Fore.YELLOW}跳过指数代码: {code} ({stock.get('name', '')}){Style.RESET_ALL}")
+            continue
+        
+        # 跳过非活跃股票（status=0）
+        if stock_status == '0' or stock_status == 0:
+            filtered_inactive += 1
+            print(f"{Fore.YELLOW}跳过非活跃股票: {code} ({stock.get('name', '')}){Style.RESET_ALL}")
+            continue
+        
+        # 添加到有效股票列表
+        valid_stocks.append(stock)
+    
+    if filtered_indices > 0:
+        print(f"{Fore.YELLOW}已过滤 {filtered_indices} 个指数代码{Style.RESET_ALL}")
+    if filtered_inactive > 0:
+        print(f"{Fore.YELLOW}已过滤 {filtered_inactive} 个非活跃股票{Style.RESET_ALL}")
+    
+    # 如果过滤后没有股票，但原始列表有股票，给出警告但不抛出异常
+    # 让后续的K线数据获取来决定是否真的没有可用股票
+    if len(valid_stocks) == 0 and len(request.selected_stocks) > 0:
+        print(f"{Fore.RED}警告: 所有股票都被过滤掉了！原始股票数: {len(request.selected_stocks)}, 过滤后: {len(valid_stocks)}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}调试信息: 数据库中有 {len(stock_type_map)} 只股票的类型信息{Style.RESET_ALL}")
+        # 如果所有股票都被过滤，尝试使用原始列表（可能是数据库信息不完整）
+        valid_stocks = request.selected_stocks
+        print(f"{Fore.YELLOW}使用原始股票列表继续回测（可能包含指数代码或非活跃股票）{Style.RESET_ALL}")
+    
+    print(f"{Fore.GREEN}使用选中的股票列表进行回测，共 {len(valid_stocks)} 只有效股票（原始选中: {len(request.selected_stocks)} 只）{Style.RESET_ALL}")
     
     if progress_callback:
-        progress_callback(10, f"准备回测 {len(scanned_stocks)} 只股票...")
+        progress_callback(10, f"准备回测 {len(valid_stocks)} 只股票...")
     
-    # 2. 对于每只股票，执行买入和卖出逻辑
+    # 2. 对于每只选中的股票，执行买入和卖出逻辑（不进行扫描）
     buy_records = []
     sell_records = []
     stock_details = []
     
     buy_amount_per_stock = 10000  # 每只股票买入1万元
     
-    total_stocks = len(scanned_stocks)
-    for idx, stock in enumerate(scanned_stocks):
+    total_stocks = len(valid_stocks)
+    for idx, stock in enumerate(valid_stocks):
         code = stock['code']
         name = stock.get('name', code)
         
@@ -1289,7 +1355,8 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             kline_df = fetch_kline_data(code, start_date, end_date)
         
         if kline_df.empty:
-            print(f"{Fore.YELLOW}Warning: {code} 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Warning: {code} ({name}) 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
+            # 记录跳过的股票信息，但不添加到买入记录
             continue
         
         # 确保数据按日期排序
@@ -1435,6 +1502,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     
     # 3. 计算总摘要
     total_stocks = len(buy_records)
+    
+    # 如果没有成功买入任何股票，给出警告
+    if total_stocks == 0:
+        print(f"{Fore.RED}警告: 没有成功买入任何股票！可能的原因：{Style.RESET_ALL}")
+        print(f"{Fore.RED}  1. 所有股票在指定日期范围内都没有K线数据{Style.RESET_ALL}")
+        print(f"{Fore.RED}  2. 回测日期可能是未来日期（当前日期之后）{Style.RESET_ALL}")
+        print(f"{Fore.RED}  3. 回测日期可能是非交易日（周末或节假日）{Style.RESET_ALL}")
+        print(f"{Fore.RED}  4. 股票可能已退市或停牌{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}原始选中股票数: {len(valid_stocks)}, 成功买入: {total_stocks}{Style.RESET_ALL}")
+    
     total_investment = sum(record['buyAmount'] for record in buy_records)
     total_profit = sum(detail['profit'] for detail in stock_details)
     total_return_rate = (total_profit / total_investment * 100) if total_investment > 0 else 0
@@ -1749,6 +1826,184 @@ async def clear_all_backtest_history_endpoint():
         raise HTTPException(
             status_code=500,
             detail=f"清空回测历史记录失败: {str(e)}"
+        )
+
+
+@app.delete("/api/backtest/history/date/{backtest_date}")
+async def delete_backtest_history_by_date_endpoint(backtest_date: str):
+    """
+    删除指定扫描日期的所有回测历史记录
+    """
+    try:
+        # 验证日期格式
+        from datetime import datetime
+        try:
+            datetime.strptime(backtest_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+        
+        count = delete_backtest_history_by_date(backtest_date)
+        return {
+            "success": True,
+            "message": f"已删除 {count} 条回测历史记录（扫描日期: {backtest_date}）",
+            "count": count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}删除回测历史记录失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除回测历史记录失败: {str(e)}"
+        )
+
+
+class BatchBacktestRequest(BaseModel):
+    """批量回测请求模型"""
+    backtest_date: str  # 回测日（截止日），格式：YYYY-MM-DD
+    stat_date: str  # 统计日，格式：YYYY-MM-DD
+    buy_strategy: str = "fixed_amount"  # 买入策略
+    selected_stocks: List[Dict[str, Any]]  # 选中的股票列表
+    profit_loss_combinations: List[Dict[str, Any]]  # 止盈止损组合列表
+    # 每个组合包含: use_stop_loss, use_take_profit, stop_loss_percent, take_profit_percent
+
+
+class BatchBacktestResult(BaseModel):
+    """批量回测结果"""
+    total: int  # 总任务数
+    completed: int  # 已完成数
+    skipped: int  # 跳过数（已存在）
+    failed: int  # 失败数
+    results: List[Dict[str, Any]]  # 详细结果列表
+
+
+@app.post("/api/backtest/batch", response_model=BatchBacktestResult)
+async def run_batch_backtest(request: BatchBacktestRequest):
+    """
+    批量回测：根据多个止盈止损组合批量生成回测数据
+    如果数据已存在则跳过
+    """
+    try:
+        # 验证日期格式
+        from datetime import datetime
+        try:
+            backtest_date = datetime.strptime(request.backtest_date, '%Y-%m-%d')
+            stat_date = datetime.strptime(request.stat_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+        
+        if backtest_date >= stat_date:
+            raise HTTPException(status_code=400, detail="回测日必须早于统计日")
+        
+        # 验证股票列表
+        if not request.selected_stocks or len(request.selected_stocks) == 0:
+            raise HTTPException(status_code=400, detail="未选择股票，请至少选择一只股票进行回测")
+        
+        # 验证止盈止损组合
+        if not request.profit_loss_combinations or len(request.profit_loss_combinations) == 0:
+            raise HTTPException(status_code=400, detail="请至少设置一个止盈止损组合")
+        
+        total = len(request.profit_loss_combinations)
+        completed = 0
+        skipped = 0
+        failed = 0
+        results = []
+        
+        print(f"{Fore.CYAN}开始批量回测: 共 {total} 个组合{Style.RESET_ALL}")
+        
+        # 遍历每个止盈止损组合
+        for idx, combination in enumerate(request.profit_loss_combinations):
+            try:
+                # 构建回测请求配置
+                config_dict = {
+                    'backtest_date': request.backtest_date,
+                    'stat_date': request.stat_date,
+                    'buy_strategy': request.buy_strategy,
+                    'use_stop_loss': combination.get('use_stop_loss', False),
+                    'use_take_profit': combination.get('use_take_profit', False),
+                    'stop_loss_percent': combination.get('stop_loss_percent', -3.0),
+                    'take_profit_percent': combination.get('take_profit_percent', 10.0),
+                    'selected_stocks': request.selected_stocks
+                }
+                
+                # 检查是否已存在
+                existing_id = check_backtest_exists(config_dict)
+                if existing_id:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过已存在的回测记录: {existing_id}{Style.RESET_ALL}")
+                    skipped += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'skipped',
+                        'message': '回测记录已存在',
+                        'history_id': existing_id,
+                        'config': config_dict
+                    })
+                    continue
+                
+                # 创建回测请求
+                backtest_request = BacktestRequest(
+                    backtest_date=request.backtest_date,
+                    stat_date=request.stat_date,
+                    buy_strategy=request.buy_strategy,
+                    use_stop_loss=combination.get('use_stop_loss', False),
+                    use_take_profit=combination.get('use_take_profit', False),
+                    stop_loss_percent=combination.get('stop_loss_percent', -3.0),
+                    take_profit_percent=combination.get('take_profit_percent', 10.0),
+                    selected_stocks=request.selected_stocks
+                )
+                
+                # 执行回测
+                print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 止损={combination.get('stop_loss_percent')}%, 止盈={combination.get('take_profit_percent')}%{Style.RESET_ALL}")
+                result = run_backtest_with_progress(backtest_request, progress_callback=None)
+                result_dict = result.model_dump()
+                
+                # 保存回测历史
+                history_id = save_backtest_history(config_dict, result_dict)
+                print(f"{Fore.GREEN}[{idx + 1}/{total}] 回测完成并保存: {history_id}{Style.RESET_ALL}")
+                
+                completed += 1
+                results.append({
+                    'index': idx + 1,
+                    'status': 'completed',
+                    'message': '回测完成',
+                    'history_id': history_id,
+                    'config': config_dict,
+                    'summary': result_dict.get('summary', {})
+                })
+                
+            except Exception as e:
+                print(f"{Fore.RED}[{idx + 1}/{total}] 回测失败: {e}{Style.RESET_ALL}")
+                import traceback
+                traceback.print_exc()
+                failed += 1
+                results.append({
+                    'index': idx + 1,
+                    'status': 'failed',
+                    'message': str(e),
+                    'config': config_dict if 'config_dict' in locals() else combination
+                })
+        
+        print(f"{Fore.GREEN}批量回测完成: 总计={total}, 完成={completed}, 跳过={skipped}, 失败={failed}{Style.RESET_ALL}")
+        
+        return BatchBacktestResult(
+            total=total,
+            completed=completed,
+            skipped=skipped,
+            failed=failed,
+            results=results
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}批量回测失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"批量回测执行失败: {str(e)}"
         )
 
 

@@ -482,12 +482,20 @@
             <div v-else class="space-y-6">
               <!-- 按日期分组显示 -->
               <div v-for="(records, scanDate) in backtestHistoryGroupedByDate" :key="scanDate" class="space-y-3">
-                <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3">
+                <div class="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border pb-2 mb-3 flex justify-between items-center">
                   <h3 class="text-md font-semibold text-primary flex items-center">
                     <i class="fas fa-calendar-alt mr-2"></i>
                     扫描日期: {{ scanDate }}
                     <span class="ml-2 text-sm text-muted-foreground">({{ records.length }} 条记录)</span>
                   </h3>
+                  <button
+                    @click.stop="showDeleteDateConfirm(scanDate)"
+                    class="px-3 py-1.5 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors text-xs"
+                    title="删除此日期的所有回测记录"
+                  >
+                    <i class="fas fa-trash mr-1"></i>
+                    删除
+                  </button>
                 </div>
                 <div
                   v-for="(record, index) in records"
@@ -546,14 +554,24 @@
 
           <!-- 对话框底部 -->
           <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
-            <button
-              v-if="backtestHistory.length > 0"
-              @click="generateBacktestChart"
-              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
-            >
-              <i class="fas fa-chart-line mr-2"></i>
-              生成折线图
-            </button>
+            <div class="flex space-x-2">
+              <button
+                @click="showBatchBacktestDialog = true"
+                :disabled="selectedStocks.length === 0"
+                class="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+              >
+                <i class="fas fa-layer-group mr-2"></i>
+                批量回测
+              </button>
+              <button
+                v-if="backtestHistory.length > 0"
+                @click="generateBacktestChart"
+                class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+              >
+                <i class="fas fa-chart-line mr-2"></i>
+                生成折线图
+              </button>
+            </div>
             <div class="flex space-x-2">
               <button
                 v-if="backtestHistory.length > 0"
@@ -783,6 +801,248 @@
       </div>
     </transition>
 
+    <!-- 批量回测对话框 -->
+    <transition name="fade">
+      <div v-if="showBatchBacktestDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showBatchBacktestDialog = false">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <!-- 对话框头部 -->
+          <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
+            <h2 class="text-lg font-semibold flex items-center">
+              <i class="fas fa-layer-group mr-2 text-primary"></i>
+              批量回测
+            </h2>
+            <button
+              @click="showBatchBacktestDialog = false"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- 对话框内容 -->
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div class="space-y-6">
+              <!-- 回测参数 -->
+              <div class="space-y-4">
+                <h3 class="text-md font-semibold">回测参数</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium mb-2">
+                      <i class="fas fa-calendar-alt mr-1 text-primary"></i>
+                      回测日（截止日）
+                    </label>
+                    <input
+                      v-model="batchBacktestConfig.backtestDate"
+                      type="date"
+                      class="input w-full"
+                      :max="maxDate"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-2">
+                      <i class="fas fa-calendar-check mr-1 text-primary"></i>
+                      统计日
+                    </label>
+                    <input
+                      v-model="batchBacktestConfig.statDate"
+                      type="date"
+                      class="input w-full"
+                      :max="maxDate"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 止盈止损组合列表 -->
+              <div class="space-y-4">
+                <div class="flex justify-between items-center">
+                  <h3 class="text-md font-semibold">止盈止损组合</h3>
+                  <button
+                    @click="addProfitLossCombination"
+                    class="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+                  >
+                    <i class="fas fa-plus mr-1"></i>
+                    添加组合
+                  </button>
+                </div>
+                
+                <div v-if="batchBacktestConfig.profitLossCombinations.length === 0" class="text-center py-8 text-muted-foreground">
+                  <i class="fas fa-inbox text-4xl mb-4"></i>
+                  <p>请至少添加一个止盈止损组合</p>
+                </div>
+                
+                <div v-else class="space-y-3">
+                  <div
+                    v-for="(combination, index) in batchBacktestConfig.profitLossCombinations"
+                    :key="index"
+                    class="card p-4 border border-border"
+                  >
+                    <div class="flex justify-between items-start mb-3">
+                      <h4 class="font-medium">组合 #{{ index + 1 }}</h4>
+                      <button
+                        @click="removeProfitLossCombination(index)"
+                        class="text-destructive hover:text-destructive/80 transition-colors"
+                      >
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <!-- 止损设置 -->
+                      <div class="space-y-2">
+                        <div class="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            :id="`stopLoss-${index}`"
+                            v-model="combination.useStopLoss"
+                            class="checkbox"
+                          />
+                          <label :for="`stopLoss-${index}`" class="text-sm">
+                            止损
+                          </label>
+                        </div>
+                        <div v-if="combination.useStopLoss" class="ml-6 flex items-center space-x-2">
+                          <label :for="`stopLossPercent-${index}`" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
+                          <input
+                            :id="`stopLossPercent-${index}`"
+                            v-model.number="combination.stopLossPercent"
+                            type="number"
+                            step="0.1"
+                            min="-100"
+                            max="0"
+                            class="input w-24"
+                            placeholder="-3"
+                          />
+                          <span class="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                      
+                      <!-- 止盈设置 -->
+                      <div class="space-y-2">
+                        <div class="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            :id="`takeProfit-${index}`"
+                            v-model="combination.useTakeProfit"
+                            class="checkbox"
+                          />
+                          <label :for="`takeProfit-${index}`" class="text-sm">
+                            止盈
+                          </label>
+                        </div>
+                        <div v-if="combination.useTakeProfit" class="ml-6 flex items-center space-x-2">
+                          <label :for="`takeProfitPercent-${index}`" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
+                          <input
+                            :id="`takeProfitPercent-${index}`"
+                            v-model.number="combination.takeProfitPercent"
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="1000"
+                            class="input w-24"
+                            placeholder="10"
+                          />
+                          <span class="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 提示信息 -->
+              <div class="bg-blue-500/10 border border-blue-500/20 p-4 rounded-md">
+                <div class="flex items-start">
+                  <i class="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                  <div class="flex-1 text-sm text-blue-700 dark:text-blue-400">
+                    <p><strong>提示：</strong></p>
+                    <ul class="list-disc list-inside mt-2 space-y-1">
+                      <li>批量回测将依次执行每个止盈止损组合的回测</li>
+                      <li>如果某个组合的回测数据已存在，将自动跳过</li>
+                      <li>回测完成后会自动保存到历史记录</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 批量回测结果 -->
+              <div v-if="batchBacktestResult" class="space-y-3">
+                <h3 class="text-md font-semibold">批量回测结果</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div class="p-3 bg-muted/30 rounded-md text-center">
+                    <div class="text-sm text-muted-foreground mb-1">总计</div>
+                    <div class="text-xl font-bold">{{ batchBacktestResult.total }}</div>
+                  </div>
+                  <div class="p-3 bg-green-500/10 rounded-md text-center">
+                    <div class="text-sm text-muted-foreground mb-1">已完成</div>
+                    <div class="text-xl font-bold text-green-600 dark:text-green-400">{{ batchBacktestResult.completed }}</div>
+                  </div>
+                  <div class="p-3 bg-yellow-500/10 rounded-md text-center">
+                    <div class="text-sm text-muted-foreground mb-1">已跳过</div>
+                    <div class="text-xl font-bold text-yellow-600 dark:text-yellow-400">{{ batchBacktestResult.skipped }}</div>
+                  </div>
+                  <div class="p-3 bg-red-500/10 rounded-md text-center">
+                    <div class="text-sm text-muted-foreground mb-1">失败</div>
+                    <div class="text-xl font-bold text-red-600 dark:text-red-400">{{ batchBacktestResult.failed }}</div>
+                  </div>
+                </div>
+                
+                <!-- 详细结果列表 -->
+                <div class="max-h-60 overflow-y-auto space-y-2 mt-4">
+                  <div
+                    v-for="(result, index) in batchBacktestResult.results"
+                    :key="index"
+                    class="p-3 rounded-md text-sm"
+                    :class="{
+                      'bg-green-500/10': result.status === 'completed',
+                      'bg-yellow-500/10': result.status === 'skipped',
+                      'bg-red-500/10': result.status === 'failed'
+                    }"
+                  >
+                    <div class="flex justify-between items-center">
+                      <span class="font-medium">组合 #{{ result.index }}</span>
+                      <span
+                        class="px-2 py-0.5 rounded-full text-xs"
+                        :class="{
+                          'bg-green-500/20 text-green-700 dark:text-green-400': result.status === 'completed',
+                          'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400': result.status === 'skipped',
+                          'bg-red-500/20 text-red-700 dark:text-red-400': result.status === 'failed'
+                        }"
+                      >
+                        {{ result.status === 'completed' ? '已完成' : result.status === 'skipped' ? '已跳过' : '失败' }}
+                      </span>
+                    </div>
+                    <p class="text-muted-foreground mt-1">{{ result.message }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 对话框底部 -->
+          <div class="p-4 sm:p-6 border-t border-border flex justify-between items-center">
+            <button
+              @click="showBatchBacktestDialog = false"
+              class="px-4 py-2 rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors text-sm"
+            >
+              关闭
+            </button>
+            <div class="flex space-x-2">
+              <button
+                @click="runBatchBacktest"
+                :disabled="batchBacktestLoading || !canRunBatchBacktest"
+                class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i class="fas fa-play mr-2" v-if="!batchBacktestLoading"></i>
+                <i class="fas fa-spinner fa-spin mr-2" v-if="batchBacktestLoading"></i>
+                {{ batchBacktestLoading ? '批量回测中...' : '开始批量回测' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- 确认对话框 -->
     <ConfirmDialog
       v-model:show="confirmDialog.show"
@@ -848,6 +1108,16 @@ const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
 
+// 批量回测相关
+const showBatchBacktestDialog = ref(false)
+const batchBacktestLoading = ref(false)
+const batchBacktestConfig = ref({
+  backtestDate: '',
+  statDate: '',
+  profitLossCombinations: []
+})
+const batchBacktestResult = ref(null)
+
 // 确认对话框相关
 const confirmDialog = ref({
   show: false,
@@ -896,6 +1166,17 @@ const canRunBacktest = computed(() => {
          backtestConfig.value.backtestDate && 
          backtestConfig.value.statDate &&
          (backtestConfig.value.useStopLoss || backtestConfig.value.useTakeProfit)
+})
+
+// 检查是否可以运行批量回测
+const canRunBatchBacktest = computed(() => {
+  return selectedStocks.value.length > 0 &&
+         batchBacktestConfig.value.backtestDate && 
+         batchBacktestConfig.value.statDate &&
+         batchBacktestConfig.value.profitLossCombinations.length > 0 &&
+         batchBacktestConfig.value.profitLossCombinations.every(combo => 
+           combo.useStopLoss || combo.useTakeProfit
+         )
 })
 
 // 计算给定日期后的第一个周五
@@ -947,6 +1228,10 @@ function initDates() {
   
   // 统计日默认设置为回测日的未来第一个周五
   backtestConfig.value.statDate = getNextFriday(backtestConfig.value.backtestDate)
+  
+  // 初始化批量回测配置
+  batchBacktestConfig.value.backtestDate = backtestConfig.value.backtestDate
+  batchBacktestConfig.value.statDate = backtestConfig.value.statDate
 }
 
 // 切换单只股票的选择状态
@@ -1272,6 +1557,40 @@ async function executeClearBacktestHistory() {
   } catch (e) {
     console.error('清空回测历史记录失败:', e)
     error.value = '清空回测历史记录失败: ' + (e.response?.data?.detail || e.message)
+  }
+}
+
+// 删除指定日期的所有回测记录
+function showDeleteDateConfirm(backtestDate) {
+  const records = backtestHistoryGroupedByDate.value[backtestDate] || []
+  confirmDialog.value = {
+    show: true,
+    title: '确认删除',
+    message: `确定要删除扫描日期 "${backtestDate}" 的所有回测记录吗？共 ${records.length} 条记录，此操作不可恢复。`,
+    type: 'danger',
+    onConfirm: () => executeDeleteBacktestHistoryByDate(backtestDate),
+    pendingAction: backtestDate
+  }
+}
+
+async function executeDeleteBacktestHistoryByDate(backtestDate) {
+  try {
+    const response = await axios.delete(`/platform/api/backtest/history/date/${backtestDate}`)
+    if (response.data.success) {
+      // 从列表中移除该日期的所有记录
+      backtestHistory.value = backtestHistory.value.filter(r => r.backtestDate !== backtestDate)
+      // 重新分组
+      groupBacktestHistoryByDate()
+      // 如果正在查看该日期的记录，关闭详情对话框
+      if (selectedHistoryRecord.value && selectedHistoryRecord.value.config.backtest_date === backtestDate) {
+        selectedHistoryRecord.value = null
+      }
+    } else {
+      error.value = '删除回测历史记录失败'
+    }
+  } catch (e) {
+    console.error('删除回测历史记录失败:', e)
+    error.value = '删除回测历史记录失败: ' + (e.response?.data?.detail || e.message)
   }
 }
 
@@ -2027,6 +2346,75 @@ watch(showChartDialog, (newVal) => {
         }, 150)
       })
     }
+  }
+})
+
+// 添加止盈止损组合
+function addProfitLossCombination() {
+  batchBacktestConfig.value.profitLossCombinations.push({
+    useStopLoss: true,
+    useTakeProfit: true,
+    stopLossPercent: -2,
+    takeProfitPercent: 18
+  })
+}
+
+// 移除止盈止损组合
+function removeProfitLossCombination(index) {
+  batchBacktestConfig.value.profitLossCombinations.splice(index, 1)
+}
+
+// 运行批量回测
+async function runBatchBacktest() {
+  if (!canRunBatchBacktest.value) {
+    error.value = '请完善批量回测参数配置'
+    return
+  }
+
+  batchBacktestLoading.value = true
+  error.value = null
+  batchBacktestResult.value = null
+
+  try {
+    const response = await axios.post('/platform/api/backtest/batch', {
+      backtest_date: batchBacktestConfig.value.backtestDate,
+      stat_date: batchBacktestConfig.value.statDate,
+      buy_strategy: 'fixed_amount',
+      selected_stocks: selectedStocks.value,
+      profit_loss_combinations: batchBacktestConfig.value.profitLossCombinations.map(combo => ({
+        use_stop_loss: combo.useStopLoss,
+        use_take_profit: combo.useTakeProfit,
+        stop_loss_percent: combo.stopLossPercent,
+        take_profit_percent: combo.takeProfitPercent
+      }))
+    })
+
+    if (response.data.success) {
+      batchBacktestResult.value = response.data
+      // 刷新回测历史记录
+      await loadBacktestHistory()
+    } else {
+      error.value = '批量回测失败: ' + (response.data.detail || '未知错误')
+    }
+  } catch (e) {
+    console.error('批量回测失败:', e)
+    error.value = '批量回测失败: ' + (e.response?.data?.detail || e.message)
+  } finally {
+    batchBacktestLoading.value = false
+  }
+}
+
+// 监听批量回测对话框打开，初始化配置
+watch(showBatchBacktestDialog, (newVal) => {
+  if (newVal) {
+    // 初始化批量回测配置
+    batchBacktestConfig.value.backtestDate = backtestConfig.value.backtestDate || ''
+    batchBacktestConfig.value.statDate = backtestConfig.value.statDate || ''
+    // 如果没有组合，添加一个默认组合
+    if (batchBacktestConfig.value.profitLossCombinations.length === 0) {
+      addProfitLossCombination()
+    }
+    batchBacktestResult.value = null
   }
 })
 
