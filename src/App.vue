@@ -426,17 +426,6 @@
                       </div>
                     </div>
 
-                    <!-- 排序设置 -->
-                    <div>
-                      <h4 class="text-sm font-semibold mb-2 text-primary">排序设置</h4>
-                      <div class="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span class="text-muted-foreground">按突破信号排序:</span>
-                          <span class="ml-2">{{ selectedScanHistoryRecord.scanConfig.sort_by_breakthrough ? '是' : '否' }}</span>
-                        </div>
-                      </div>
-                    </div>
-
                     <!-- 系统设置 -->
                     <div>
                       <h4 class="text-sm font-semibold mb-2 text-primary">系统设置</h4>
@@ -636,14 +625,6 @@
                 <ParameterLabel for-id="useWindowWeights" parameter-id="use_window_weights"
                   @show-tutorial="showParameterTutorial">
                   <span class="text-sm font-medium">启用窗口权重</span>
-                </ParameterLabel>
-              </label>
-              <label for="sortByBreakthrough"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.sort_by_breakthrough" id="sortByBreakthrough" class="checkbox">
-                <ParameterLabel for-id="sortByBreakthrough" parameter-id="sort_by_breakthrough"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">根据突破&突破前兆排序</span>
                 </ParameterLabel>
               </label>
             </div>
@@ -1627,9 +1608,6 @@ const config = ref({
   // 窗口权重参数
   use_window_weights: true, // 是否使用窗口权重
   window_weights: {}, // 窗口权重
-
-  // 排序参数
-  sort_by_breakthrough: true, // 根据突破&突破前兆排序，默认开启
   
   // 系统设置
   use_scan_cache: false, // 是否使用扫描结果缓存，默认为关闭
@@ -2161,7 +2139,6 @@ function goToBacktest() {
     breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
     use_window_weights: config.value.use_window_weights,
     window_weights: config.value.window_weights,
-    sort_by_breakthrough: config.value.sort_by_breakthrough,
     use_box_detection: config.value.use_box_detection,
     box_quality_threshold: config.value.box_quality_threshold,
     use_fundamental_filter: config.value.use_fundamental_filter,
@@ -2227,7 +2204,6 @@ async function exportToCase (stock) {
           volume_increase_threshold: config.value.volume_increase_threshold,
           use_breakthrough_prediction: config.value.use_breakthrough_prediction,
           use_window_weights: config.value.use_window_weights,
-          sort_by_breakthrough: config.value.sort_by_breakthrough,
           use_low_position: config.value.use_low_position,
           high_point_lookback_days: config.value.high_point_lookback_days,
           decline_period_days: config.value.decline_period_days,
@@ -2659,9 +2635,6 @@ async function fetchPlatformStocks () {
       use_window_weights: config.value.use_window_weights,
       window_weights: config.value.window_weights,
 
-      // 排序参数
-      sort_by_breakthrough: config.value.sort_by_breakthrough,
-
       // 箱体检测参数
       use_box_detection: config.value.use_box_detection,
       box_quality_threshold: config.value.box_quality_threshold,
@@ -2769,9 +2742,6 @@ async function fetchPlatformStocksLegacy () {
       use_window_weights: config.value.use_window_weights,
       window_weights: config.value.window_weights,
 
-      // 排序参数
-      sort_by_breakthrough: config.value.sort_by_breakthrough,
-
       // 箱体检测参数
       use_box_detection: config.value.use_box_detection,
       box_quality_threshold: config.value.box_quality_threshold,
@@ -2840,7 +2810,6 @@ async function fetchPlatformStocksLegacy () {
         breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
         use_window_weights: config.value.use_window_weights,
         window_weights: config.value.window_weights,
-        sort_by_breakthrough: config.value.sort_by_breakthrough,
         use_box_detection: config.value.use_box_detection,
         box_quality_threshold: config.value.box_quality_threshold,
         use_fundamental_filter: config.value.use_fundamental_filter,

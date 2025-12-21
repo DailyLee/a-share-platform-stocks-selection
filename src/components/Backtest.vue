@@ -986,52 +986,107 @@
               <!-- 突破前兆 -->
               <div>
                 <label class="block text-xs font-medium mb-1">突破前兆</label>
-                <div class="flex flex-wrap gap-1.5">
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
-                    <input
-                      type="checkbox"
-                      v-model="statisticsFilters.breakthroughMACD"
-                      @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs whitespace-nowrap">MACD</span>
-                  </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
-                    <input
-                      type="checkbox"
-                      v-model="statisticsFilters.breakthroughRSI"
-                      @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs whitespace-nowrap">RSI</span>
-                  </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
-                    <input
-                      type="checkbox"
-                      v-model="statisticsFilters.breakthroughKDJ"
-                      @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs whitespace-nowrap">KDJ</span>
-                  </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
-                    <input
-                      type="checkbox"
-                      v-model="statisticsFilters.breakthroughBollinger"
-                      @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs whitespace-nowrap">布林带</span>
-                  </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
-                    <input
-                      type="checkbox"
-                      v-model="statisticsFilters.breakthroughNone"
-                      @change="handleBreakthroughNoneChange"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs whitespace-nowrap">无突破前兆</span>
-                  </label>
+                <div class="space-y-2">
+                  <!-- MACD -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs w-12">MACD:</span>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughMACD.include"
+                        @change="handleBreakthroughSignalChange"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">包含</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughMACD.exclude"
+                        @change="handleBreakthroughExcludeChange('MACD')"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">不包含</span>
+                    </label>
+                  </div>
+                  <!-- RSI -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs w-12">RSI:</span>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughRSI.include"
+                        @change="handleBreakthroughSignalChange"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">包含</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughRSI.exclude"
+                        @change="handleBreakthroughExcludeChange('RSI')"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">不包含</span>
+                    </label>
+                  </div>
+                  <!-- KDJ -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs w-12">KDJ:</span>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughKDJ.include"
+                        @change="handleBreakthroughSignalChange"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">包含</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughKDJ.exclude"
+                        @change="handleBreakthroughExcludeChange('KDJ')"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">不包含</span>
+                    </label>
+                  </div>
+                  <!-- 布林带 -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs w-12">布林带:</span>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughBollinger.include"
+                        @change="handleBreakthroughSignalChange"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">包含</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughBollinger.exclude"
+                        @change="handleBreakthroughExcludeChange('Bollinger')"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">不包含</span>
+                    </label>
+                  </div>
+                  <!-- 无突破前兆 -->
+                  <div class="flex items-center gap-2">
+                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                      <input
+                        type="checkbox"
+                        v-model="statisticsFilters.breakthroughNone"
+                        @change="handleBreakthroughNoneChange"
+                        class="checkbox mr-1"
+                      />
+                      <span class="text-xs whitespace-nowrap">无突破前兆</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -1606,10 +1661,10 @@ const statisticsResult = ref(null)
 const statisticsFiltersExpanded = ref(true) // 筛选条件区域是否展开
 const statisticsFilters = ref({
   platformPeriods: [], // 选中的平台期，如[30, 60, 90]
-  breakthroughMACD: false,
-  breakthroughRSI: false,
-  breakthroughKDJ: false,
-  breakthroughBollinger: false,
+  breakthroughMACD: { include: false, exclude: false }, // 包含/不包含MACD
+  breakthroughRSI: { include: false, exclude: false }, // 包含/不包含RSI
+  breakthroughKDJ: { include: false, exclude: false }, // 包含/不包含KDJ
+  breakthroughBollinger: { include: false, exclude: false }, // 包含/不包含布林带
   breakthroughNone: false, // 是否筛选完全没有突破前兆的股票
   breakthroughConfirmation: null, // true/false/null (null表示不筛选)
   boxQualityThreshold: 0,
@@ -2530,14 +2585,10 @@ async function generateBacktestChart() {
           // 如果还有空间且大于0，添加窗口（包含12条数据）
           allWindowStarts.push(currentStart)
         } else {
-          // 如果 currentStart <= 0，说明第一个窗口不足12条
-          // 第一个窗口从0开始，只包含到下一个窗口之前的数据（不重叠）
-          // 但这里 currentStart 已经是 <= 0 了，所以第一个窗口应该从0开始
-          // 实际上，如果 currentStart == 0，说明正好对齐，不需要额外处理
-          // 如果 currentStart < 0，说明第一个窗口不足12条，从0开始
-          if (currentStart < 0) {
-            allWindowStarts.push(0)
-          }
+          // 如果 currentStart <= 0，第一个窗口应该从0开始
+          // 当 currentStart == 0 时，说明正好对齐（数据量是12的倍数），需要添加窗口0
+          // 当 currentStart < 0 时，说明第一个窗口不足12条，也需要从0开始
+          allWindowStarts.push(0)
           break
         }
       }
@@ -3489,12 +3540,50 @@ function findScanConfigByDate(scanDate, scanHistory) {
   return null
 }
 
-// 处理突破前兆信号变化（当选择具体信号时，取消"无突破前兆"选项）
+// 处理突破前兆信号变化（当选择"包含"时，取消对应的"不包含"选项和"无突破前兆"选项）
 function handleBreakthroughSignalChange() {
-  if (statisticsFilters.value.breakthroughMACD || 
-      statisticsFilters.value.breakthroughRSI || 
-      statisticsFilters.value.breakthroughKDJ || 
-      statisticsFilters.value.breakthroughBollinger) {
+  // 检查每个指标，如果选择了"包含"，则取消对应的"不包含"
+  if (statisticsFilters.value.breakthroughMACD.include) {
+    statisticsFilters.value.breakthroughMACD.exclude = false
+  }
+  if (statisticsFilters.value.breakthroughRSI.include) {
+    statisticsFilters.value.breakthroughRSI.exclude = false
+  }
+  if (statisticsFilters.value.breakthroughKDJ.include) {
+    statisticsFilters.value.breakthroughKDJ.exclude = false
+  }
+  if (statisticsFilters.value.breakthroughBollinger.include) {
+    statisticsFilters.value.breakthroughBollinger.exclude = false
+  }
+  
+  // 如果选择了任何"包含"选项，取消"无突破前兆"
+  if (statisticsFilters.value.breakthroughMACD.include || 
+      statisticsFilters.value.breakthroughRSI.include || 
+      statisticsFilters.value.breakthroughKDJ.include || 
+      statisticsFilters.value.breakthroughBollinger.include) {
+    statisticsFilters.value.breakthroughNone = false
+  }
+}
+
+// 处理"不包含"选项变化（当选择"不包含"时，取消对应的"包含"选项和"无突破前兆"选项）
+function handleBreakthroughExcludeChange(signalType) {
+  const signalMap = {
+    'MACD': 'breakthroughMACD',
+    'RSI': 'breakthroughRSI',
+    'KDJ': 'breakthroughKDJ',
+    'Bollinger': 'breakthroughBollinger'
+  }
+  const filterKey = signalMap[signalType]
+  if (filterKey && statisticsFilters.value[filterKey].exclude) {
+    // 如果选择了"不包含"，则取消"包含"选项
+    statisticsFilters.value[filterKey].include = false
+  }
+  
+  // 如果选择了任何"不包含"选项，取消"无突破前兆"
+  if (statisticsFilters.value.breakthroughMACD.exclude || 
+      statisticsFilters.value.breakthroughRSI.exclude || 
+      statisticsFilters.value.breakthroughKDJ.exclude || 
+      statisticsFilters.value.breakthroughBollinger.exclude) {
     statisticsFilters.value.breakthroughNone = false
   }
 }
@@ -3502,10 +3591,10 @@ function handleBreakthroughSignalChange() {
 // 处理"无突破前兆"选项变化（当选择"无突破前兆"时，取消所有具体信号选项）
 function handleBreakthroughNoneChange() {
   if (statisticsFilters.value.breakthroughNone) {
-    statisticsFilters.value.breakthroughMACD = false
-    statisticsFilters.value.breakthroughRSI = false
-    statisticsFilters.value.breakthroughKDJ = false
-    statisticsFilters.value.breakthroughBollinger = false
+    statisticsFilters.value.breakthroughMACD = { include: false, exclude: false }
+    statisticsFilters.value.breakthroughRSI = { include: false, exclude: false }
+    statisticsFilters.value.breakthroughKDJ = { include: false, exclude: false }
+    statisticsFilters.value.breakthroughBollinger = { include: false, exclude: false }
   }
 }
 
@@ -3796,10 +3885,14 @@ async function calculateStatistics() {
       }
 
       // 突破前兆筛选
-      const hasBreakthroughFilter = statisticsFilters.value.breakthroughMACD || 
-                                    statisticsFilters.value.breakthroughRSI || 
-                                    statisticsFilters.value.breakthroughKDJ || 
-                                    statisticsFilters.value.breakthroughBollinger ||
+      const hasBreakthroughFilter = statisticsFilters.value.breakthroughMACD.include || 
+                                    statisticsFilters.value.breakthroughMACD.exclude ||
+                                    statisticsFilters.value.breakthroughRSI.include || 
+                                    statisticsFilters.value.breakthroughRSI.exclude ||
+                                    statisticsFilters.value.breakthroughKDJ.include || 
+                                    statisticsFilters.value.breakthroughKDJ.exclude ||
+                                    statisticsFilters.value.breakthroughBollinger.include || 
+                                    statisticsFilters.value.breakthroughBollinger.exclude ||
                                     statisticsFilters.value.breakthroughNone
       
       if (hasBreakthroughFilter) {
@@ -3831,43 +3924,76 @@ async function calculateStatistics() {
             }
           }
         } 
-        // 如果用户选择了具体的突破前兆（MACD、RSI等）
-        else if (statisticsFilters.value.breakthroughMACD || 
-                 statisticsFilters.value.breakthroughRSI || 
-                 statisticsFilters.value.breakthroughKDJ || 
-                 statisticsFilters.value.breakthroughBollinger) {
-          // 如果股票没有突破前兆数据，应该排除该股票
-          if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
-            // 没有数据，排除股票（因为用户明确选择了筛选条件）
-            return false
-          } else {
-            const requiredSignals = []
-            if (statisticsFilters.value.breakthroughMACD) requiredSignals.push('MACD')
-            if (statisticsFilters.value.breakthroughRSI) requiredSignals.push('RSI')
-            if (statisticsFilters.value.breakthroughKDJ) requiredSignals.push('KDJ')
-            if (statisticsFilters.value.breakthroughBollinger) requiredSignals.push('布林带')
+        // 处理包含和不包含的逻辑
+        else {
+          // 检查"包含"逻辑
+          const includeSignals = []
+          if (statisticsFilters.value.breakthroughMACD.include) includeSignals.push('MACD')
+          if (statisticsFilters.value.breakthroughRSI.include) includeSignals.push('RSI')
+          if (statisticsFilters.value.breakthroughKDJ.include) includeSignals.push('KDJ')
+          if (statisticsFilters.value.breakthroughBollinger.include) includeSignals.push('布林带')
 
-            if (requiredSignals.length > 0) {
-              // 检查股票是否有选中的突破前兆（交集逻辑：必须同时具备所有选中的信号）
-              // 注意：signals中的值可能是布尔值true/false，字符串'True'/'False'，或数字1/0
-              // 使用 every() 方法实现交集（AND）逻辑：选择多个突破前兆时，股票必须同时具备所有选中的信号
-              const hasAllMatchingSignals = requiredSignals.every(signal => {
-                const signalValue = signals[signal]
-                // 检查信号值是否为true或truthy值
-                // 支持：true, 1, 'True', 'true', 'TRUE'
-                if (signalValue === true || signalValue === 1) {
-                  return true
-                }
-                if (typeof signalValue === 'string') {
-                  return signalValue.toLowerCase() === 'true'
-                }
-                if (typeof signalValue === 'boolean') {
-                  return signalValue === true
-                }
+          // 检查"不包含"逻辑
+          const excludeSignals = []
+          if (statisticsFilters.value.breakthroughMACD.exclude) excludeSignals.push('MACD')
+          if (statisticsFilters.value.breakthroughRSI.exclude) excludeSignals.push('RSI')
+          if (statisticsFilters.value.breakthroughKDJ.exclude) excludeSignals.push('KDJ')
+          if (statisticsFilters.value.breakthroughBollinger.exclude) excludeSignals.push('布林带')
+
+          // 如果有任何筛选条件，需要检查股票数据
+          if (includeSignals.length > 0 || excludeSignals.length > 0) {
+            // 如果股票没有突破前兆数据
+            if (!breakthroughPrediction || !signals || Object.keys(signals).length === 0) {
+              // 如果有"包含"条件，没有数据则排除
+              if (includeSignals.length > 0) {
                 return false
-              })
-              if (!hasAllMatchingSignals) {
-                return false
+              }
+              // 如果有"不包含"条件，没有数据则通过（因为没有该指标）
+              // 继续其他筛选
+            } else {
+              // 检查"包含"逻辑：必须同时具备所有选中的信号
+              if (includeSignals.length > 0) {
+                const hasAllMatchingSignals = includeSignals.every(signal => {
+                  const signalValue = signals[signal]
+                  // 检查信号值是否为true或truthy值
+                  // 支持：true, 1, 'True', 'true', 'TRUE'
+                  if (signalValue === true || signalValue === 1) {
+                    return true
+                  }
+                  if (typeof signalValue === 'string') {
+                    return signalValue.toLowerCase() === 'true'
+                  }
+                  if (typeof signalValue === 'boolean') {
+                    return signalValue === true
+                  }
+                  return false
+                })
+                if (!hasAllMatchingSignals) {
+                  return false
+                }
+              }
+
+              // 检查"不包含"逻辑：必须不包含所有选中的信号
+              if (excludeSignals.length > 0) {
+                const hasAnyExcludedSignal = excludeSignals.some(signal => {
+                  const signalValue = signals[signal]
+                  // 检查信号值是否为true或truthy值
+                  // 如果信号为true，则不符合"不包含"条件
+                  if (signalValue === true || signalValue === 1) {
+                    return true
+                  }
+                  if (typeof signalValue === 'string') {
+                    return signalValue.toLowerCase() === 'true'
+                  }
+                  if (typeof signalValue === 'boolean') {
+                    return signalValue === true
+                  }
+                  return false
+                })
+                if (hasAnyExcludedSignal) {
+                  // 如果股票包含任何一个被排除的信号，则排除该股票
+                  return false
+                }
               }
             }
           }
