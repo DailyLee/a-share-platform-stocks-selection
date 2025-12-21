@@ -1,8 +1,7 @@
 <template>
   <div>
     <!-- 弹出层背景 -->
-    <div v-if="visible" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center"
-      @click="close">
+    <div v-if="visible" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center">
       <!-- 弹出层内容 -->
       <div class="bg-card dark:bg-card rounded-lg shadow-xl w-11/12 max-w-6xl max-h-[90vh] overflow-hidden" @click.stop>
         <!-- 弹出层头部 -->

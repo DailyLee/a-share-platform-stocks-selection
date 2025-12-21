@@ -9,32 +9,36 @@ from .stock_database import get_stock_database
 MAX_HISTORY_RECORDS = 100
 
 
-def save_backtest_history(config: Dict[str, Any], result: Dict[str, Any]) -> str:
+def save_backtest_history(config: Dict[str, Any], result: Dict[str, Any], batch_task_id: Optional[str] = None) -> str:
     """
     Save a backtest history record.
     
     Args:
         config: Backtest configuration (BacktestRequest data)
         result: Backtest result (BacktestResponse data)
+        batch_task_id: Optional batch task ID for batch backtests
     
     Returns:
         The ID of the saved history record
     """
     db = get_stock_database()
-    history_id = db.save_backtest_history(config, result)
+    history_id = db.save_backtest_history(config, result, batch_task_id)
     print(f"Backtest history saved: {history_id}")
     return history_id
 
 
-def get_backtest_history_list() -> List[Dict[str, Any]]:
+def get_backtest_history_list(batch_task_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get list of all backtest history records (metadata only).
+    
+    Args:
+        batch_task_id: Optional filter by batch task ID
     
     Returns:
         List of history record metadata
     """
     db = get_stock_database()
-    return db.get_backtest_history_list(MAX_HISTORY_RECORDS)
+    return db.get_backtest_history_list(MAX_HISTORY_RECORDS, batch_task_id)
 
 
 def get_backtest_history(history_id: str) -> Optional[Dict[str, Any]]:

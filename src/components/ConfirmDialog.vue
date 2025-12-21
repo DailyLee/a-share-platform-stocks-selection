@@ -3,12 +3,12 @@
     <div v-if="show" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="handleCancel">
       <div class="bg-card border border-border rounded-lg shadow-lg w-full max-w-md p-6" @click.stop>
         <h3 class="text-lg font-semibold mb-2">{{ title }}</h3>
-        <p class="text-muted-foreground mb-4">{{ message }}</p>
+        <div class="text-muted-foreground mb-4" v-html="message"></div>
         <div class="flex justify-end space-x-3">
-          <button class="btn btn-ghost" @click="handleCancel">
+          <button class="btn btn-ghost px-4 py-2" @click="handleCancel">
             {{ cancelText }}
           </button>
-          <button :class="confirmButtonClass" @click="handleConfirm">
+          <button :class="confirmButtonClass + ' px-4 py-2'" @click="handleConfirm">
             {{ confirmText }}
           </button>
         </div>

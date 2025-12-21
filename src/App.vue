@@ -38,6 +38,12 @@
           <span class="hidden sm:inline">扫描历史</span>
         </button>
 
+        <!-- 批量扫描入口 -->
+        <router-link to="/platform/batch-scan" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-orange-600 text-white hover:bg-orange-600/80 transition-colors">
+          <i class="fas fa-tasks mr-1 sm:mr-2"></i>
+          <span class="hidden sm:inline">批量扫描</span>
+        </router-link>
+
         <!-- 主题切换 -->
         <ThemeToggle />
       </div>
@@ -227,8 +233,8 @@
 
     <!-- 扫描历史详情对话框 -->
     <transition name="fade">
-      <div v-if="selectedScanHistoryRecord" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="selectedScanHistoryRecord = null">
-        <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div v-if="selectedScanHistoryRecord" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" @click.stop>
           <!-- 对话框头部 -->
           <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
             <h2 class="text-lg font-semibold flex items-center">

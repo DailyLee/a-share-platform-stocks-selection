@@ -77,6 +77,22 @@
     opacity: 0.8;
   }
 
+  .btn-destructive {
+    @apply bg-destructive text-destructive-foreground;
+  }
+
+  .btn-destructive:hover {
+    opacity: 0.9;
+  }
+
+  .btn-danger {
+    @apply bg-destructive text-destructive-foreground;
+  }
+
+  .btn-danger:hover {
+    opacity: 0.9;
+  }
+
   .card {
     @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
   }

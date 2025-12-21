@@ -17,11 +17,14 @@
           <span class="hidden sm:inline">回测历史</span>
         </button>
 
-        <!-- 返回首页 -->
-        <router-link to="/platform/" class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors">
+        <!-- 返回按钮 -->
+        <button 
+          @click="goBack" 
+          class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors"
+        >
           <i class="fas fa-arrow-left mr-1 sm:mr-2"></i>
           <span class="hidden sm:inline">返回</span>
-        </router-link>
+        </button>
 
         <!-- 主题切换 -->
         <ThemeToggle />
@@ -652,7 +655,7 @@
               </button>
               <button
                 v-if="backtestHistory.length > 0"
-                @click="showStatisticsDialog = true; calculateStatistics()"
+                @click="showStatisticsDialog = true"
                 class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm"
               >
                 <i class="fas fa-chart-bar mr-2"></i>
@@ -682,8 +685,8 @@
 
     <!-- 历史记录详情对话框 -->
     <transition name="fade">
-      <div v-if="selectedHistoryRecord" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="selectedHistoryRecord = null">
-        <div class="bg-card border border-border rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div v-if="selectedHistoryRecord" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-card border border-border rounded-lg shadow-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col" @click.stop>
           <!-- 详情对话框头部 -->
           <div class="p-4 sm:p-6 border-b border-border flex justify-between items-center">
             <h2 class="text-lg font-semibold flex items-center">
@@ -920,391 +923,11 @@
     </transition>
 
     <!-- 数据统计对话框 -->
-    <transition name="fade">
-      <div v-if="showStatisticsDialog" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 sm:p-4" @click.self="showStatisticsDialog = false">
-        <div class="bg-card border border-border rounded-lg shadow-lg max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
-          <!-- 对话框头部 -->
-          <div class="p-3 sm:p-6 border-b border-border flex justify-between items-center flex-shrink-0">
-            <h2 class="text-base sm:text-lg font-semibold flex items-center">
-              <i class="fas fa-chart-bar mr-2 text-primary"></i>
-              数据统计
-            </h2>
-            <button
-              @click="showStatisticsDialog = false"
-              class="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <i class="fas fa-times text-xl"></i>
-            </button>
-          </div>
-
-          <!-- 筛选条件 -->
-          <div class="p-2 sm:p-3 border-b border-border flex-shrink-0 overflow-y-auto max-h-[35vh] sm:max-h-[40vh]">
-            <div class="flex justify-between items-center mb-2">
-              <div class="flex items-center space-x-2">
-                <button
-                  @click="statisticsFiltersExpanded = !statisticsFiltersExpanded"
-                  class="text-muted-foreground hover:text-foreground transition-colors"
-                  title="收起/展开筛选条件"
-                >
-                  <i :class="statisticsFiltersExpanded ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
-                </button>
-                <h3 class="text-sm font-semibold flex items-center">
-                  <i class="fas fa-filter mr-1 text-primary"></i>
-                  筛选条件
-                </h3>
-              </div>
-              <button
-                @click="calculateStatistics"
-                class="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-xs"
-              >
-                <i class="fas fa-check mr-1"></i>
-                确认
-              </button>
-            </div>
-            <div v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <!-- 平台期 -->
-              <div>
-                <label class="block text-xs font-medium mb-1">平台期</label>
-                <div class="flex flex-wrap gap-1.5">
-                  <label 
-                    v-for="period in Array.from(allStockAttributes.platformPeriods).sort((a, b) => a - b)" 
-                    :key="period"
-                    class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      :value="period"
-                      v-model="statisticsFilters.platformPeriods"
-                      class="checkbox mr-1"
-                    />
-                    <span class="text-xs">{{ period }}天</span>
-                  </label>
-                  <p v-if="allStockAttributes.platformPeriods.size === 0" class="text-xs text-muted-foreground">暂无数据</p>
-                </div>
-              </div>
-
-              <!-- 突破前兆 -->
-              <div>
-                <label class="block text-xs font-medium mb-1">突破前兆</label>
-                <div class="space-y-2">
-                  <!-- MACD -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs w-12">MACD:</span>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughMACD.include"
-                        @change="handleBreakthroughSignalChange"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">包含</span>
-                    </label>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughMACD.exclude"
-                        @change="handleBreakthroughExcludeChange('MACD')"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">不包含</span>
-                    </label>
-                  </div>
-                  <!-- RSI -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs w-12">RSI:</span>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughRSI.include"
-                        @change="handleBreakthroughSignalChange"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">包含</span>
-                    </label>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughRSI.exclude"
-                        @change="handleBreakthroughExcludeChange('RSI')"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">不包含</span>
-                    </label>
-                  </div>
-                  <!-- KDJ -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs w-12">KDJ:</span>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughKDJ.include"
-                        @change="handleBreakthroughSignalChange"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">包含</span>
-                    </label>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughKDJ.exclude"
-                        @change="handleBreakthroughExcludeChange('KDJ')"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">不包含</span>
-                    </label>
-                  </div>
-                  <!-- 布林带 -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs w-12">布林带:</span>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughBollinger.include"
-                        @change="handleBreakthroughSignalChange"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">包含</span>
-                    </label>
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughBollinger.exclude"
-                        @change="handleBreakthroughExcludeChange('Bollinger')"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">不包含</span>
-                    </label>
-                  </div>
-                  <!-- 无突破前兆 -->
-                  <div class="flex items-center gap-2">
-                    <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
-                      <input
-                        type="checkbox"
-                        v-model="statisticsFilters.breakthroughNone"
-                        @change="handleBreakthroughNoneChange"
-                        class="checkbox mr-1"
-                      />
-                      <span class="text-xs whitespace-nowrap">无突破前兆</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 确认突破 -->
-              <div>
-                <label class="block text-xs font-medium mb-1">确认突破</label>
-                <select
-                  v-model="statisticsFilters.breakthroughConfirmation"
-                  class="input w-full text-xs py-1"
-                >
-                  <option :value="null">不筛选</option>
-                  <option :value="true">是（已确认突破）</option>
-                  <option :value="false">否（未确认突破）</option>
-                </select>
-              </div>
-
-              <!-- 最小箱体质量 -->
-              <div>
-                <label class="block text-xs font-medium mb-1">最小箱体质量</label>
-                <input
-                  type="number"
-                  v-model.number="statisticsFilters.boxQualityThreshold"
-                  step="0.01"
-                  :min="allStockAttributes.minBoxQuality"
-                  :max="allStockAttributes.maxBoxQuality"
-                  class="input w-full text-xs py-1"
-                />
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  范围: {{ allStockAttributes.minBoxQuality.toFixed(2) }} - {{ allStockAttributes.maxBoxQuality.toFixed(2) }}
-                </p>
-              </div>
-
-              <!-- 行业信息 -->
-              <div>
-                <label class="block text-xs font-medium mb-1">行业信息</label>
-                <div class="max-h-24 overflow-y-auto border border-border rounded p-1.5">
-                  <label 
-                    v-for="industry in Array.from(allStockAttributes.industries).sort()" 
-                    :key="industry"
-                    class="flex items-center cursor-pointer mb-0.5 px-1.5 py-0.5 rounded hover:bg-muted/30 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      :value="industry"
-                      v-model="statisticsFilters.industries"
-                      class="checkbox mr-1.5"
-                    />
-                    <span class="text-xs">{{ industry || '未知行业' }}</span>
-                  </label>
-                  <p v-if="allStockAttributes.industries.size === 0" class="text-xs text-muted-foreground text-center py-1">暂无数据</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 统计结果 -->
-          <div class="flex-1 flex flex-col overflow-hidden p-2 sm:p-3 min-h-0">
-            <h3 class="text-sm font-semibold mb-2 flex items-center flex-shrink-0">
-              <i class="fas fa-calculator mr-1 text-primary"></i>
-              统计结果
-            </h3>
-            <div v-if="statisticsLoading" class="text-center py-4 flex-shrink-0">
-              <i class="fas fa-spinner fa-spin text-xl mb-2 text-primary"></i>
-              <p class="text-muted-foreground text-sm">计算中...</p>
-            </div>
-            <div v-else-if="statisticsError" class="text-center py-4 flex-shrink-0">
-              <i class="fas fa-exclamation-triangle text-xl mb-2 text-destructive"></i>
-              <p class="text-destructive text-sm">{{ statisticsError }}</p>
-            </div>
-            <div v-else-if="statisticsResult" class="flex flex-col flex-1 min-h-0 overflow-y-auto">
-              <div class="space-y-1.5 flex-shrink-0">
-                <div class="grid grid-cols-3 gap-1.5">
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总记录数</div>
-                    <div class="text-base sm:text-lg font-bold">{{ statisticsResult.totalRecords }}</div>
-                  </div>
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">盈利股票数</div>
-                    <div class="text-base sm:text-lg font-bold text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</div>
-                  </div>
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">亏损股票数</div>
-                    <div class="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</div>
-                  </div>
-                </div>
-                <div class="grid grid-cols-3 gap-1.5">
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体胜率</div>
-                    <div class="text-base sm:text-lg font-bold" :class="statisticsResult.winRate >= 50 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                      {{ formatPercent(statisticsResult.winRate) }}%
-                    </div>
-                  </div>
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体收益率</div>
-                    <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                      {{ statisticsResult.totalReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalReturnRate) }}%
-                    </div>
-                  </div>
-                  <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                    <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体收益额</div>
-                    <div class="text-base sm:text-lg font-bold truncate" :class="statisticsResult.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                      {{ statisticsResult.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(statisticsResult.totalProfit) }}
-                    </div>
-                  </div>
-                </div>
-                <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总投入资金</div>
-                  <div class="text-sm sm:text-base font-bold truncate">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
-                </div>
-              </div>
-
-              <!-- 筛选出的股票详情 -->
-              <div v-if="statisticsResult.filteredRecords && statisticsResult.filteredRecords.length > 0" class="mt-2 flex-shrink-0">
-                <h4 class="text-xs sm:text-sm font-semibold mb-2 flex items-center flex-shrink-0">
-                  <i class="fas fa-list mr-1 text-primary"></i>
-                  筛选出的股票详情
-                </h4>
-                <div class="space-y-2 sm:space-y-4 -mx-2 sm:mx-0 px-2 sm:px-0">
-                  <div 
-                    v-for="(record, index) in statisticsResult.filteredRecords" 
-                    :key="index"
-                    class="border border-border rounded-md overflow-hidden"
-                  >
-                    <div class="bg-muted/50 p-2 sm:p-3 border-b border-border">
-                      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-                        <span class="text-xs sm:text-sm font-medium">扫描日期: {{ record.scanDate }}</span>
-                        <span class="text-xs text-muted-foreground">共 {{ record.stocks ? record.stocks.length : 0 }} 只股票</span>
-                      </div>
-                    </div>
-                    <div v-if="record.stocks && record.stocks.length > 0" class="overflow-x-auto -mx-2 sm:mx-0">
-                      <table class="w-full text-xs sm:text-sm">
-                        <thead>
-                          <tr class="border-b border-border bg-muted/30">
-                            <th class="text-left p-2 sm:p-3 font-medium sticky left-0 bg-muted/30 z-10">股票代码</th>
-                            <th class="text-left p-2 sm:p-3 font-medium sticky left-[100px] sm:left-[120px] bg-muted/30 z-10">股票名称</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">行业</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">平台期(天)</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">突破前兆</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">确认突破</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">箱体质量</th>
-                            <th class="text-left p-2 sm:p-3 font-medium">收益率</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr 
-                            v-for="(stock, stockIndex) in record.stocks" 
-                            :key="stockIndex"
-                            class="border-b border-border/50 hover:bg-muted/30 transition-colors"
-                          >
-                            <td class="p-2 sm:p-3 font-mono sticky left-0 bg-background z-10 text-xs sm:text-sm">{{ stock.code }}</td>
-                            <td class="p-2 sm:p-3 sticky left-[100px] sm:left-[120px] bg-background z-10 text-xs sm:text-sm">{{ stock.name }}</td>
-                            <td class="p-2 sm:p-3 text-muted-foreground text-xs sm:text-sm">{{ stock.industry || '-' }}</td>
-                            <td class="p-2 sm:p-3">
-                              <span v-if="stock.platformPeriods && stock.platformPeriods.length > 0" class="inline-flex items-center gap-1">
-                                <span v-for="(period, idx) in stock.platformPeriods" :key="idx" class="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">
-                                  {{ period }}天
-                                </span>
-                              </span>
-                              <span v-else class="text-muted-foreground">-</span>
-                            </td>
-                            <td class="p-2 sm:p-3">
-                              <span v-if="stock.breakthroughSignals && stock.breakthroughSignals.length > 0" class="inline-flex items-center gap-1 flex-wrap">
-                                <span v-for="(signal, idx) in stock.breakthroughSignals" :key="idx" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-green-100 text-green-800 text-xs">
-                                  {{ signal }}
-                                </span>
-                              </span>
-                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
-                            </td>
-                            <td class="p-2 sm:p-3">
-                              <span v-if="stock.hasBreakthroughConfirmation !== undefined && stock.hasBreakthroughConfirmation !== null">
-                                <span v-if="stock.hasBreakthroughConfirmation" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-purple-100 text-purple-800 text-xs">是</span>
-                                <span v-else class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gray-100 text-gray-800 text-xs">否</span>
-                              </span>
-                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
-                            </td>
-                            <td class="p-2 sm:p-3">
-                              <span v-if="stock.boxQuality !== null && stock.boxQuality !== undefined" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-orange-100 text-orange-800 text-xs">
-                                {{ stock.boxQuality.toFixed(3) }}
-                              </span>
-                              <span v-else class="text-muted-foreground text-xs" title="该股票在扫描时未启用箱体检测或不是基本平台期，因此没有箱体质量数据">-</span>
-                            </td>
-                            <td class="p-2 sm:p-3 text-xs sm:text-sm">
-                              <span v-if="stock.returnRate !== null && stock.returnRate !== undefined" 
-                                    :class="[
-                                      'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium',
-                                      stock.returnRate >= 0 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : 'bg-red-100 text-red-800'
-                                    ]">
-                                {{ stock.returnRate >= 0 ? '+' : '' }}{{ stock.returnRate.toFixed(2) }}%
-                              </span>
-                              <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                    <div v-else class="p-4 text-center text-muted-foreground">
-                      该记录中没有股票信息
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 对话框底部 -->
-          <div class="p-4 sm:p-6 border-t border-border flex justify-end">
-            <button
-              @click="showStatisticsDialog = false"
-              class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
-            >
-              关闭
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <BacktestStatistics
+      v-if="showStatisticsDialog"
+      :history-records="backtestHistory"
+      @close="showStatisticsDialog = false"
+    />
 
     <!-- 批量回测对话框 -->
     <transition name="fade">
@@ -1571,6 +1194,7 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import { CanvasRenderer } from 'echarts/renderers'
 import ThemeToggle from './ThemeToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import BacktestStatistics from './BacktestStatistics.vue'
 
 // 注册 ECharts 组件
 echarts.use([
@@ -3521,6 +3145,17 @@ function clearBacktestRecordsCache() {
   cachedBacktestHistoryIds = null
 }
 
+// 返回上一页或批量扫描页面
+function goBack() {
+  // 如果URL中有historyId参数，说明可能是从批量扫描页面打开的，返回到批量扫描页面
+  if (route.query.historyId) {
+    router.push('/platform/batch-scan')
+  } else {
+    // 没有historyId参数，返回首页
+    router.push('/platform/')
+  }
+}
+
 // 根据扫描日期查找对应的扫描配置
 function findScanConfigByDate(scanDate, scanHistory) {
   if (!scanDate || !scanHistory || scanHistory.length === 0) {
@@ -4354,11 +3989,29 @@ async function calculateStatistics() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   // 加载选中的股票和扫描配置
   loadSelectedStocksAndConfig()
   // 初始化日期（会使用扫描配置中的扫描日期作为默认回测日）
   initDates()
+  
+  // 检查URL中是否有historyId参数，如果有则加载历史记录到当前回测
+  const historyId = route.query.historyId
+  if (historyId) {
+    try {
+      const response = await axios.get(`/platform/api/backtest/history/${historyId}`)
+      if (response.data.success) {
+        const record = response.data.data
+        // 加载历史记录到当前回测配置
+        loadHistoryRecordToCurrent(record)
+      } else {
+        error.value = '加载回测历史详情失败'
+      }
+    } catch (e) {
+      console.error('加载回测历史详情失败:', e)
+      error.value = '加载回测历史详情失败: ' + (e.response?.data?.detail || e.message)
+    }
+  }
 })
 
 onBeforeUnmount(() => {

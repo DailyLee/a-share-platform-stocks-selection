@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field, RootModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import json
 import asyncio
 import sys
@@ -25,7 +25,7 @@ try:
     from api.data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager, set_use_local_database_first
     from api.platform_scanner import prepare_stock_list, scan_stocks
     from api.case_api import router as case_router
-    from api.json_utils import convert_numpy_types
+    from api.json_utils import convert_numpy_types, sanitize_float_for_json
     from api.analyzers.fundamental_analyzer import get_stock_fundamentals
     from api.backtest_history_manager import (
         save_backtest_history, get_backtest_history_list, 
@@ -36,6 +36,10 @@ try:
         get_scan_history_list, get_scan_history,
         delete_scan_history, clear_all_scan_history
     )
+    try:
+        from api.batch_scan_manager import batch_scan_manager
+    except ImportError:
+        batch_scan_manager = None
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
     from .config import ScanConfig
@@ -43,7 +47,7 @@ except ImportError:
     from .data_fetcher import fetch_stock_basics, fetch_industry_data, BaostockConnectionManager, set_use_local_database_first
     from .platform_scanner import prepare_stock_list, scan_stocks
     from .case_api import router as case_router
-    from .json_utils import convert_numpy_types
+    from .json_utils import convert_numpy_types, sanitize_float_for_json
     from .analyzers.fundamental_analyzer import get_stock_fundamentals
     from .backtest_history_manager import (
         save_backtest_history, get_backtest_history_list, 
@@ -54,6 +58,10 @@ except ImportError:
         get_scan_history_list, get_scan_history,
         delete_scan_history, clear_all_scan_history
     )
+    try:
+        from .batch_scan_manager import batch_scan_manager
+    except ImportError:
+        batch_scan_manager = None
 
 # Import default values from config to ensure consistency
 try:
@@ -1584,13 +1592,18 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     return response
 
 
-@app.post("/api/backtest", response_model=BacktestResponse)
+@app.post("/api/backtest")
 async def run_backtest(request: BacktestRequest):
     """
     执行回测（同步版本，不支持进度推送）
     """
     try:
-        return run_backtest_with_progress(request, progress_callback=None)
+        result = run_backtest_with_progress(request, progress_callback=None)
+        # 转换为字典并清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        result_dict = result.model_dump()
+        sanitized_dict = sanitize_float_for_json(result_dict)
+        # 直接返回清理后的字典，避免 Pydantic 验证 None 值的问题
+        return JSONResponse(content=sanitized_dict)
     except HTTPException:
         raise
     except Exception as e:
@@ -1674,6 +1687,9 @@ async def run_backtest_stream(request: BacktestRequest):
                 result = result_container['result']
                 result_dict = result.model_dump()
                 
+                # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+                result_dict = sanitize_float_for_json(result_dict)
+                
                 # 自动保存回测历史
                 try:
                     config_dict = {
@@ -1724,15 +1740,20 @@ async def run_backtest_stream(request: BacktestRequest):
 # =================================
 
 @app.get("/api/backtest/history")
-async def get_backtest_history_list_endpoint():
+async def get_backtest_history_list_endpoint(batch_task_id: Optional[str] = None):
     """
     获取回测历史记录列表
+    
+    Args:
+        batch_task_id: 可选的批量任务ID，用于过滤批量回测数据
     """
     try:
-        records = get_backtest_history_list()
+        records = get_backtest_history_list(batch_task_id=batch_task_id)
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_records = sanitize_float_for_json(records)
         return {
             "success": True,
-            "data": records,
+            "data": sanitized_records,
             "count": len(records)
         }
     except Exception as e:
@@ -1757,9 +1778,11 @@ async def get_backtest_history_endpoint(history_id: str):
                 status_code=404,
                 detail=f"回测历史记录不存在: {history_id}"
             )
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_record = sanitize_float_for_json(record)
         return {
             "success": True,
-            "data": record
+            "data": sanitized_record
         }
     except HTTPException:
         raise
@@ -1981,12 +2004,15 @@ async def run_batch_backtest(request: BatchBacktestRequest):
         
         print(f"{Fore.GREEN}批量回测完成: 总计={total}, 完成={completed}, 跳过={skipped}, 失败={failed}{Style.RESET_ALL}")
         
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_results = sanitize_float_for_json(results)
+        
         return BatchBacktestResult(
             total=total,
             completed=completed,
             skipped=skipped,
             failed=failed,
-            results=results
+            results=sanitized_results
         )
         
     except HTTPException:
@@ -2102,4 +2128,518 @@ async def clear_all_scan_history_endpoint():
         raise HTTPException(
             status_code=500,
             detail=f"清空扫描历史记录失败: {str(e)}"
+        )
+
+
+# =================================
+# Batch Scan API
+# =================================
+
+class BatchScanRequest(BaseModel):
+    """Request model for batch scan"""
+    task_name: str = Field(..., description="任务名称")
+    start_date: str = Field(..., description="开始日期，格式：YYYY-MM-DD")
+    end_date: str = Field(..., description="结束日期，格式：YYYY-MM-DD")
+    scan_period_days: int = Field(default=7, description="扫描周期（天数），默认7天")
+    # Reuse ScanConfigRequest fields for scan configuration
+    windows: List[int] = Field(default_factory=lambda: DEFAULT_WINDOWS.copy())
+    box_threshold: float = DEFAULT_BOX_THRESHOLD
+    ma_diff_threshold: float = DEFAULT_MA_DIFF_THRESHOLD
+    volatility_threshold: float = DEFAULT_VOLATILITY_THRESHOLD
+    use_volume_analysis: bool = DEFAULT_USE_VOLUME_ANALYSIS
+    volume_change_threshold: float = DEFAULT_VOLUME_CHANGE_THRESHOLD
+    volume_stability_threshold: float = DEFAULT_VOLUME_STABILITY_THRESHOLD
+    volume_increase_threshold: float = DEFAULT_VOLUME_INCREASE_THRESHOLD
+    use_technical_indicators: bool = False
+    use_breakthrough_prediction: bool = DEFAULT_USE_BREAKTHROUGH_PREDICTION
+    use_low_position: bool = DEFAULT_USE_LOW_POSITION
+    high_point_lookback_days: int = DEFAULT_HIGH_POINT_LOOKBACK_DAYS
+    decline_period_days: int = DEFAULT_DECLINE_PERIOD_DAYS
+    decline_threshold: float = DEFAULT_DECLINE_THRESHOLD
+    use_rapid_decline_detection: bool = DEFAULT_USE_RAPID_DECLINE_DETECTION
+    rapid_decline_days: int = DEFAULT_RAPID_DECLINE_DAYS
+    rapid_decline_threshold: float = DEFAULT_RAPID_DECLINE_THRESHOLD
+    use_breakthrough_confirmation: bool = DEFAULT_USE_BREAKTHROUGH_CONFIRMATION
+    breakthrough_confirmation_days: int = DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS
+    use_box_detection: bool = DEFAULT_USE_BOX_DETECTION
+    box_quality_threshold: float = DEFAULT_BOX_QUALITY_THRESHOLD
+    use_fundamental_filter: bool = False
+    revenue_growth_percentile: float = 0.3
+    profit_growth_percentile: float = 0.3
+    roe_percentile: float = 0.3
+    liability_percentile: float = 0.3
+    pe_percentile: float = 0.7
+    pb_percentile: float = 0.7
+    fundamental_years_to_check: int = 3
+    use_window_weights: bool = False
+    window_weights: Dict[int, float] = Field(default_factory=dict)
+    max_workers: int = 5
+    retry_attempts: int = 2
+    retry_delay: int = 1
+    expected_count: int = 10
+    max_stock_count: Optional[int] = None
+    use_scan_cache: bool = True
+    use_local_database_first: bool = True
+
+
+class BatchScanTaskResponse(BaseModel):
+    """Response model for batch scan task creation"""
+    task_id: str
+    message: str
+
+
+@app.post("/api/batch-scan/start", response_model=BatchScanTaskResponse)
+async def start_batch_scan(request: BatchScanRequest):
+    """
+    创建并启动批量扫描任务
+    """
+    if batch_scan_manager is None:
+        raise HTTPException(status_code=500, detail="批量扫描功能未初始化")
+    try:
+        # Validate dates
+        from datetime import datetime
+        try:
+            start_date = datetime.strptime(request.start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(request.end_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+        
+        if start_date > end_date:
+            raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
+        
+        if request.scan_period_days <= 0:
+            raise HTTPException(status_code=400, detail="扫描周期必须大于0")
+        
+        # Convert request to scan config dict (exclude batch scan specific fields)
+        scan_config_dict = request.model_dump()
+        scan_config_dict.pop('task_name', None)
+        scan_config_dict.pop('start_date', None)
+        scan_config_dict.pop('end_date', None)
+        scan_config_dict.pop('scan_period_days', None)
+        
+        # Create task
+        task_id = batch_scan_manager.create_batch_scan_task(
+            task_name=request.task_name,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            scan_period_days=request.scan_period_days,
+            scan_config=scan_config_dict
+        )
+        
+        # Start task in background
+        batch_scan_manager.start_batch_scan_task(task_id)
+        
+        return BatchScanTaskResponse(
+            task_id=task_id,
+            message="批量扫描任务已创建并启动"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}创建批量扫描任务失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建批量扫描任务失败: {str(e)}"
+        )
+
+
+@app.get("/api/batch-scan/tasks")
+async def get_batch_scan_tasks():
+    """
+    获取批量扫描任务列表
+    """
+    try:
+        from api.stock_database import get_stock_database
+        db = get_stock_database()
+        tasks = db.get_batch_scan_task_list()
+        return {
+            "success": True,
+            "data": tasks,
+            "count": len(tasks)
+        }
+    except Exception as e:
+        print(f"{Fore.RED}获取批量扫描任务列表失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取批量扫描任务列表失败: {str(e)}"
+        )
+
+
+@app.get("/api/batch-scan/tasks/{task_id}")
+async def get_batch_scan_task(task_id: str):
+    """
+    获取单个批量扫描任务详情
+    """
+    try:
+        from api.stock_database import get_stock_database
+        db = get_stock_database()
+        task = db.get_batch_scan_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=404,
+                detail=f"批量扫描任务不存在: {task_id}"
+            )
+        return {
+            "success": True,
+            "data": task
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}获取批量扫描任务失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取批量扫描任务失败: {str(e)}"
+        )
+
+
+@app.post("/api/batch-scan/tasks/{task_id}/cancel")
+async def cancel_batch_scan_task(task_id: str):
+    """
+    取消批量扫描任务
+    """
+    if batch_scan_manager is None:
+        raise HTTPException(status_code=500, detail="批量扫描功能未初始化")
+    try:
+        success = batch_scan_manager.cancel_batch_scan_task(task_id)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无法取消任务 {task_id}，任务可能不存在或已完成"
+            )
+        return {
+            "success": True,
+            "message": "任务已取消"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}取消批量扫描任务失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"取消批量扫描任务失败: {str(e)}"
+        )
+
+
+@app.get("/api/batch-scan/tasks/{task_id}/results")
+async def get_batch_scan_results(task_id: str):
+    """
+    获取批量扫描任务的所有扫描结果
+    """
+    try:
+        from api.stock_database import get_stock_database
+        db = get_stock_database()
+        
+        # Check if task exists
+        task = db.get_batch_scan_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=404,
+                detail=f"批量扫描任务不存在: {task_id}"
+            )
+        
+        results = db.get_batch_scan_results(task_id)
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_results = sanitize_float_for_json(results)
+        return {
+            "success": True,
+            "data": sanitized_results,
+            "count": len(results)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}获取批量扫描结果失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取批量扫描结果失败: {str(e)}"
+        )
+
+
+@app.get("/api/batch-scan/results/{result_id}")
+async def get_batch_scan_result(result_id: str):
+    """
+    获取单个批量扫描结果详情
+    """
+    try:
+        from api.stock_database import get_stock_database
+        db = get_stock_database()
+        result = db.get_batch_scan_result(result_id)
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"批量扫描结果不存在: {result_id}"
+            )
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_result = sanitize_float_for_json(result)
+        return {
+            "success": True,
+            "data": sanitized_result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}获取批量扫描结果失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取批量扫描结果失败: {str(e)}"
+        )
+
+
+@app.delete("/api/batch-scan/tasks/{task_id}")
+async def delete_batch_scan_task(task_id: str):
+    """
+    删除批量扫描任务及其所有结果
+    """
+    try:
+        from api.stock_database import get_stock_database
+        db = get_stock_database()
+        
+        # Cancel if running
+        batch_scan_manager.cancel_batch_scan_task(task_id)
+        
+        # Delete task
+        success = db.delete_batch_scan_task(task_id)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"批量扫描任务不存在: {task_id}"
+            )
+        return {
+            "success": True,
+            "message": "批量扫描任务已删除"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}删除批量扫描任务失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"删除批量扫描任务失败: {str(e)}"
+        )
+
+
+# =================================
+# Batch Task Backtest API
+# =================================
+
+class BatchTaskBacktestRequest(BaseModel):
+    """批量任务回测请求"""
+    task_id: str  # 批量扫描任务ID
+    period_stat_dates: Dict[str, str]  # 每个周期对应的统计日 { scanDate: statDate }
+    buy_strategy: str = "fixed_amount"  # 买入策略
+    use_stop_loss: bool = True  # 使用止损
+    use_take_profit: bool = True  # 使用止盈
+    stop_loss_percent: float = -2.0  # 止损百分比
+    take_profit_percent: float = 18.0  # 止盈百分比
+
+
+class BatchTaskBacktestResult(BaseModel):
+    """批量任务回测结果"""
+    task_id: str
+    total: int  # 总回测数
+    completed: int  # 已完成数
+    failed: int  # 失败数
+    results: List[Dict[str, Any]]  # 详细结果列表
+
+
+@app.post("/api/batch-scan/tasks/{task_id}/backtest", response_model=BatchTaskBacktestResult)
+async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestRequest):
+    """
+    为批量扫描任务执行一键回测
+    使用每个周期的开始日（scanDate）作为回测日
+    """
+    try:
+        from datetime import datetime
+        from api.stock_database import get_stock_database
+        
+        db = get_stock_database()
+        
+        # 验证任务是否存在
+        task = db.get_batch_scan_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=404,
+                detail=f"批量扫描任务不存在: {task_id}"
+            )
+        
+        # 验证period_stat_dates
+        if not request.period_stat_dates or len(request.period_stat_dates) == 0:
+            raise HTTPException(status_code=400, detail="请为所有周期设置统计日")
+        
+        # 获取该任务的所有扫描结果
+        scan_results = db.get_batch_scan_results(task_id)
+        if not scan_results or len(scan_results) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="该批量扫描任务还没有扫描结果，请先完成扫描"
+            )
+        
+        print(f"{Fore.CYAN}开始批量任务回测: 任务ID={task_id}, 扫描结果数={len(scan_results)}{Style.RESET_ALL}")
+        
+        total = len(scan_results)
+        completed = 0
+        failed = 0
+        results = []
+        
+        # 为每个扫描结果执行回测
+        for idx, scan_result in enumerate(scan_results):
+            try:
+                scan_date = scan_result.get('scanDate')
+                if not scan_date:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描结果缺少scanDate{Style.RESET_ALL}")
+                    failed += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': '扫描结果缺少scanDate',
+                        'scanDate': None
+                    })
+                    continue
+                
+                # 获取该周期对应的统计日
+                stat_date_str = request.period_stat_dates.get(scan_date)
+                if not stat_date_str:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}未设置统计日{Style.RESET_ALL}")
+                    failed += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': f'扫描日期{scan_date}未设置统计日',
+                        'scanDate': scan_date
+                    })
+                    continue
+                
+                # 验证统计日格式
+                try:
+                    stat_date = datetime.strptime(stat_date_str, '%Y-%m-%d')
+                except ValueError:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：统计日格式错误: {stat_date_str}{Style.RESET_ALL}")
+                    failed += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': f'统计日格式错误: {stat_date_str}',
+                        'scanDate': scan_date
+                    })
+                    continue
+                
+                # 验证回测日必须早于统计日
+                backtest_date_obj = datetime.strptime(scan_date, '%Y-%m-%d')
+                if backtest_date_obj >= stat_date:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：回测日({scan_date})必须早于统计日({stat_date_str}){Style.RESET_ALL}")
+                    failed += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': f'回测日({scan_date})必须早于统计日({stat_date_str})',
+                        'scanDate': scan_date
+                    })
+                    continue
+                
+                # 获取扫描到的股票列表
+                scanned_stocks = scan_result.get('scannedStocks', [])
+                if not scanned_stocks or len(scanned_stocks) == 0:
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有扫描到股票{Style.RESET_ALL}")
+                    failed += 1
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': '该扫描日期没有扫描到股票',
+                        'scanDate': scan_date
+                    })
+                    continue
+                
+                print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
+                
+                # 构建回测请求
+                backtest_request = BacktestRequest(
+                    backtest_date=scan_date,
+                    stat_date=stat_date_str,
+                    buy_strategy=request.buy_strategy,
+                    use_stop_loss=request.use_stop_loss,
+                    use_take_profit=request.use_take_profit,
+                    stop_loss_percent=request.stop_loss_percent,
+                    take_profit_percent=request.take_profit_percent,
+                    selected_stocks=scanned_stocks
+                )
+                
+                # 执行回测
+                result = run_backtest_with_progress(backtest_request, progress_callback=None)
+                result_dict = result.model_dump()
+                
+                # 保存回测历史，标记为批量回测
+                config_dict = {
+                    'backtest_date': scan_date,
+                    'stat_date': stat_date_str,
+                    'buy_strategy': request.buy_strategy,
+                    'use_stop_loss': request.use_stop_loss,
+                    'use_take_profit': request.use_take_profit,
+                    'stop_loss_percent': request.stop_loss_percent,
+                    'take_profit_percent': request.take_profit_percent,
+                    'selected_stocks': scanned_stocks,
+                    'batch_task_id': task_id
+                }
+                history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                print(f"{Fore.GREEN}[{idx + 1}/{total}] 回测完成并保存: {history_id}{Style.RESET_ALL}")
+                
+                completed += 1
+                results.append({
+                    'index': idx + 1,
+                    'status': 'completed',
+                    'message': '回测完成',
+                    'scanDate': scan_date,
+                    'historyId': history_id,
+                    'summary': result_dict.get('summary', {})
+                })
+                
+            except Exception as e:
+                print(f"{Fore.RED}[{idx + 1}/{total}] 回测失败: {e}{Style.RESET_ALL}")
+                import traceback
+                traceback.print_exc()
+                failed += 1
+                results.append({
+                    'index': idx + 1,
+                    'status': 'failed',
+                    'message': str(e),
+                    'scanDate': scan_result.get('scanDate')
+                })
+        
+        print(f"{Fore.GREEN}批量任务回测完成: 总计={total}, 完成={completed}, 失败={failed}{Style.RESET_ALL}")
+        
+        # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
+        sanitized_results = sanitize_float_for_json(results)
+        
+        return BatchTaskBacktestResult(
+            task_id=task_id,
+            total=total,
+            completed=completed,
+            failed=failed,
+            results=sanitized_results
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}批量任务回测失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"批量任务回测执行失败: {str(e)}"
         )

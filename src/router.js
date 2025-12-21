@@ -27,6 +27,12 @@ const routes = [
     meta: { keepAlive: false }
   },
   {
+    path: '/platform/batch-scan',
+    name: 'BatchScan',
+    component: () => import('./components/BatchScan.vue'),
+    meta: { keepAlive: false }
+  },
+  {
     path: '/platform',
     redirect: '/platform/'
   },

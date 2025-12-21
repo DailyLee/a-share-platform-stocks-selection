@@ -209,7 +209,8 @@ class StockDatabase:
                     id TEXT PRIMARY KEY,
                     config TEXT NOT NULL,
                     result TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    batch_task_id TEXT
                 )
             ''')
             
@@ -255,6 +256,21 @@ class StockDatabase:
             except sqlite3.OperationalError:
                 pass  # Column already exists
             
+            # Add batch_task_id column to backtest_history if it doesn't exist
+            try:
+                cursor.execute('ALTER TABLE backtest_history ADD COLUMN batch_task_id TEXT')
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            # Create index for batch_task_id
+            try:
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_backtest_batch_task_id 
+                    ON backtest_history(batch_task_id)
+                ''')
+            except sqlite3.OperationalError:
+                pass  # Index might already exist
+            
             # Create index for scan_cache
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_scan_cache_backtest_date 
@@ -264,6 +280,66 @@ class StockDatabase:
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_scan_cache_created_at 
                 ON scan_cache(created_at)
+            ''')
+            
+            # Create batch_scan_tasks table for batch scanning
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS batch_scan_tasks (
+                    id TEXT PRIMARY KEY,
+                    task_name TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    scan_period_days INTEGER NOT NULL DEFAULT 7,
+                    scan_config TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    total_scans INTEGER DEFAULT 0,
+                    completed_scans INTEGER DEFAULT 0,
+                    failed_scans INTEGER DEFAULT 0,
+                    current_scan_date TEXT,
+                    progress INTEGER DEFAULT 0,
+                    message TEXT,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+            ''')
+            
+            # Create batch_scan_results table for storing individual scan results
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS batch_scan_results (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    scan_date TEXT NOT NULL,
+                    scan_config TEXT NOT NULL,
+                    scanned_stocks TEXT NOT NULL,
+                    total_scanned INTEGER,
+                    success_count INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (task_id) REFERENCES batch_scan_tasks(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create indexes for batch scan tables
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_batch_scan_tasks_status 
+                ON batch_scan_tasks(status)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_batch_scan_tasks_created_at 
+                ON batch_scan_tasks(created_at)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_batch_scan_results_task_id 
+                ON batch_scan_results(task_id)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_batch_scan_results_scan_date 
+                ON batch_scan_results(scan_date)
             ''')
             
             conn.commit()
@@ -800,13 +876,14 @@ class StockDatabase:
     
     # ==================== Backtest History Methods ====================
     
-    def save_backtest_history(self, config: Dict[str, Any], result: Dict[str, Any]) -> str:
+    def save_backtest_history(self, config: Dict[str, Any], result: Dict[str, Any], batch_task_id: Optional[str] = None) -> str:
         """
         Save a backtest history record.
         
         Args:
             config: Backtest configuration
             result: Backtest result
+            batch_task_id: Optional batch task ID for batch backtests
         
         Returns:
             The ID of the saved history record
@@ -821,23 +898,25 @@ class StockDatabase:
                 
                 # Insert history record
                 cursor.execute('''
-                    INSERT INTO backtest_history (id, config, result, created_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO backtest_history (id, config, result, created_at, batch_task_id)
+                    VALUES (?, ?, ?, ?, ?)
                 ''', (
                     history_id,
                     json.dumps(config, ensure_ascii=False),
                     json.dumps(result, ensure_ascii=False),
-                    now
+                    now,
+                    batch_task_id
                 ))
                 
                 return history_id
     
-    def get_backtest_history_list(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_backtest_history_list(self, limit: int = 100, batch_task_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get list of all backtest history records (metadata only).
         
         Args:
             limit: Maximum number of records to return
+            batch_task_id: Optional filter by batch task ID
         
         Returns:
             List of history record metadata
@@ -845,12 +924,23 @@ class StockDatabase:
         with self._lock:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, config, result, created_at
-                FROM backtest_history
-                ORDER BY created_at DESC
-                LIMIT ?
-            ''', (limit,))
+            
+            if batch_task_id:
+                cursor.execute('''
+                    SELECT id, config, result, created_at, batch_task_id
+                    FROM backtest_history
+                    WHERE batch_task_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (batch_task_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT id, config, result, created_at, batch_task_id
+                    FROM backtest_history
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (limit,))
+            
             rows = cursor.fetchall()
             
             records = []
@@ -867,7 +957,8 @@ class StockDatabase:
                     'useTakeProfit': config.get('use_take_profit', False),
                     'stopLossPercent': config.get('stop_loss_percent', -3.0),
                     'takeProfitPercent': config.get('take_profit_percent', 10.0),
-                    'summary': result.get('summary', {})
+                    'summary': result.get('summary', {}),
+                    'batchTaskId': row[4] if len(row) > 4 else None
                 }
                 records.append(record)
             
@@ -887,7 +978,7 @@ class StockDatabase:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, config, result, created_at
+                SELECT id, config, result, created_at, batch_task_id
                 FROM backtest_history
                 WHERE id = ?
             ''', (history_id,))
@@ -900,7 +991,8 @@ class StockDatabase:
                 'id': row[0],
                 'createdAt': row[3],
                 'config': json.loads(row[1]),
-                'result': json.loads(row[2])
+                'result': json.loads(row[2]),
+                'batchTaskId': row[4] if len(row) > 4 else None
             }
     
     def delete_backtest_history(self, history_id: str) -> bool:
@@ -1240,6 +1332,320 @@ class StockDatabase:
             with self._transaction() as conn:
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM scan_cache WHERE cache_key = ?', (cache_key,))
+                return cursor.rowcount > 0
+    
+    def save_batch_scan_task(self, task_id: str, task_name: str, start_date: str, 
+                             end_date: str, scan_period_days: int, scan_config: Dict[str, Any]) -> None:
+        """
+        Save a batch scan task.
+        
+        Args:
+            task_id: Unique task ID
+            task_name: User-defined task name
+            start_date: Start date in 'YYYY-MM-DD' format
+            end_date: End date in 'YYYY-MM-DD' format
+            scan_period_days: Number of days between scans
+            scan_config: Scan configuration dictionary
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO batch_scan_tasks 
+                    (id, task_name, start_date, end_date, scan_period_days, scan_config, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ''', (
+                    task_id,
+                    task_name,
+                    start_date,
+                    end_date,
+                    scan_period_days,
+                    json.dumps(scan_config, ensure_ascii=False)
+                ))
+    
+    def get_batch_scan_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a batch scan task by ID.
+        
+        Args:
+            task_id: Task ID
+            
+        Returns:
+            Task dictionary if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, task_name, start_date, end_date, scan_period_days, scan_config,
+                       status, total_scans, completed_scans, failed_scans, current_scan_date,
+                       progress, message, error, created_at, updated_at, started_at, completed_at
+                FROM batch_scan_tasks
+                WHERE id = ?
+            ''', (task_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            try:
+                scan_config = json.loads(row[5])
+            except (json.JSONDecodeError, TypeError):
+                scan_config = {}
+            
+            return {
+                'id': row[0],
+                'taskName': row[1],
+                'startDate': row[2],
+                'endDate': row[3],
+                'scanPeriodDays': row[4],
+                'scanConfig': scan_config,
+                'status': row[6],
+                'totalScans': row[7] or 0,
+                'completedScans': row[8] or 0,
+                'failedScans': row[9] or 0,
+                'currentScanDate': row[10],
+                'progress': row[11] or 0,
+                'message': row[12],
+                'error': row[13],
+                'createdAt': normalize_timestamp_to_utc(row[14]),
+                'updatedAt': normalize_timestamp_to_utc(row[15]),
+                'startedAt': normalize_timestamp_to_utc(row[16]) if row[16] else None,
+                'completedAt': normalize_timestamp_to_utc(row[17]) if row[17] else None
+            }
+    
+    def get_batch_scan_task_list(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get list of all batch scan tasks.
+        
+        Args:
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of task dictionaries
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, task_name, start_date, end_date, scan_period_days, status,
+                       total_scans, completed_scans, failed_scans, progress, created_at, updated_at
+                FROM batch_scan_tasks
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+            rows = cursor.fetchall()
+            
+            tasks = []
+            for row in rows:
+                tasks.append({
+                    'id': row[0],
+                    'taskName': row[1],
+                    'startDate': row[2],
+                    'endDate': row[3],
+                    'scanPeriodDays': row[4],
+                    'status': row[5],
+                    'totalScans': row[6] or 0,
+                    'completedScans': row[7] or 0,
+                    'failedScans': row[8] or 0,
+                    'progress': row[9] or 0,
+                    'createdAt': normalize_timestamp_to_utc(row[10]),
+                    'updatedAt': normalize_timestamp_to_utc(row[11])
+                })
+            
+            return tasks
+    
+    def update_batch_scan_task(self, task_id: str, **kwargs) -> bool:
+        """
+        Update a batch scan task.
+        
+        Args:
+            task_id: Task ID
+            **kwargs: Fields to update (status, progress, message, error, etc.)
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                
+                # Build update query dynamically
+                updates = []
+                values = []
+                
+                allowed_fields = {
+                    'status': 'status',
+                    'total_scans': 'total_scans',
+                    'completed_scans': 'completed_scans',
+                    'failed_scans': 'failed_scans',
+                    'current_scan_date': 'current_scan_date',
+                    'progress': 'progress',
+                    'message': 'message',
+                    'error': 'error',
+                    'started_at': 'started_at',
+                    'completed_at': 'completed_at'
+                }
+                
+                for key, value in kwargs.items():
+                    if key in allowed_fields:
+                        db_field = allowed_fields[key]
+                        if key == 'started_at' or key == 'completed_at':
+                            if value == 'now':
+                                updates.append(f"{db_field} = CURRENT_TIMESTAMP")
+                            else:
+                                updates.append(f"{db_field} = ?")
+                                values.append(value)
+                        else:
+                            updates.append(f"{db_field} = ?")
+                            values.append(value)
+                
+                if not updates:
+                    return False
+                
+                updates.append("updated_at = CURRENT_TIMESTAMP")
+                values.append(task_id)
+                
+                query = f"UPDATE batch_scan_tasks SET {', '.join(updates)} WHERE id = ?"
+                cursor.execute(query, values)
+                
+                return cursor.rowcount > 0
+    
+    def save_batch_scan_result(self, result_id: str, task_id: str, scan_date: str,
+                               scan_config: Dict[str, Any], scanned_stocks: List[Dict[str, Any]],
+                               total_scanned: int, success_count: int) -> None:
+        """
+        Save a batch scan result.
+        
+        Args:
+            result_id: Unique result ID
+            task_id: Task ID
+            scan_date: Scan date in 'YYYY-MM-DD' format
+            scan_config: Scan configuration dictionary
+            scanned_stocks: List of scanned stocks
+            total_scanned: Total number of stocks scanned
+            success_count: Number of successful scans
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO batch_scan_results 
+                    (id, task_id, scan_date, scan_config, scanned_stocks, total_scanned, success_count, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (
+                    result_id,
+                    task_id,
+                    scan_date,
+                    json.dumps(scan_config, ensure_ascii=False),
+                    json.dumps(scanned_stocks, ensure_ascii=False, default=str),
+                    total_scanned,
+                    success_count
+                ))
+    
+    def get_batch_scan_results(self, task_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all scan results for a batch scan task.
+        
+        Args:
+            task_id: Task ID
+            
+        Returns:
+            List of scan result dictionaries
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, task_id, scan_date, scan_config, scanned_stocks, total_scanned, success_count, created_at
+                FROM batch_scan_results
+                WHERE task_id = ?
+                ORDER BY scan_date ASC
+            ''', (task_id,))
+            rows = cursor.fetchall()
+            
+            results = []
+            for row in rows:
+                try:
+                    scan_config = json.loads(row[3])
+                    scanned_stocks = json.loads(row[4])
+                except (json.JSONDecodeError, TypeError):
+                    scan_config = {}
+                    scanned_stocks = []
+                
+                results.append({
+                    'id': row[0],
+                    'taskId': row[1],
+                    'scanDate': row[2],
+                    'scanConfig': scan_config,
+                    'scannedStocks': scanned_stocks,
+                    'totalScanned': row[5] or 0,
+                    'successCount': row[6] or 0,
+                    'stockCount': len(scanned_stocks) if isinstance(scanned_stocks, list) else 0,
+                    'createdAt': normalize_timestamp_to_utc(row[7])
+                })
+            
+            return results
+    
+    def get_batch_scan_result(self, result_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific batch scan result by ID.
+        
+        Args:
+            result_id: Result ID
+            
+        Returns:
+            Result dictionary if found, None otherwise
+        """
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, task_id, scan_date, scan_config, scanned_stocks, total_scanned, success_count, created_at
+                FROM batch_scan_results
+                WHERE id = ?
+            ''', (result_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            try:
+                scan_config = json.loads(row[3])
+                scanned_stocks = json.loads(row[4])
+            except (json.JSONDecodeError, TypeError):
+                scan_config = {}
+                scanned_stocks = []
+            
+            return {
+                'id': row[0],
+                'taskId': row[1],
+                'scanDate': row[2],
+                'scanConfig': scan_config,
+                'scannedStocks': scanned_stocks,
+                'totalScanned': row[5] or 0,
+                'successCount': row[6] or 0,
+                'stockCount': len(scanned_stocks) if isinstance(scanned_stocks, list) else 0,
+                'createdAt': normalize_timestamp_to_utc(row[7])
+            }
+    
+    def delete_batch_scan_task(self, task_id: str) -> bool:
+        """
+        Delete a batch scan task and all its results.
+        
+        Args:
+            task_id: Task ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        with self._lock:
+            with self._transaction() as conn:
+                cursor = conn.cursor()
+                # Delete results first (CASCADE should handle this, but explicit is better)
+                cursor.execute('DELETE FROM batch_scan_results WHERE task_id = ?', (task_id,))
+                # Delete task
+                cursor.execute('DELETE FROM batch_scan_tasks WHERE id = ?', (task_id,))
                 return cursor.rowcount > 0
     
     def close(self):
