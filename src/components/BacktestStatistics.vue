@@ -289,9 +289,23 @@
                   </div>
                 </div>
               </div>
-              <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总投入资金</div>
-                <div class="text-sm sm:text-base font-bold truncate">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总投入资金</div>
+                  <div class="text-base sm:text-lg font-bold truncate">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
+                </div>
+                <div v-if="statisticsResult.totalMarketReturnRate !== null && statisticsResult.totalMarketReturnRate !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">大盘收益率</div>
+                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalMarketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ statisticsResult.totalMarketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalMarketReturnRate) }}%
+                  </div>
+                </div>
+                <div v-if="statisticsResult.totalExcessReturn !== null && statisticsResult.totalExcessReturn !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">超额收益</div>
+                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalExcessReturn >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ statisticsResult.totalExcessReturn >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalExcessReturn) }}%
+                  </div>
+                </div>
               </div>
             </div>
   
@@ -1325,11 +1339,17 @@ const router = useRouter()
           recordReturnRate = (recordProfit / recordInvestment) * 100
         }
         
+        // 获取大盘收益率（如果有）
+        const marketReturnRate = result.summary?.marketReturnRate !== null && result.summary?.marketReturnRate !== undefined
+          ? result.summary.marketReturnRate
+          : null
+        
         // 保存本次回测的数据（用于后续计算整体收益率）
         recordReturns.push({
           investment: recordInvestment,
           profit: recordProfit,
-          returnRate: recordReturnRate
+          returnRate: recordReturnRate,
+          marketReturnRate: marketReturnRate
         })
 
         // 累计总投入和总收益（用于显示）
@@ -1498,6 +1518,30 @@ const router = useRouter()
       const totalStocks = profitableStocks + lossStocks
       const winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
 
+      // 计算整体大盘收益率（按投入资金加权平均）
+      let totalMarketReturnRate = null
+      if (recordReturns.length > 0 && totalInvestment > 0) {
+        let weightedMarketSum = 0
+        let totalWeightedInvestment = 0
+        
+        recordReturns.forEach(r => {
+          if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
+            weightedMarketSum += r.marketReturnRate * r.investment
+            totalWeightedInvestment += r.investment
+          }
+        })
+        
+        if (totalWeightedInvestment > 0) {
+          totalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
+        }
+      }
+      
+      // 计算整体超额收益
+      let totalExcessReturn = null
+      if (totalMarketReturnRate !== null && totalMarketReturnRate !== undefined) {
+        totalExcessReturn = totalReturnRate - totalMarketReturnRate
+      }
+
       // 按周期分组统计
       const periodGroups = groupByPeriod(recordDetails)
       const periodStats = periodGroups.map((group, index) => {
@@ -1591,6 +1635,8 @@ const router = useRouter()
         totalInvestment,
         totalProfit,
         totalReturnRate,
+        totalMarketReturnRate,  // 整体大盘收益率
+        totalExcessReturn,  // 整体超额收益
         periodStats: periodStats,
         filteredRecords: recordDetails
       }

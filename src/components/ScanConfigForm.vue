@@ -481,7 +481,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import ParameterLabel from './parameter-help/ParameterLabel.vue'
 
 const props = defineProps({
@@ -522,13 +522,22 @@ const maxDate = computed(() => {
 })
 
 const localConfig = ref({ ...props.config })
+const isUpdatingFromProps = ref(false)
 
 watch(() => props.config, (newConfig) => {
+  isUpdatingFromProps.value = true
   localConfig.value = { ...newConfig }
+  // Use nextTick to ensure the flag is reset after all watchers have run
+  nextTick(() => {
+    isUpdatingFromProps.value = false
+  })
 }, { deep: true })
 
 watch(localConfig, (newConfig) => {
-  emit('update:config', newConfig)
+  // Only emit if the change didn't come from props
+  if (!isUpdatingFromProps.value) {
+    emit('update:config', newConfig)
+  }
 }, { deep: true })
 
 watch(() => props.parsedWindows, (newWindows) => {
