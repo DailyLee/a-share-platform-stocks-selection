@@ -1353,11 +1353,14 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     stock_details = []
     
     # 根据买入策略计算每只股票的买入金额
-    if request.buy_strategy == "equal_distribution":
+    if request.buy_strategy == "equal_distribution" or request.buy_strategy == "equal_distribution_fixed":
         # 平均分配策略：将初始资金平均分配给所有股票
+        # equal_distribution: 下个周期使用上期结算余额
+        # equal_distribution_fixed: 每个周期都用固定金额
         initial_capital = request.initial_capital if request.initial_capital else 100000
         buy_amount_per_stock = initial_capital / len(valid_stocks) if len(valid_stocks) > 0 else 10000
-        print(f"{Fore.CYAN}使用平均分配策略: 初始资金={initial_capital}, 股票数={len(valid_stocks)}, 每只股票分配={buy_amount_per_stock:.2f}{Style.RESET_ALL}")
+        strategy_name = "固定金额平均分配策略" if request.buy_strategy == "equal_distribution_fixed" else "平均分配策略（累计余额）"
+        print(f"{Fore.CYAN}使用{strategy_name}: 初始资金={initial_capital}, 股票数={len(valid_stocks)}, 每只股票分配={buy_amount_per_stock:.2f}{Style.RESET_ALL}")
         
         # 先获取所有股票的价格信息，用于优化资金分配
         stock_price_info = []  # [(stock, buy_price, buy_day_data, kline_df), ...]
@@ -1383,6 +1386,17 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             
             buy_price = float(buy_day_data.iloc[0]['open'])
             stock_price_info.append((stock, buy_price, buy_day_data, kline_df))
+        
+        # 如果没有有效的股票价格信息，抛出异常
+        if len(stock_price_info) == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"平均分配策略：所有股票在回测日 {request.backtest_date} 到统计日 {request.stat_date} 期间都没有有效的K线数据"
+            )
+        
+        # 重新计算每只股票的分配金额（基于实际有数据的股票数）
+        buy_amount_per_stock = initial_capital / len(stock_price_info)
+        print(f"{Fore.CYAN}实际有数据的股票数: {len(stock_price_info)}, 每只股票分配金额: {buy_amount_per_stock:.2f}{Style.RESET_ALL}")
         
         # 计算基础买入金额和剩余资金
         total_used = 0
@@ -2891,12 +2905,17 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         })
                     continue
                 
-                # 对于平均分配策略，使用当前周期的初始资金
-                # 第一个周期使用用户设置的初始资金，后续周期使用上一个周期的结算余额
-                period_initial_capital = current_initial_capital
+                # 对于平均分配策略，确定当前周期的初始资金
                 if request.buy_strategy == "equal_distribution":
+                    # 累计余额策略：第一个周期使用用户设置的初始资金，后续周期使用上一个周期的结算余额
+                    period_initial_capital = current_initial_capital
                     print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}, 初始资金={period_initial_capital:.2f}{Style.RESET_ALL}")
+                elif request.buy_strategy == "equal_distribution_fixed":
+                    # 固定金额策略：每个周期都用固定的初始资金
+                    period_initial_capital = request.initial_capital if request.initial_capital else 100000
+                    print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}, 固定初始资金={period_initial_capital:.2f}{Style.RESET_ALL}")
                 else:
+                    period_initial_capital = request.initial_capital if request.initial_capital else 100000
                     print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
                 
                 # 构建回测请求
@@ -2916,7 +2935,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 result = run_backtest_with_progress(backtest_request, progress_callback=None)
                 result_dict = result.model_dump()
                 
-                # 如果是平均分配策略，计算下一个周期的初始资金（当前周期的结算余额）
+                # 如果是累计余额的平均分配策略，计算下一个周期的初始资金（当前周期的结算余额）
                 if request.buy_strategy == "equal_distribution":
                     summary = result_dict.get('summary', {})
                     total_investment = summary.get('totalInvestment', 0)
@@ -2928,6 +2947,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         print(f"{Fore.GREEN}[{idx + 1}/{total}] 周期结算余额: {settlement_balance:.2f} (投入: {total_investment:.2f}, 收益: {total_profit:.2f}), 下个周期初始资金: {current_initial_capital:.2f}{Style.RESET_ALL}")
                     else:
                         print(f"{Fore.YELLOW}[{idx + 1}/{total}] 警告: 结算余额为 {settlement_balance:.2f}，下个周期将使用相同初始资金{Style.RESET_ALL}")
+                # equal_distribution_fixed 策略不需要更新 current_initial_capital，因为每个周期都用固定金额
                 
                 # 保存回测历史，标记为批量回测
                 config_dict = {

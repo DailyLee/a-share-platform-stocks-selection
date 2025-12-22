@@ -699,7 +699,7 @@ const loadingBacktestTaskId = ref(null) // 正在加载回测的任务ID
 const scanResultsForBacktest = ref([])
 const backtestConfig = ref({
   backtestName: '', // 回测名称
-  buyStrategy: 'equal_distribution', // 默认使用平均分配策略
+  buyStrategy: 'equal_distribution_fixed', // 默认使用固定金额平均分配策略
   initialCapital: 100000,
   useStopLoss: true,
   useTakeProfit: true,

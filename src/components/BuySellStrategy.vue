@@ -48,6 +48,35 @@
             (每个周期平均分配资金买入所有股票，下个周期使用上期结算余额)
           </p>
         </div>
+        <div class="flex items-center space-x-2">
+          <input
+            type="radio"
+            :id="`buyStrategy3-${uniqueId}`"
+            :checked="modelValue.buyStrategy === 'equal_distribution_fixed'"
+            @change="updateBuyStrategy('equal_distribution_fixed')"
+            class="radio"
+          />
+          <label :for="`buyStrategy3-${uniqueId}`" class="text-sm">
+            设置初始资金，每个周期都用这个固定的金额平均购买股票
+          </label>
+        </div>
+        <div v-if="modelValue.buyStrategy === 'equal_distribution_fixed'" class="ml-6 mt-2 flex items-center space-x-2">
+          <label :for="`initialCapitalFixed-${uniqueId}`" class="text-sm text-muted-foreground whitespace-nowrap">初始资金：</label>
+          <input
+            :id="`initialCapitalFixed-${uniqueId}`"
+            :value="modelValue.initialCapital"
+            @input="handleNumberInput('initialCapital', $event)"
+            type="number"
+            step="1000"
+            min="1000"
+            class="input w-32"
+            placeholder="100000"
+          />
+          <span class="text-sm text-muted-foreground">元</span>
+          <p v-if="showHelpText" class="text-xs text-muted-foreground ml-2">
+            (每个周期都用固定金额平均分配资金买入所有股票，不累计余额)
+          </p>
+        </div>
       </div>
     </div>
 
@@ -136,7 +165,7 @@ const props = defineProps({
     type: Object,
     required: true,
     default: () => ({
-      buyStrategy: 'equal_distribution', // 默认使用平均分配策略
+      buyStrategy: 'equal_distribution_fixed', // 默认使用固定金额平均分配策略
       initialCapital: 100000,
       useStopLoss: true,
       useTakeProfit: true,

@@ -679,8 +679,18 @@
                   </div>
                   <div>
                     <span class="text-muted-foreground">买入策略：</span>
-                    <span>{{ selectedHistoryRecord.config.buy_strategy === 'fixed_amount' ? '固定金额' : selectedHistoryRecord.config.buy_strategy === 'equal_distribution' ? '平均分配' : selectedHistoryRecord.config.buy_strategy }}</span>
-                    <span v-if="selectedHistoryRecord.config.buy_strategy === 'equal_distribution' && selectedHistoryRecord.config.initial_capital" class="ml-2 text-muted-foreground">
+                    <span>
+                      {{ 
+                        selectedHistoryRecord.config.buy_strategy === 'fixed_amount' 
+                          ? '固定金额' 
+                          : selectedHistoryRecord.config.buy_strategy === 'equal_distribution' 
+                            ? '平均分配（累计余额）' 
+                            : selectedHistoryRecord.config.buy_strategy === 'equal_distribution_fixed'
+                              ? '平均分配（固定金额）'
+                              : selectedHistoryRecord.config.buy_strategy 
+                      }}
+                    </span>
+                    <span v-if="(selectedHistoryRecord.config.buy_strategy === 'equal_distribution' || selectedHistoryRecord.config.buy_strategy === 'equal_distribution_fixed') && selectedHistoryRecord.config.initial_capital" class="ml-2 text-muted-foreground">
                       (初始资金: ¥{{ formatNumber(selectedHistoryRecord.config.initial_capital) }})
                     </span>
                   </div>
