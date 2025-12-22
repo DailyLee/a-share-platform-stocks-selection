@@ -2530,12 +2530,42 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 if not stat_date_str:
                     print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}未设置统计日{Style.RESET_ALL}")
                     failed += 1
-                    results.append({
-                        'index': idx + 1,
-                        'status': 'failed',
-                        'message': f'扫描日期{scan_date}未设置统计日',
-                        'scanDate': scan_date
-                    })
+                    
+                    # 保存失败记录到数据库
+                    try:
+                        config_dict = {
+                            'backtest_date': scan_date,
+                            'stat_date': None,
+                            'buy_strategy': request.buy_strategy,
+                            'use_stop_loss': request.use_stop_loss,
+                            'use_take_profit': request.use_take_profit,
+                            'stop_loss_percent': request.stop_loss_percent,
+                            'take_profit_percent': request.take_profit_percent,
+                            'selected_stocks': scan_result.get('scannedStocks', []),
+                            'batch_task_id': task_id,
+                            'status': 'failed'
+                        }
+                        result_dict = {
+                            'status': 'failed',
+                            'error': f'扫描日期{scan_date}未设置统计日',
+                            'summary': {}
+                        }
+                        history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'扫描日期{scan_date}未设置统计日',
+                            'scanDate': scan_date,
+                            'historyId': history_id
+                        })
+                    except Exception as save_error:
+                        print(f"{Fore.RED}保存失败记录时出错: {save_error}{Style.RESET_ALL}")
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'扫描日期{scan_date}未设置统计日',
+                            'scanDate': scan_date
+                        })
                     continue
                 
                 # 验证统计日格式
@@ -2544,12 +2574,42 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 except ValueError:
                     print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：统计日格式错误: {stat_date_str}{Style.RESET_ALL}")
                     failed += 1
-                    results.append({
-                        'index': idx + 1,
-                        'status': 'failed',
-                        'message': f'统计日格式错误: {stat_date_str}',
-                        'scanDate': scan_date
-                    })
+                    
+                    # 保存失败记录到数据库
+                    try:
+                        config_dict = {
+                            'backtest_date': scan_date,
+                            'stat_date': stat_date_str,
+                            'buy_strategy': request.buy_strategy,
+                            'use_stop_loss': request.use_stop_loss,
+                            'use_take_profit': request.use_take_profit,
+                            'stop_loss_percent': request.stop_loss_percent,
+                            'take_profit_percent': request.take_profit_percent,
+                            'selected_stocks': scan_result.get('scannedStocks', []),
+                            'batch_task_id': task_id,
+                            'status': 'failed'
+                        }
+                        result_dict = {
+                            'status': 'failed',
+                            'error': f'统计日格式错误: {stat_date_str}',
+                            'summary': {}
+                        }
+                        history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'统计日格式错误: {stat_date_str}',
+                            'scanDate': scan_date,
+                            'historyId': history_id
+                        })
+                    except Exception as save_error:
+                        print(f"{Fore.RED}保存失败记录时出错: {save_error}{Style.RESET_ALL}")
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'统计日格式错误: {stat_date_str}',
+                            'scanDate': scan_date
+                        })
                     continue
                 
                 # 验证回测日必须早于统计日
@@ -2557,12 +2617,42 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 if backtest_date_obj >= stat_date:
                     print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：回测日({scan_date})必须早于统计日({stat_date_str}){Style.RESET_ALL}")
                     failed += 1
-                    results.append({
-                        'index': idx + 1,
-                        'status': 'failed',
-                        'message': f'回测日({scan_date})必须早于统计日({stat_date_str})',
-                        'scanDate': scan_date
-                    })
+                    
+                    # 保存失败记录到数据库
+                    try:
+                        config_dict = {
+                            'backtest_date': scan_date,
+                            'stat_date': stat_date_str,
+                            'buy_strategy': request.buy_strategy,
+                            'use_stop_loss': request.use_stop_loss,
+                            'use_take_profit': request.use_take_profit,
+                            'stop_loss_percent': request.stop_loss_percent,
+                            'take_profit_percent': request.take_profit_percent,
+                            'selected_stocks': scan_result.get('scannedStocks', []),
+                            'batch_task_id': task_id,
+                            'status': 'failed'
+                        }
+                        result_dict = {
+                            'status': 'failed',
+                            'error': f'回测日({scan_date})必须早于统计日({stat_date_str})',
+                            'summary': {}
+                        }
+                        history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'回测日({scan_date})必须早于统计日({stat_date_str})',
+                            'scanDate': scan_date,
+                            'historyId': history_id
+                        })
+                    except Exception as save_error:
+                        print(f"{Fore.RED}保存失败记录时出错: {save_error}{Style.RESET_ALL}")
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': f'回测日({scan_date})必须早于统计日({stat_date_str})',
+                            'scanDate': scan_date
+                        })
                     continue
                 
                 # 获取扫描到的股票列表
@@ -2570,12 +2660,42 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 if not scanned_stocks or len(scanned_stocks) == 0:
                     print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有扫描到股票{Style.RESET_ALL}")
                     failed += 1
-                    results.append({
-                        'index': idx + 1,
-                        'status': 'failed',
-                        'message': '该扫描日期没有扫描到股票',
-                        'scanDate': scan_date
-                    })
+                    
+                    # 保存失败记录到数据库
+                    try:
+                        config_dict = {
+                            'backtest_date': scan_date,
+                            'stat_date': stat_date_str,
+                            'buy_strategy': request.buy_strategy,
+                            'use_stop_loss': request.use_stop_loss,
+                            'use_take_profit': request.use_take_profit,
+                            'stop_loss_percent': request.stop_loss_percent,
+                            'take_profit_percent': request.take_profit_percent,
+                            'selected_stocks': [],
+                            'batch_task_id': task_id,
+                            'status': 'failed'
+                        }
+                        result_dict = {
+                            'status': 'failed',
+                            'error': '该扫描日期没有扫描到股票',
+                            'summary': {}
+                        }
+                        history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': '该扫描日期没有扫描到股票',
+                            'scanDate': scan_date,
+                            'historyId': history_id
+                        })
+                    except Exception as save_error:
+                        print(f"{Fore.RED}保存失败记录时出错: {save_error}{Style.RESET_ALL}")
+                        results.append({
+                            'index': idx + 1,
+                            'status': 'failed',
+                            'message': '该扫描日期没有扫描到股票',
+                            'scanDate': scan_date
+                        })
                     continue
                 
                 print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
@@ -2626,12 +2746,47 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 import traceback
                 traceback.print_exc()
                 failed += 1
-                results.append({
-                    'index': idx + 1,
-                    'status': 'failed',
-                    'message': str(e),
-                    'scanDate': scan_result.get('scanDate')
-                })
+                
+                scan_date = scan_result.get('scanDate')
+                error_message = str(e)
+                
+                # 保存失败记录到数据库
+                try:
+                    config_dict = {
+                        'backtest_date': scan_date,
+                        'stat_date': request.period_stat_dates.get(scan_date) if scan_date else None,
+                        'buy_strategy': request.buy_strategy,
+                        'use_stop_loss': request.use_stop_loss,
+                        'use_take_profit': request.use_take_profit,
+                        'stop_loss_percent': request.stop_loss_percent,
+                        'take_profit_percent': request.take_profit_percent,
+                        'selected_stocks': scan_result.get('scannedStocks', []),
+                        'batch_task_id': task_id,
+                        'status': 'failed'
+                    }
+                    result_dict = {
+                        'status': 'failed',
+                        'error': error_message,
+                        'summary': {}
+                    }
+                    history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 失败记录已保存: {history_id}{Style.RESET_ALL}")
+                    
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': error_message,
+                        'scanDate': scan_date,
+                        'historyId': history_id
+                    })
+                except Exception as save_error:
+                    print(f"{Fore.RED}保存失败记录时出错: {save_error}{Style.RESET_ALL}")
+                    results.append({
+                        'index': idx + 1,
+                        'status': 'failed',
+                        'message': error_message,
+                        'scanDate': scan_date
+                    })
         
         print(f"{Fore.GREEN}批量任务回测完成: 总计={total}, 完成={completed}, 失败={failed}{Style.RESET_ALL}")
         
@@ -2655,4 +2810,130 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
         raise HTTPException(
             status_code=500,
             detail=f"批量任务回测执行失败: {str(e)}"
+        )
+
+
+@app.post("/api/batch-scan/tasks/{task_id}/backtest/retry/{history_id}")
+async def retry_failed_backtest(task_id: str, history_id: str):
+    """
+    重试失败的批量回测周期
+    """
+    try:
+        from datetime import datetime
+        from api.stock_database import get_stock_database
+        
+        db = get_stock_database()
+        
+        # 获取失败的历史记录
+        history_record = db.get_backtest_history(history_id)
+        if not history_record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"回测历史记录不存在: {history_id}"
+            )
+        
+        config = history_record.get('config', {})
+        result = history_record.get('result', {})
+        
+        # 检查是否是失败记录
+        if result.get('status') != 'failed' and config.get('status') != 'failed':
+            raise HTTPException(
+                status_code=400,
+                detail="该记录不是失败记录，无法重试"
+            )
+        
+        scan_date = config.get('backtest_date')
+        stat_date = config.get('stat_date')
+        
+        if not scan_date:
+            raise HTTPException(
+                status_code=400,
+                detail="回测记录缺少回测日"
+            )
+        
+        if not stat_date:
+            raise HTTPException(
+                status_code=400,
+                detail="回测记录缺少统计日，请先设置统计日"
+            )
+        
+        # 验证回测日必须早于统计日
+        backtest_date_obj = datetime.strptime(scan_date, '%Y-%m-%d')
+        stat_date_obj = datetime.strptime(stat_date, '%Y-%m-%d')
+        if backtest_date_obj >= stat_date_obj:
+            raise HTTPException(
+                status_code=400,
+                detail=f"回测日({scan_date})必须早于统计日({stat_date})"
+            )
+        
+        # 获取扫描结果中的股票列表
+        scanned_stocks = config.get('selected_stocks', [])
+        if not scanned_stocks or len(scanned_stocks) == 0:
+            # 尝试从任务中获取扫描结果
+            scan_results = db.get_batch_scan_results(task_id)
+            for scan_result in scan_results:
+                if scan_result.get('scanDate') == scan_date:
+                    scanned_stocks = scan_result.get('scannedStocks', [])
+                    break
+            
+            if not scanned_stocks or len(scanned_stocks) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="该扫描日期没有扫描到股票"
+                )
+        
+        print(f"{Fore.CYAN}重试失败回测: 回测日={scan_date}, 统计日={stat_date}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
+        
+        # 构建回测请求
+        backtest_request = BacktestRequest(
+            backtest_date=scan_date,
+            stat_date=stat_date,
+            buy_strategy=config.get('buy_strategy', 'fixed_amount'),
+            use_stop_loss=config.get('use_stop_loss', False),
+            use_take_profit=config.get('use_take_profit', False),
+            stop_loss_percent=config.get('stop_loss_percent', -3.0),
+            take_profit_percent=config.get('take_profit_percent', 10.0),
+            selected_stocks=scanned_stocks
+        )
+        
+        # 执行回测
+        result = run_backtest_with_progress(backtest_request, progress_callback=None)
+        result_dict = result.model_dump()
+        
+        # 更新历史记录（将失败记录更新为成功）
+        config_dict = {
+            'backtest_date': scan_date,
+            'stat_date': stat_date,
+            'buy_strategy': config.get('buy_strategy', 'fixed_amount'),
+            'use_stop_loss': config.get('use_stop_loss', False),
+            'use_take_profit': config.get('use_take_profit', False),
+            'stop_loss_percent': config.get('stop_loss_percent', -3.0),
+            'take_profit_percent': config.get('take_profit_percent', 10.0),
+            'selected_stocks': scanned_stocks,
+            'batch_task_id': task_id
+        }
+        
+        # 删除旧的失败记录
+        db.delete_backtest_history(history_id)
+        
+        # 保存新的成功记录
+        new_history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
+        print(f"{Fore.GREEN}重试成功并保存: {new_history_id}{Style.RESET_ALL}")
+        
+        return {
+            "success": True,
+            "message": "重试成功",
+            "historyId": new_history_id,
+            "summary": result_dict.get('summary', {})
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"{Fore.RED}重试失败回测失败: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"重试失败回测执行失败: {str(e)}"
         )

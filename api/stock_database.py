@@ -948,6 +948,9 @@ class StockDatabase:
                 config = json.loads(row[1])
                 result = json.loads(row[2])
                 
+                # 检查是否是失败记录
+                is_failed = result.get('status') == 'failed' or config.get('status') == 'failed'
+                
                 record = {
                     'id': row[0],
                     'createdAt': row[3],
@@ -958,7 +961,9 @@ class StockDatabase:
                     'stopLossPercent': config.get('stop_loss_percent', -3.0),
                     'takeProfitPercent': config.get('take_profit_percent', 10.0),
                     'summary': result.get('summary', {}),
-                    'batchTaskId': row[4] if len(row) > 4 else None
+                    'batchTaskId': row[4] if len(row) > 4 else None,
+                    'status': 'failed' if is_failed else 'completed',
+                    'error': result.get('error') if is_failed else None
                 }
                 records.append(record)
             

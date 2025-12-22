@@ -18,19 +18,19 @@ const routes = [
     path: '/platform/backtest',
     name: 'Backtest',
     component: () => import('./components/Backtest.vue'),
-    meta: { keepAlive: false }
+    meta: { keepAlive: true }
   },
   {
     path: '/platform/cache',
     name: 'CacheManager',
     component: () => import('./components/CacheManager.vue'),
-    meta: { keepAlive: false }
+    meta: { keepAlive: true }
   },
   {
     path: '/platform/batch-scan',
     name: 'BatchScan',
     component: () => import('./components/BatchScan.vue'),
-    meta: { keepAlive: false }
+    meta: { keepAlive: true }
   },
   {
     path: '/platform',

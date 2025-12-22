@@ -533,16 +533,6 @@
           </div>
         </div>
         <div class="flex-1 overflow-auto p-4 sm:p-6">
-          <div class="mb-4 flex justify-end">
-            <button
-              v-if="backtestHistory.length > 0"
-              @click="showBacktestStatisticsDialog = true"
-              class="btn btn-primary px-4 py-2"
-            >
-              <i class="fas fa-chart-bar mr-2"></i>
-              数据统计
-            </button>
-          </div>
           <div v-if="backtestHistoryLoading" class="text-center py-8">
             <i class="fas fa-spinner fa-spin text-2xl text-primary"></i>
             <p class="text-muted-foreground mt-2">加载中...</p>
@@ -551,51 +541,88 @@
             <i class="fas fa-inbox text-4xl mb-2"></i>
             <p>暂无回测历史记录</p>
           </div>
-          <div v-else class="space-y-3">
-            <div
-              v-for="record in backtestHistory"
-              :key="record.id"
-              class="border border-border rounded-lg p-4 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex justify-between items-start">
-                <div class="flex-1">
-                  <div class="flex items-center mb-2">
-                    <span class="font-medium mr-2">回测日: {{ record.backtestDate }}</span>
-                    <span class="text-sm text-muted-foreground mr-2">统计日: {{ record.statDate }}</span>
-                  </div>
-                  <div class="text-sm text-muted-foreground space-y-1">
-                    <div>
-                      <i class="fas fa-chart-line mr-1"></i>
-                      总收益率: 
-                      <span :class="record.summary?.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                        {{ record.summary?.totalReturnRate >= 0 ? '+' : '' }}{{ record.summary?.totalReturnRate?.toFixed(2) || '0.00' }}%
-                      </span>
-                    </div>
-                    <div>
-                      <i class="fas fa-coins mr-1"></i>
-                      总收益: 
-                      <span :class="record.summary?.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                        {{ record.summary?.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary?.totalProfit || 0) }}
-                      </span>
-                    </div>
-                    <div>
-                      <i class="fas fa-list mr-1"></i>
-                      股票数: {{ record.summary?.totalStocks || 0 }}
-                    </div>
-                    <div>
-                      <i class="fas fa-clock mr-1"></i>
-                      创建时间: {{ formatDate(record.createdAt) }}
-                    </div>
-                  </div>
+          <div v-else class="space-y-4">
+            <div v-for="(group, dateKey) in groupedBacktestHistory" :key="dateKey" class="space-y-2">
+              <div 
+                class="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-t-lg border-b border-border cursor-pointer hover:bg-muted/50 transition-colors"
+                @click="toggleDateExpanded(dateKey)"
+              >
+                <div class="text-sm font-semibold text-foreground flex items-center flex-1 flex-wrap gap-2">
+                  <i 
+                    :class="['fas mr-2 text-primary transition-transform', expandedDates.has(dateKey) ? 'fa-chevron-down' : 'fa-chevron-right']"
+                  ></i>
+                  <i class="fas fa-calendar-alt mr-2 text-primary"></i>
+                  <span>{{ dateKey }}</span>
+                  <span v-if="getDateConfig(group)" class="text-xs text-muted-foreground font-normal flex items-center gap-2 ml-2">
+                    <span v-if="getDateConfig(group).useStopLoss" class="flex items-center">
+                      <i class="fas fa-arrow-down mr-1 text-blue-600 dark:text-blue-400"></i>
+                      止损: {{ getDateConfig(group).stopLossPercent }}%
+                    </span>
+                    <span v-if="getDateConfig(group).useTakeProfit" class="flex items-center">
+                      <i class="fas fa-arrow-up mr-1 text-red-600 dark:text-red-400"></i>
+                      止盈: {{ getDateConfig(group).takeProfitPercent }}%
+                    </span>
+                  </span>
                 </div>
-                <div class="flex gap-2 ml-4">
-                  <button
-                    @click="viewBacktestHistoryDetail(record.id)"
-                    class="btn btn-secondary px-3 py-1 text-sm"
-                  >
-                    <i class="fas fa-eye mr-1"></i>
-                    查看详情
-                  </button>
+                <button
+                  @click.stop="openDateStatistics(group)"
+                  class="btn btn-primary px-3 py-1 text-xs"
+                >
+                  <i class="fas fa-chart-bar mr-1"></i>
+                  数据统计
+                </button>
+              </div>
+              <div v-show="expandedDates.has(dateKey)" class="space-y-1">
+                <div
+                  v-for="record in group"
+                  :key="record.id"
+                  class="flex items-center justify-between px-3 py-2 rounded hover:bg-muted/30 transition-colors"
+                  :class="record.status === 'failed' ? 'bg-red-500/10 border-l-2 border-red-500' : ''"
+                >
+                  <div class="flex-1 flex items-center gap-4 text-sm">
+                    <span class="font-medium w-24">{{ record.backtestDate }}</span>
+                    <span class="text-muted-foreground w-24">{{ record.statDate || '-' }}</span>
+                    <span v-if="record.status === 'failed'" class="text-red-600 dark:text-red-400 flex-1">
+                      <i class="fas fa-exclamation-circle mr-1"></i>
+                      {{ record.error || '回测失败' }}
+                    </span>
+                    <template v-else>
+                      <span class="whitespace-nowrap min-w-0">
+                        收益率: 
+                        <span :class="record.summary?.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ record.summary?.totalReturnRate >= 0 ? '+' : '' }}{{ record.summary?.totalReturnRate?.toFixed(2) || '0.00' }}%
+                        </span>
+                      </span>
+                      <span class="whitespace-nowrap min-w-0">
+                        收益: 
+                        <span :class="record.summary?.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ record.summary?.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(record.summary?.totalProfit || 0) }}
+                        </span>
+                      </span>
+                      <span class="text-muted-foreground whitespace-nowrap">{{ record.summary?.totalStocks || 0 }}只</span>
+                    </template>
+                  </div>
+                  <div class="flex gap-2 ml-4">
+                    <button
+                      v-if="record.status === 'failed'"
+                      @click="retryFailedBacktest(record.id)"
+                      :disabled="retryingHistoryId === record.id"
+                      class="btn btn-primary px-3 py-1 text-sm"
+                      :class="{ 'opacity-50 cursor-not-allowed': retryingHistoryId === record.id }"
+                    >
+                      <i v-if="retryingHistoryId === record.id" class="fas fa-spinner fa-spin mr-1"></i>
+                      <i v-else class="fas fa-redo mr-1"></i>
+                      {{ retryingHistoryId === record.id ? '重试中...' : '重试' }}
+                    </button>
+                    <button
+                      v-if="record.status !== 'failed'"
+                      @click="viewBacktestHistoryDetail(record.id)"
+                      class="btn btn-secondary px-3 py-1 text-sm"
+                    >
+                      <i class="fas fa-eye mr-1"></i>
+                      查看
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -607,20 +634,23 @@
     <!-- 批量回测数据统计对话框 -->
     <BacktestStatistics
       v-if="showBacktestStatisticsDialog"
-      :history-records="backtestHistory"
+      :history-records="selectedDateRecords.length > 0 ? selectedDateRecords : backtestHistory"
       @close="showBacktestStatisticsDialog = false"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import ScanConfigForm from './ScanConfigForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ParameterTutorial from './parameter-help/ParameterTutorial.vue'
 import TaskDetails from './batch-scan/TaskDetails.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
+
+const router = useRouter()
 
 const taskName = ref('')
 const startDate = ref('')
@@ -697,6 +727,37 @@ const showBacktestHistoryDialog = ref(false)
 const backtestHistoryLoading = ref(false)
 const backtestHistory = ref([])
 const showBacktestStatisticsDialog = ref(false)
+const selectedDateRecords = ref([]) // 选中日期的记录，用于数据统计
+const retryingHistoryId = ref(null)
+const expandedDates = ref(new Set()) // 展开的日期集合
+
+// 按创建时间分组的历史记录
+const groupedBacktestHistory = computed(() => {
+  const groups = {}
+  backtestHistory.value.forEach(record => {
+    const date = new Date(record.createdAt)
+    const dateKey = date.toLocaleDateString('zh-CN', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    if (!groups[dateKey]) {
+      groups[dateKey] = []
+    }
+    groups[dateKey].push(record)
+  })
+  // 按日期倒序排序（最新的在前）
+  const sortedGroups = {}
+  Object.keys(groups).sort((a, b) => {
+    // 将日期字符串转换为Date对象进行比较
+    const dateA = new Date(groups[a][0].createdAt)
+    const dateB = new Date(groups[b][0].createdAt)
+    return dateB - dateA
+  }).forEach(key => {
+    sortedGroups[key] = groups[key]
+  })
+  return sortedGroups
+})
 
 const maxDate = computed(() => {
   const today = new Date()
@@ -1085,7 +1146,7 @@ const runBatchBacktest = async () => {
     if (response.data) {
       const result = response.data
       alert(`批量回测完成！\n总计: ${result.total}\n完成: ${result.completed}\n失败: ${result.failed}`)
-      showBacktestDialog.value = false
+      // 不关闭批量回测配置弹窗，让用户可以继续操作
       // 如果回测历史对话框已打开，刷新历史记录
       if (showBacktestHistoryDialog.value) {
         loadBacktestHistory()
@@ -1103,7 +1164,15 @@ const openBacktestHistoryDialog = async () => {
   if (!selectedTaskForBacktest.value) return
   
   showBacktestHistoryDialog.value = true
+  // 默认展开所有日期
+  expandedDates.value.clear()
   await loadBacktestHistory()
+  // 加载完成后展开所有日期
+  nextTick(() => {
+    Object.keys(groupedBacktestHistory.value).forEach(dateKey => {
+      expandedDates.value.add(dateKey)
+    })
+  })
 }
 
 const loadBacktestHistory = async () => {
@@ -1129,7 +1198,69 @@ const loadBacktestHistory = async () => {
 
 const viewBacktestHistoryDetail = (historyId) => {
   // 跳转到回测页面并显示历史记录详情
-  window.open(`/platform/backtest?historyId=${historyId}`, '_blank')
+  router.push(`/platform/backtest?historyId=${historyId}`)
+}
+
+const toggleDateExpanded = (dateKey) => {
+  if (expandedDates.value.has(dateKey)) {
+    expandedDates.value.delete(dateKey)
+  } else {
+    expandedDates.value.add(dateKey)
+  }
+}
+
+// 获取日期分组的配置信息（从第一条记录获取）
+const getDateConfig = (records) => {
+  if (!records || records.length === 0) return null
+  const firstRecord = records[0]
+  return {
+    useStopLoss: firstRecord.useStopLoss !== undefined ? firstRecord.useStopLoss : false,
+    useTakeProfit: firstRecord.useTakeProfit !== undefined ? firstRecord.useTakeProfit : false,
+    stopLossPercent: firstRecord.stopLossPercent !== undefined ? firstRecord.stopLossPercent : -2.0,
+    takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 18.0
+  }
+}
+
+const openAllStatistics = () => {
+  // 统计全部数据
+  selectedDateRecords.value = []
+  showBacktestStatisticsDialog.value = true
+}
+
+const openDateStatistics = (records) => {
+  // 只统计该日期下的记录
+  selectedDateRecords.value = records
+  showBacktestStatisticsDialog.value = true
+}
+
+const retryFailedBacktest = async (historyId) => {
+  if (!selectedTaskForBacktest.value) {
+    alert('未选择任务')
+    return
+  }
+  
+  if (!confirm('确定要重试这个失败的回测周期吗？')) {
+    return
+  }
+  
+  retryingHistoryId.value = historyId
+  try {
+    const response = await axios.post(
+      `/platform/api/batch-scan/tasks/${selectedTaskForBacktest.value.id}/backtest/retry/${historyId}`
+    )
+    if (response.data.success) {
+      alert('重试成功！')
+      // 刷新历史记录
+      await loadBacktestHistory()
+    } else {
+      alert('重试失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('重试失败回测失败:', error)
+    alert('重试失败: ' + (error.response?.data?.detail || error.message))
+  } finally {
+    retryingHistoryId.value = null
+  }
 }
 </script>
 
