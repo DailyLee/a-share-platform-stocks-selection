@@ -724,20 +724,13 @@ const pendingDeleteBacktestName = ref(null)
 const pendingDeleteBacktestNameRecords = ref([])
 const deletingBacktestName = ref(null)
 
-// 获取回测名称（如果没有名称，使用日期时间）
+// 获取回测名称（如果没有名称，返回特殊标识）
 const getBacktestName = (record) => {
   if (record.backtestName && record.backtestName.trim() !== '') {
     return record.backtestName
   }
-  // 使用创建日期时间作为名称
-  const date = new Date(record.createdAt)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  // 没有名称的记录统一归为一个分组
+  return '__NO_NAME__'
 }
 
 // 按回测名称分组的历史记录（但按日期排序）
@@ -767,16 +760,20 @@ const groupedBacktestHistory = computed(() => {
     const dateB = new Date(groups[b][0].createdAt)
     return dateB - dateA
   }).forEach(key => {
-    sortedGroups[key] = groups[key]
+    // 将特殊标识转换为显示名称
+    const displayKey = key === '__NO_NAME__' ? '未命名回测' : key
+    sortedGroups[displayKey] = groups[key]
   })
   return sortedGroups
 })
 
 // 根据回测名称获取所有记录
 const getRecordsByBacktestName = (nameKey) => {
+  // 如果显示名称是"未命名回测"，需要匹配所有没有名称的记录
+  const targetName = nameKey === '未命名回测' ? '__NO_NAME__' : nameKey
   return backtestHistory.value.filter(record => {
     const recordName = getBacktestName(record)
-    return recordName === nameKey
+    return recordName === targetName
   })
 }
 
