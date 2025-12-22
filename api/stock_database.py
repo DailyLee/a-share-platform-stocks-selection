@@ -956,6 +956,7 @@ class StockDatabase:
                     'createdAt': row[3],
                     'backtestDate': config.get('backtest_date', ''),
                     'statDate': config.get('stat_date', ''),
+                    'backtestName': config.get('backtest_name'),  # 回测名称
                     'useStopLoss': config.get('use_stop_loss', False),
                     'useTakeProfit': config.get('use_take_profit', False),
                     'stopLossPercent': config.get('stop_loss_percent', -3.0),

@@ -1188,6 +1188,7 @@ class BacktestRequest(BaseModel):
     backtest_date: str  # 回测日（截止日），格式：YYYY-MM-DD
     stat_date: str  # 统计日，格式：YYYY-MM-DD
     buy_strategy: str = "fixed_amount"  # 买入策略
+    initial_capital: Optional[float] = 100000  # 初始资金（用于平均分配策略）
     use_stop_loss: bool = True  # 使用止损
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -3.0  # 止损百分比
@@ -1351,146 +1352,327 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     sell_records = []
     stock_details = []
     
-    buy_amount_per_stock = 10000  # 每只股票买入1万元
-    
-    total_stocks = len(valid_stocks)
-    for idx, stock in enumerate(valid_stocks):
-        code = stock['code']
-        name = stock.get('name', code)
+    # 根据买入策略计算每只股票的买入金额
+    if request.buy_strategy == "equal_distribution":
+        # 平均分配策略：将初始资金平均分配给所有股票
+        initial_capital = request.initial_capital if request.initial_capital else 100000
+        buy_amount_per_stock = initial_capital / len(valid_stocks) if len(valid_stocks) > 0 else 10000
+        print(f"{Fore.CYAN}使用平均分配策略: 初始资金={initial_capital}, 股票数={len(valid_stocks)}, 每只股票分配={buy_amount_per_stock:.2f}{Style.RESET_ALL}")
         
-        if progress_callback:
-            progress = 10 + int((idx + 1) / total_stocks * 85)
-            progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
-        
-        # 获取从回测日到统计日的历史数据
-        start_date = request.backtest_date
-        end_date = request.stat_date
-        
-        with BaostockConnectionManager():
-            kline_df = fetch_kline_data(code, start_date, end_date)
-        
-        if kline_df.empty:
-            print(f"{Fore.YELLOW}Warning: {code} ({name}) 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
-            # 记录跳过的股票信息，但不添加到买入记录
-            continue
-        
-        # 确保数据按日期排序
-        kline_df = kline_df.sort_values('date')
-        kline_df = kline_df.reset_index(drop=True)
-        
-        # 找到回测日的数据（买入日）
-        # 确保日期格式一致（转换为字符串进行比较）
-        kline_df['date_str'] = kline_df['date'].astype(str)
-        buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
-        if buy_day_data.empty:
-            # 如果回测日没有数据，使用第一个交易日
-            if len(kline_df) > 0:
-                buy_day_data = kline_df.iloc[[0]]
-            else:
+        # 先获取所有股票的价格信息，用于优化资金分配
+        stock_price_info = []  # [(stock, buy_price, buy_day_data, kline_df), ...]
+        for stock in valid_stocks:
+            code = stock['code']
+            start_date = request.backtest_date
+            end_date = request.stat_date
+            
+            with BaostockConnectionManager():
+                kline_df = fetch_kline_data(code, start_date, end_date)
+            
+            if kline_df.empty:
                 continue
-        
-        buy_price = float(buy_day_data.iloc[0]['open'])
-        # 只提取日期部分，去掉时间
-        buy_date_obj = buy_day_data.iloc[0]['date']
-        if isinstance(buy_date_obj, pd.Timestamp):
-            buy_date_raw = buy_date_obj.strftime('%Y-%m-%d')
-        else:
-            buy_date_raw = str(buy_date_obj).split()[0]  # 取第一个空格前的部分
-        # 买入日期显示为"日期（开盘）"，因为买入价格是开盘价
-        buy_date = f"{buy_date_raw}（开盘）"
-        quantity = int(buy_amount_per_stock / buy_price / 100) * 100  # 按手（100股）买入
-        actual_buy_amount = quantity * buy_price
-        
-        # 记录买入
-        buy_records.append({
-            'code': code,
-            'name': name,
-            'buyDate': buy_date,
-            'buyPrice': buy_price,
-            'quantity': quantity,
-            'buyAmount': actual_buy_amount,
-            'selection_reasons': stock.get('selection_reasons', {})  # 包含筛选理由
-        })
-        
-        # 从买入日的下一天开始检查卖出条件
-        buy_day_index = buy_day_data.index[0]
-        sell_price = None
-        sell_date = None
-        sell_reason = None
-        
-        # 检查从买入日到统计日的数据
-        for i in range(buy_day_index + 1, len(kline_df)):
-            day_data = kline_df.iloc[i]
-            # 只提取日期部分，去掉时间
-            date_obj = day_data['date']
-            if isinstance(date_obj, pd.Timestamp):
-                current_date = date_obj.strftime('%Y-%m-%d')
-            else:
-                current_date = str(date_obj).split()[0]  # 取第一个空格前的部分
-            current_close = float(day_data['close'])
-            current_low = float(day_data['low'])
-            current_high = float(day_data['high'])
             
-            # 计算收益率
-            return_rate = ((current_close - buy_price) / buy_price) * 100
-            
-            # 检查止损（使用最低价）
-            if request.use_stop_loss:
-                low_return_rate = ((current_low - buy_price) / buy_price) * 100
-                if low_return_rate <= request.stop_loss_percent:
-                    sell_price = buy_price * (1 + request.stop_loss_percent / 100)
-                    # 止损日期显示为"日期（止损）"
-                    sell_date = f"{current_date}（止损）"
-                    sell_reason = '止损'
-                    break
-            
-            # 检查止盈（使用最高价）
-            if request.use_take_profit:
-                high_return_rate = ((current_high - buy_price) / buy_price) * 100
-                if high_return_rate >= request.take_profit_percent:
-                    sell_price = buy_price * (1 + request.take_profit_percent / 100)
-                    # 止盈日期显示为"日期（止盈）"
-                    sell_date = f"{current_date}（止盈）"
-                    sell_reason = '止盈'
-                    break
-            
-            # 如果到了统计日，使用收盘价卖出（确保日期格式一致）
-            if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
-                sell_price = current_close
-                # 统计日卖出日期显示为"日期（收盘）"，因为卖出价格是收盘价
-                sell_date = f"{current_date}（收盘）"
-                sell_reason = '统计日卖出'
-                break
-        
-        # 如果没有卖出（理论上不应该发生，因为统计日一定会卖出）
-        if sell_price is None:
-            # 使用最后一天的收盘价
-            if len(kline_df) > 0:
-                last_day = kline_df.iloc[-1]
-                sell_price = float(last_day['close'])
-                # 只提取日期部分，去掉时间
-                last_date_obj = last_day['date']
-                if isinstance(last_date_obj, pd.Timestamp):
-                    last_date = last_date_obj.strftime('%Y-%m-%d')
+            kline_df = kline_df.sort_values('date').reset_index(drop=True)
+            kline_df['date_str'] = kline_df['date'].astype(str)
+            buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
+            if buy_day_data.empty:
+                if len(kline_df) > 0:
+                    buy_day_data = kline_df.iloc[[0]]
                 else:
-                    last_date = str(last_date_obj).split()[0]  # 取第一个空格前的部分
-                # 统计日卖出日期显示为"日期（收盘）"
-                sell_date = f"{last_date}（收盘）"
-                sell_reason = '统计日卖出'
+                    continue
+            
+            buy_price = float(buy_day_data.iloc[0]['open'])
+            stock_price_info.append((stock, buy_price, buy_day_data, kline_df))
+        
+        # 计算基础买入金额和剩余资金
+        total_used = 0
+        stock_allocations = []  # [(stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data), ...]
+        
+        for stock, buy_price, buy_day_data, kline_df in stock_price_info:
+            # 基础分配：按平均分配金额买入
+            base_quantity = int(buy_amount_per_stock / buy_price / 100) * 100
+            base_amount = base_quantity * buy_price
+            total_used += base_amount
+            stock_allocations.append((stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data))
+        
+        # 计算剩余资金
+        remaining_capital = initial_capital - total_used
+        print(f"{Fore.CYAN}基础买入总金额: {total_used:.2f}, 剩余资金: {remaining_capital:.2f}{Style.RESET_ALL}")
+        
+        # 将剩余资金分配给股票（优先分配给价格较低的股票，可以买入更多手）
+        if remaining_capital > 0 and len(stock_allocations) > 0:
+            # 按价格排序，价格低的优先
+            stock_allocations.sort(key=lambda x: x[1])  # 按 buy_price 排序
+            
+            for i, (stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data) in enumerate(stock_allocations):
+                if remaining_capital <= 0:
+                    break
+                
+                # 计算可以再买入多少手（每手100股）
+                additional_hands = int(remaining_capital / buy_price / 100)
+                if additional_hands > 0:
+                    additional_quantity = additional_hands * 100
+                    additional_amount = additional_quantity * buy_price
+                    if additional_amount <= remaining_capital:
+                        # 更新分配
+                        stock_allocations[i] = (
+                            stock, buy_price, 
+                            base_quantity + additional_quantity, 
+                            base_amount + additional_amount, 
+                            kline_df, buy_day_data
+                        )
+                        remaining_capital -= additional_amount
+                        print(f"{Fore.GREEN}为 {stock.get('name', stock['code'])} 追加买入 {additional_quantity} 股，追加金额 {additional_amount:.2f}{Style.RESET_ALL}")
+        
+        print(f"{Fore.CYAN}最终使用资金: {initial_capital - remaining_capital:.2f}, 剩余资金: {remaining_capital:.2f}{Style.RESET_ALL}")
+        
+        # 使用优化后的分配进行买入和卖出处理
+        total_stocks = len(stock_allocations)
+        for idx, (stock, buy_price, quantity, actual_buy_amount, kline_df, buy_day_data) in enumerate(stock_allocations):
+            code = stock['code']
+            name = stock.get('name', code)
+            
+            if progress_callback:
+                progress = 10 + int((idx + 1) / total_stocks * 85)
+                progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
+            
+            # 买入日期信息
+            buy_date_obj = buy_day_data.iloc[0]['date']
+            if isinstance(buy_date_obj, pd.Timestamp):
+                buy_date_raw = buy_date_obj.strftime('%Y-%m-%d')
             else:
-                # 如果没有数据，使用买入价（未卖出）
-                sell_price = buy_price
-                sell_date = f"{buy_date_raw}（未卖出）"
-                sell_reason = '未卖出'
+                buy_date_raw = str(buy_date_obj).split()[0]
+            buy_date = f"{buy_date_raw}（开盘）"
+            
+            # 记录买入
+            buy_records.append({
+                'code': code,
+                'name': name,
+                'buyDate': buy_date,
+                'buyPrice': buy_price,
+                'quantity': quantity,
+                'buyAmount': actual_buy_amount,
+                'selection_reasons': stock.get('selection_reasons', {})
+            })
+            
+            # 从买入日的下一天开始检查卖出条件
+            buy_day_index = buy_day_data.index[0]
+            sell_price = None
+            sell_date = None
+            sell_reason = None
+            
+            # 检查从买入日到统计日的数据
+            for i in range(buy_day_index + 1, len(kline_df)):
+                day_data = kline_df.iloc[i]
+                date_obj = day_data['date']
+                if isinstance(date_obj, pd.Timestamp):
+                    current_date = date_obj.strftime('%Y-%m-%d')
+                else:
+                    current_date = str(date_obj).split()[0]
+                current_close = float(day_data['close'])
+                current_low = float(day_data['low'])
+                current_high = float(day_data['high'])
+                
+                return_rate = ((current_close - buy_price) / buy_price) * 100
+                
+                # 检查止损
+                if request.use_stop_loss:
+                    low_return_rate = ((current_low - buy_price) / buy_price) * 100
+                    if low_return_rate <= request.stop_loss_percent:
+                        sell_price = buy_price * (1 + request.stop_loss_percent / 100)
+                        sell_date = f"{current_date}（止损）"
+                        sell_reason = '止损'
+                        break
+                
+                # 检查止盈
+                if request.use_take_profit:
+                    high_return_rate = ((current_high - buy_price) / buy_price) * 100
+                    if high_return_rate >= request.take_profit_percent:
+                        sell_price = buy_price * (1 + request.take_profit_percent / 100)
+                        sell_date = f"{current_date}（止盈）"
+                        sell_reason = '止盈'
+                        break
+                
+                # 统计日卖出
+                if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
+                    sell_price = current_close
+                    sell_date = f"{current_date}（收盘）"
+                    sell_reason = '统计日卖出'
+                    break
+            
+            # 如果没有卖出，使用最后一天的收盘价
+            if sell_price is None:
+                if len(kline_df) > 0:
+                    last_day = kline_df.iloc[-1]
+                    sell_price = float(last_day['close'])
+                    last_date_obj = last_day['date']
+                    if isinstance(last_date_obj, pd.Timestamp):
+                        last_date = last_date_obj.strftime('%Y-%m-%d')
+                    else:
+                        last_date = str(last_date_obj).split()[0]
+                    sell_date = f"{last_date}（收盘）"
+                    sell_reason = '统计日卖出'
+                else:
+                    sell_price = buy_price
+                    sell_date = f"{buy_date_raw}（未卖出）"
+                    sell_reason = '未卖出'
+            
+            # 计算盈亏
+            sell_amount = quantity * sell_price
+            profit = sell_amount - actual_buy_amount
+            final_return_rate = ((sell_price - buy_price) / buy_price) * 100
+            
+            # 记录卖出
+            sell_records.append({
+                'code': code,
+                'name': name,
+                'buyDate': buy_date,
+                'sellDate': sell_date,
+                'buyPrice': buy_price,
+                'sellPrice': sell_price,
+                'returnRate': final_return_rate,
+                'profit': profit,
+                'sellReason': sell_reason
+            })
+            
+            # 记录股票详情
+            stock_details.append({
+                'code': code,
+                'name': name,
+                'buyAmount': actual_buy_amount,
+                'sellAmount': sell_amount,
+                'profit': profit,
+                'returnRate': final_return_rate,
+                'status': '已卖出' if sell_reason != '未卖出' else '未卖出'
+            })
+    else:
+        # 固定金额策略：每只股票买入1万元
+        buy_amount_per_stock = 10000
         
-        # 计算盈亏
-        sell_amount = quantity * sell_price
-        profit = sell_amount - actual_buy_amount
-        final_return_rate = ((sell_price - buy_price) / buy_price) * 100
-        
-        # 记录卖出
-        sell_records.append({
-            'code': code,
+        total_stocks = len(valid_stocks)
+        for idx, stock in enumerate(valid_stocks):
+            code = stock['code']
+            name = stock.get('name', code)
+            
+            if progress_callback:
+                progress = 10 + int((idx + 1) / total_stocks * 85)
+                progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
+            
+            # 获取从回测日到统计日的历史数据
+            start_date = request.backtest_date
+            end_date = request.stat_date
+            
+            with BaostockConnectionManager():
+                kline_df = fetch_kline_data(code, start_date, end_date)
+            
+            if kline_df.empty:
+                print(f"{Fore.YELLOW}Warning: {code} ({name}) 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
+                continue
+            
+            # 确保数据按日期排序
+            kline_df = kline_df.sort_values('date')
+            kline_df = kline_df.reset_index(drop=True)
+            
+            # 找到回测日的数据（买入日）
+            kline_df['date_str'] = kline_df['date'].astype(str)
+            buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
+            if buy_day_data.empty:
+                if len(kline_df) > 0:
+                    buy_day_data = kline_df.iloc[[0]]
+                else:
+                    continue
+            
+            buy_price = float(buy_day_data.iloc[0]['open'])
+            buy_date_obj = buy_day_data.iloc[0]['date']
+            if isinstance(buy_date_obj, pd.Timestamp):
+                buy_date_raw = buy_date_obj.strftime('%Y-%m-%d')
+            else:
+                buy_date_raw = str(buy_date_obj).split()[0]
+            buy_date = f"{buy_date_raw}（开盘）"
+            quantity = int(buy_amount_per_stock / buy_price / 100) * 100
+            actual_buy_amount = quantity * buy_price
+            
+            # 记录买入
+            buy_records.append({
+                'code': code,
+                'name': name,
+                'buyDate': buy_date,
+                'buyPrice': buy_price,
+                'quantity': quantity,
+                'buyAmount': actual_buy_amount,
+                'selection_reasons': stock.get('selection_reasons', {})
+            })
+            
+            # 从买入日的下一天开始检查卖出条件
+            buy_day_index = buy_day_data.index[0]
+            sell_price = None
+            sell_date = None
+            sell_reason = None
+            
+            # 检查从买入日到统计日的数据
+            for i in range(buy_day_index + 1, len(kline_df)):
+                day_data = kline_df.iloc[i]
+                date_obj = day_data['date']
+                if isinstance(date_obj, pd.Timestamp):
+                    current_date = date_obj.strftime('%Y-%m-%d')
+                else:
+                    current_date = str(date_obj).split()[0]
+                current_close = float(day_data['close'])
+                current_low = float(day_data['low'])
+                current_high = float(day_data['high'])
+                
+                return_rate = ((current_close - buy_price) / buy_price) * 100
+                
+                # 检查止损
+                if request.use_stop_loss:
+                    low_return_rate = ((current_low - buy_price) / buy_price) * 100
+                    if low_return_rate <= request.stop_loss_percent:
+                        sell_price = buy_price * (1 + request.stop_loss_percent / 100)
+                        sell_date = f"{current_date}（止损）"
+                        sell_reason = '止损'
+                        break
+                
+                # 检查止盈
+                if request.use_take_profit:
+                    high_return_rate = ((current_high - buy_price) / buy_price) * 100
+                    if high_return_rate >= request.take_profit_percent:
+                        sell_price = buy_price * (1 + request.take_profit_percent / 100)
+                        sell_date = f"{current_date}（止盈）"
+                        sell_reason = '止盈'
+                        break
+                
+                # 统计日卖出
+                if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
+                    sell_price = current_close
+                    sell_date = f"{current_date}（收盘）"
+                    sell_reason = '统计日卖出'
+                    break
+            
+            # 如果没有卖出
+            if sell_price is None:
+                if len(kline_df) > 0:
+                    last_day = kline_df.iloc[-1]
+                    sell_price = float(last_day['close'])
+                    last_date_obj = last_day['date']
+                    if isinstance(last_date_obj, pd.Timestamp):
+                        last_date = last_date_obj.strftime('%Y-%m-%d')
+                    else:
+                        last_date = str(last_date_obj).split()[0]
+                    sell_date = f"{last_date}（收盘）"
+                    sell_reason = '统计日卖出'
+                else:
+                    sell_price = buy_price
+                    sell_date = f"{buy_date_raw}（未卖出）"
+                    sell_reason = '未卖出'
+            
+            # 计算盈亏
+            sell_amount = quantity * sell_price
+            profit = sell_amount - actual_buy_amount
+            final_return_rate = ((sell_price - buy_price) / buy_price) * 100
+            
+            # 记录卖出
+            sell_records.append({
+                'code': code,
             'name': name,
             'buyDate': buy_date,
             'sellDate': sell_date,
@@ -1895,6 +2077,7 @@ class BatchBacktestRequest(BaseModel):
     backtest_date: str  # 回测日（截止日），格式：YYYY-MM-DD
     stat_date: str  # 统计日，格式：YYYY-MM-DD
     buy_strategy: str = "fixed_amount"  # 买入策略
+    initial_capital: Optional[float] = 100000  # 初始资金（用于平均分配策略）
     selected_stocks: List[Dict[str, Any]]  # 选中的股票列表
     profit_loss_combinations: List[Dict[str, Any]]  # 止盈止损组合列表
     # 每个组合包含: use_stop_loss, use_take_profit, stop_loss_percent, take_profit_percent
@@ -1977,6 +2160,7 @@ async def run_batch_backtest(request: BatchBacktestRequest):
                     backtest_date=request.backtest_date,
                     stat_date=request.stat_date,
                     buy_strategy=request.buy_strategy,
+                    initial_capital=request.initial_capital,
                     use_stop_loss=combination.get('use_stop_loss', False),
                     use_take_profit=combination.get('use_take_profit', False),
                     stop_loss_percent=combination.get('stop_loss_percent', -3.0),
@@ -2454,8 +2638,10 @@ async def delete_batch_scan_task(task_id: str):
 class BatchTaskBacktestRequest(BaseModel):
     """批量任务回测请求"""
     task_id: str  # 批量扫描任务ID
+    backtest_name: Optional[str] = None  # 回测名称（用于归类历史记录）
     period_stat_dates: Dict[str, str]  # 每个周期对应的统计日 { scanDate: statDate }
     buy_strategy: str = "fixed_amount"  # 买入策略
+    initial_capital: Optional[float] = 100000  # 初始资金（用于平均分配策略）
     use_stop_loss: bool = True  # 使用止损
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -2.0  # 止损百分比
@@ -2510,6 +2696,10 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
         failed = 0
         results = []
         
+        # 当前周期的初始资金（用于平均分配策略）
+        # 第一个周期使用用户设置的初始资金，后续周期使用上一个周期的结算余额
+        current_initial_capital = request.initial_capital if request.initial_capital else 100000
+        
         # 为每个扫描结果执行回测
         for idx, scan_result in enumerate(scan_results):
             try:
@@ -2536,6 +2726,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         config_dict = {
                             'backtest_date': scan_date,
                             'stat_date': None,
+                            'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
                             'use_stop_loss': request.use_stop_loss,
                             'use_take_profit': request.use_take_profit,
@@ -2580,6 +2771,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         config_dict = {
                             'backtest_date': scan_date,
                             'stat_date': stat_date_str,
+                            'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
                             'use_stop_loss': request.use_stop_loss,
                             'use_take_profit': request.use_take_profit,
@@ -2623,6 +2815,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         config_dict = {
                             'backtest_date': scan_date,
                             'stat_date': stat_date_str,
+                            'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
                             'use_stop_loss': request.use_stop_loss,
                             'use_take_profit': request.use_take_profit,
@@ -2698,13 +2891,20 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         })
                     continue
                 
-                print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
+                # 对于平均分配策略，使用当前周期的初始资金
+                # 第一个周期使用用户设置的初始资金，后续周期使用上一个周期的结算余额
+                period_initial_capital = current_initial_capital
+                if request.buy_strategy == "equal_distribution":
+                    print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}, 初始资金={period_initial_capital:.2f}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
                 
                 # 构建回测请求
                 backtest_request = BacktestRequest(
                     backtest_date=scan_date,
                     stat_date=stat_date_str,
                     buy_strategy=request.buy_strategy,
+                    initial_capital=period_initial_capital,  # 使用当前周期的初始资金
                     use_stop_loss=request.use_stop_loss,
                     use_take_profit=request.use_take_profit,
                     stop_loss_percent=request.stop_loss_percent,
@@ -2716,10 +2916,24 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 result = run_backtest_with_progress(backtest_request, progress_callback=None)
                 result_dict = result.model_dump()
                 
+                # 如果是平均分配策略，计算下一个周期的初始资金（当前周期的结算余额）
+                if request.buy_strategy == "equal_distribution":
+                    summary = result_dict.get('summary', {})
+                    total_investment = summary.get('totalInvestment', 0)
+                    total_profit = summary.get('totalProfit', 0)
+                    # 结算余额 = 总投入 + 总收益
+                    settlement_balance = total_investment + total_profit
+                    if settlement_balance > 0:
+                        current_initial_capital = settlement_balance
+                        print(f"{Fore.GREEN}[{idx + 1}/{total}] 周期结算余额: {settlement_balance:.2f} (投入: {total_investment:.2f}, 收益: {total_profit:.2f}), 下个周期初始资金: {current_initial_capital:.2f}{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.YELLOW}[{idx + 1}/{total}] 警告: 结算余额为 {settlement_balance:.2f}，下个周期将使用相同初始资金{Style.RESET_ALL}")
+                
                 # 保存回测历史，标记为批量回测
                 config_dict = {
                     'backtest_date': scan_date,
                     'stat_date': stat_date_str,
+                    'backtest_name': request.backtest_name,  # 回测名称
                     'buy_strategy': request.buy_strategy,
                     'use_stop_loss': request.use_stop_loss,
                     'use_take_profit': request.use_take_profit,
@@ -2755,6 +2969,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     config_dict = {
                         'backtest_date': scan_date,
                         'stat_date': request.period_stat_dates.get(scan_date) if scan_date else None,
+                        'backtest_name': request.backtest_name,  # 回测名称
                         'buy_strategy': request.buy_strategy,
                         'use_stop_loss': request.use_stop_loss,
                         'use_take_profit': request.use_take_profit,
@@ -2889,6 +3104,7 @@ async def retry_failed_backtest(task_id: str, history_id: str):
             backtest_date=scan_date,
             stat_date=stat_date,
             buy_strategy=config.get('buy_strategy', 'fixed_amount'),
+            initial_capital=config.get('initial_capital', 100000),
             use_stop_loss=config.get('use_stop_loss', False),
             use_take_profit=config.get('use_take_profit', False),
             stop_loss_percent=config.get('stop_loss_percent', -3.0),
@@ -2902,9 +3118,11 @@ async def retry_failed_backtest(task_id: str, history_id: str):
         
         # 更新历史记录（将失败记录更新为成功）
         config_dict = {
+            'backtest_name': config.get('backtest_name'),  # 保留回测名称
             'backtest_date': scan_date,
             'stat_date': stat_date,
             'buy_strategy': config.get('buy_strategy', 'fixed_amount'),
+            'initial_capital': config.get('initial_capital', 100000),  # 保留初始资金
             'use_stop_loss': config.get('use_stop_loss', False),
             'use_take_profit': config.get('use_take_profit', False),
             'stop_loss_percent': config.get('stop_loss_percent', -3.0),

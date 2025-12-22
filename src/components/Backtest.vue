@@ -77,100 +77,14 @@
             </div>
           </div>
 
-          <!-- 买入策略 -->
-          <div class="mb-6">
-            <h3 class="text-sm font-medium mb-3 flex items-center">
-              <i class="fas fa-shopping-cart mr-2 text-primary"></i>
-              买入策略
-            </h3>
-            <div class="bg-muted/30 p-4 rounded-md">
-              <div class="flex items-center space-x-2 mb-2">
-                <input
-                  type="radio"
-                  id="buyStrategy1"
-                  v-model="backtestConfig.buyStrategy"
-                  value="fixed_amount"
-                  class="radio"
-                />
-                <label for="buyStrategy1" class="text-sm">
-                  根据扫描结果，每只当日开盘价买入1万元
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- 卖出策略 -->
-          <div class="mb-6">
-            <h3 class="text-sm font-medium mb-3 flex items-center">
-              <i class="fas fa-sign-out-alt mr-2 text-primary"></i>
-              卖出策略
-            </h3>
-            <div class="bg-muted/30 p-4 rounded-md space-y-4">
-              <!-- 止损设置 -->
-              <div class="space-y-2">
-                <div class="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="sellStrategyStopLoss"
-                    v-model="backtestConfig.useStopLoss"
-                    class="checkbox"
-                  />
-                  <label for="sellStrategyStopLoss" class="text-sm">
-                    止损
-                  </label>
-                </div>
-                <div v-if="backtestConfig.useStopLoss" class="ml-6 flex items-center space-x-2">
-                  <label for="stopLossPercent" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
-                  <input
-                    id="stopLossPercent"
-                    v-model.number="backtestConfig.stopLossPercent"
-                    type="number"
-                    step="0.1"
-                    min="-100"
-                    max="0"
-                    class="input w-24"
-                    placeholder="-3"
-                  />
-                  <span class="text-sm text-muted-foreground">%</span>
-                  <p class="text-xs text-muted-foreground ml-2">
-                    (负数，例如：-3 表示下跌3%时止损)
-                  </p>
-                </div>
-              </div>
-              
-              <!-- 止盈设置 -->
-              <div class="space-y-2">
-                <div class="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="sellStrategyTakeProfit"
-                    v-model="backtestConfig.useTakeProfit"
-                    class="checkbox"
-                  />
-                  <label for="sellStrategyTakeProfit" class="text-sm">
-                    止盈
-                  </label>
-                </div>
-                <div v-if="backtestConfig.useTakeProfit" class="ml-6 flex items-center space-x-2">
-                  <label for="takeProfitPercent" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
-                  <input
-                    id="takeProfitPercent"
-                    v-model.number="backtestConfig.takeProfitPercent"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="1000"
-                    class="input w-24"
-                    placeholder="10"
-                  />
-                  <span class="text-sm text-muted-foreground">%</span>
-                  <p class="text-xs text-muted-foreground ml-2">
-                    (正数，例如：10 表示上涨10%时止盈)
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- 买入卖出策略 -->
+          <BuySellStrategy
+            v-model="backtestConfig"
+            unique-id="backtest"
+            :show-help-text="true"
+            stop-loss-placeholder="-3"
+            take-profit-placeholder="10"
+          />
 
           <!-- 回测股票预览 -->
           <div v-if="selectedStocks.length > 0" class="mb-6">
@@ -765,7 +679,10 @@
                   </div>
                   <div>
                     <span class="text-muted-foreground">买入策略：</span>
-                    <span>{{ selectedHistoryRecord.config.buy_strategy === 'fixed_amount' ? '固定金额' : selectedHistoryRecord.config.buy_strategy }}</span>
+                    <span>{{ selectedHistoryRecord.config.buy_strategy === 'fixed_amount' ? '固定金额' : selectedHistoryRecord.config.buy_strategy === 'equal_distribution' ? '平均分配' : selectedHistoryRecord.config.buy_strategy }}</span>
+                    <span v-if="selectedHistoryRecord.config.buy_strategy === 'equal_distribution' && selectedHistoryRecord.config.initial_capital" class="ml-2 text-muted-foreground">
+                      (初始资金: ¥{{ formatNumber(selectedHistoryRecord.config.initial_capital) }})
+                    </span>
                   </div>
                   <div v-if="selectedHistoryRecord.config.use_stop_loss">
                     <span class="text-muted-foreground">止损：</span>
@@ -1185,7 +1102,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onActivated, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import * as echarts from 'echarts/core'
@@ -1195,6 +1112,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import ThemeToggle from './ThemeToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
+import BuySellStrategy from './BuySellStrategy.vue'
 
 // 注册 ECharts 组件
 echarts.use([
@@ -1219,6 +1137,7 @@ const backtestConfig = ref({
   backtestDate: '', // 回测日，默认一周前
   statDate: '', // 统计日，默认今天
   buyStrategy: 'fixed_amount', // 买入策略
+  initialCapital: 100000, // 初始资金（用于平均分配策略）
   useStopLoss: true, // 使用止损
   useTakeProfit: true, // 使用止盈
   stopLossPercent: -2, // 止损百分比
@@ -1510,6 +1429,7 @@ async function runBacktest() {
         backtest_date: backtestConfig.value.backtestDate,
         stat_date: backtestConfig.value.statDate,
         buy_strategy: backtestConfig.value.buyStrategy,
+        initial_capital: backtestConfig.value.initialCapital,
         use_stop_loss: backtestConfig.value.useStopLoss,
         use_take_profit: backtestConfig.value.useTakeProfit,
         stop_loss_percent: backtestConfig.value.stopLossPercent,
@@ -1913,6 +1833,7 @@ function loadHistoryRecordToCurrent(record) {
     backtestConfig.value.backtestDate = record.config.backtest_date
     backtestConfig.value.statDate = record.config.stat_date
     backtestConfig.value.buyStrategy = record.config.buy_strategy || 'fixed_amount'
+    backtestConfig.value.initialCapital = record.config.initial_capital || 100000
     backtestConfig.value.useStopLoss = record.config.use_stop_loss || false
     backtestConfig.value.useTakeProfit = record.config.use_take_profit || false
     backtestConfig.value.stopLossPercent = record.config.stop_loss_percent || -3
@@ -1974,7 +1895,17 @@ function loadHistoryRecordToCurrent(record) {
     // 加载并显示回测结果数据
     if (record.result) {
       backtestResult.value = record.result
-      console.log('✓ 回测结果数据已加载')
+      // 验证summary数据
+      if (record.result.summary) {
+        console.log('✓ 回测结果数据已加载，summary:', {
+          totalStocks: record.result.summary.totalStocks,
+          totalInvestment: record.result.summary.totalInvestment,
+          totalProfit: record.result.summary.totalProfit,
+          totalReturnRate: record.result.summary.totalReturnRate
+        })
+      } else {
+        console.warn('⚠ 回测结果中没有summary数据')
+      }
     } else {
       console.warn('历史记录中没有回测结果数据')
     }
@@ -3045,7 +2976,8 @@ async function runBatchBacktest() {
     const response = await axios.post('/platform/api/backtest/batch', {
       backtest_date: batchBacktestConfig.value.backtestDate,
       stat_date: batchBacktestConfig.value.statDate,
-      buy_strategy: 'fixed_amount',
+      buy_strategy: backtestConfig.value.buyStrategy,
+      initial_capital: backtestConfig.value.initialCapital,
       selected_stocks: selectedStocks.value,
       profit_loss_combinations: batchBacktestConfig.value.profitLossCombinations.map(combo => ({
         use_stop_loss: combo.useStopLoss,
@@ -3996,6 +3928,62 @@ async function calculateStatistics() {
   }
 }
 
+// 当前正在加载的historyId，用于避免重复请求
+let currentLoadingHistoryId = null
+
+// 加载历史记录详情的函数
+async function loadHistoryRecordById(historyId) {
+  if (!historyId) {
+    console.log('loadHistoryRecordById: historyId为空，跳过')
+    return
+  }
+  
+  // 如果正在加载相同的historyId，跳过
+  if (currentLoadingHistoryId === historyId) {
+    console.log('loadHistoryRecordById: 正在加载相同的historyId，跳过重复请求:', historyId)
+    return
+  }
+  
+  currentLoadingHistoryId = historyId
+  
+  try {
+    console.log('正在加载历史记录详情，historyId:', historyId)
+    const response = await axios.get(`/platform/api/backtest/history/${historyId}`)
+    console.log('API响应:', response.data)
+    if (response.data.success) {
+      const record = response.data.data
+      // 验证数据一致性：确保 result.summary 存在
+      if (record.result && record.result.summary) {
+        console.log('✓ 历史记录详情加载成功，summary数据:', record.result.summary)
+      } else {
+        console.warn('⚠ 历史记录中没有summary数据，record.result:', record.result)
+      }
+      // 加载历史记录到当前回测配置
+      loadHistoryRecordToCurrent(record)
+    } else {
+      console.error('API返回失败:', response.data)
+      error.value = '加载回测历史详情失败'
+    }
+  } catch (e) {
+    console.error('加载回测历史详情失败:', e)
+    error.value = '加载回测历史详情失败: ' + (e.response?.data?.detail || e.message)
+  } finally {
+    currentLoadingHistoryId = null
+  }
+}
+
+// 检查并加载历史记录的函数
+async function checkAndLoadHistory() {
+  const historyId = route.query.historyId
+  console.log('检查historyId参数:', historyId, '当前路由:', route.fullPath, 'query对象:', route.query)
+  if (historyId) {
+    console.log('发现historyId，准备加载数据:', historyId)
+    await loadHistoryRecordById(historyId)
+  } else {
+    console.log('没有historyId参数，跳过加载')
+  }
+}
+
 onMounted(async () => {
   // 加载选中的股票和扫描配置
   loadSelectedStocksAndConfig()
@@ -4003,23 +3991,32 @@ onMounted(async () => {
   initDates()
   
   // 检查URL中是否有historyId参数，如果有则加载历史记录到当前回测
-  const historyId = route.query.historyId
-  if (historyId) {
-    try {
-      const response = await axios.get(`/platform/api/backtest/history/${historyId}`)
-      if (response.data.success) {
-        const record = response.data.data
-        // 加载历史记录到当前回测配置
-        loadHistoryRecordToCurrent(record)
-      } else {
-        error.value = '加载回测历史详情失败'
-      }
-    } catch (e) {
-      console.error('加载回测历史详情失败:', e)
-      error.value = '加载回测历史详情失败: ' + (e.response?.data?.detail || e.message)
-    }
-  }
+  await checkAndLoadHistory()
 })
+
+// 当组件被激活时（keepAlive组件从缓存中激活时）
+onActivated(async () => {
+  console.log('Backtest组件被激活，检查historyId参数')
+  await checkAndLoadHistory()
+})
+
+// 监听路由变化，当historyId参数变化时重新加载数据
+watch(() => route.query.historyId, async (newHistoryId, oldHistoryId) => {
+  console.log('watch触发: historyId参数变化，从', oldHistoryId, '变为', newHistoryId)
+  if (newHistoryId) {
+    console.log('watch: 准备加载新的historyId:', newHistoryId)
+    await loadHistoryRecordById(newHistoryId)
+  }
+}, { immediate: true }) // 立即执行一次
+
+// 也监听整个route对象的变化（更可靠）
+watch(() => route.fullPath, async (newPath, oldPath) => {
+  console.log('watch fullPath触发: 路由路径变化，从', oldPath, '变为', newPath)
+  if (route.query.historyId) {
+    console.log('watch fullPath: 准备加载historyId:', route.query.historyId)
+    await loadHistoryRecordById(route.query.historyId)
+  }
+}, { immediate: true }) // 立即执行一次
 
 onBeforeUnmount(() => {
   // 清理图表实例

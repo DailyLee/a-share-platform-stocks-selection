@@ -345,6 +345,23 @@
 
             <!-- 回测参数配置 -->
             <div class="space-y-4">
+              <!-- 回测名称 -->
+              <div>
+                <label class="block text-sm font-medium mb-2">
+                  <i class="fas fa-tag mr-1 text-primary"></i>
+                  回测名称 *
+                </label>
+                <input
+                  v-model="backtestConfig.backtestName"
+                  type="text"
+                  class="input w-full"
+                  placeholder="例如: 2024年Q1回测"
+                  required
+                />
+                <p class="text-xs text-muted-foreground mt-1">
+                  用于归类回测历史记录，相同名称的回测会分组显示
+                </p>
+              </div>
               <!-- 各周期统计日配置 -->
               <div>
                 <h3 class="text-sm font-medium mb-3 flex items-center">
@@ -392,94 +409,14 @@
                 </div>
               </div>
 
-              <!-- 买入策略 -->
-              <div>
-                <h3 class="text-sm font-medium mb-3 flex items-center">
-                  <i class="fas fa-shopping-cart mr-2 text-primary"></i>
-                  买入策略
-                </h3>
-                <div class="bg-muted/30 p-4 rounded-md">
-                  <div class="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      id="batchBuyStrategy1"
-                      v-model="backtestConfig.buyStrategy"
-                      value="fixed_amount"
-                      class="radio"
-                    />
-                    <label for="batchBuyStrategy1" class="text-sm">
-                      根据扫描结果，每只当日开盘价买入1万元
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 卖出策略 -->
-              <div>
-                <h3 class="text-sm font-medium mb-3 flex items-center">
-                  <i class="fas fa-sign-out-alt mr-2 text-primary"></i>
-                  卖出策略
-                </h3>
-                <div class="bg-muted/30 p-4 rounded-md space-y-4">
-                  <!-- 止损设置 -->
-                  <div class="space-y-2">
-                    <div class="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="batchSellStrategyStopLoss"
-                        v-model="backtestConfig.useStopLoss"
-                        class="checkbox"
-                      />
-                      <label for="batchSellStrategyStopLoss" class="text-sm">
-                        止损
-                      </label>
-                    </div>
-                    <div v-if="backtestConfig.useStopLoss" class="ml-6 flex items-center space-x-2">
-                      <label for="batchStopLossPercent" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
-                      <input
-                        id="batchStopLossPercent"
-                        v-model.number="backtestConfig.stopLossPercent"
-                        type="number"
-                        step="0.1"
-                        min="-100"
-                        max="0"
-                        class="input w-24"
-                        placeholder="-2"
-                      />
-                      <span class="text-sm text-muted-foreground">%</span>
-                    </div>
-                  </div>
-                  
-                  <!-- 止盈设置 -->
-                  <div class="space-y-2">
-                    <div class="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="batchSellStrategyTakeProfit"
-                        v-model="backtestConfig.useTakeProfit"
-                        class="checkbox"
-                      />
-                      <label for="batchSellStrategyTakeProfit" class="text-sm">
-                        止盈
-                      </label>
-                    </div>
-                    <div v-if="backtestConfig.useTakeProfit" class="ml-6 flex items-center space-x-2">
-                      <label for="batchTakeProfitPercent" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
-                      <input
-                        id="batchTakeProfitPercent"
-                        v-model.number="backtestConfig.takeProfitPercent"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1000"
-                        class="input w-24"
-                        placeholder="18"
-                      />
-                      <span class="text-sm text-muted-foreground">%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <!-- 买入卖出策略 -->
+              <BuySellStrategy
+                v-model="backtestConfig"
+                unique-id="batch"
+                :show-help-text="false"
+                stop-loss-placeholder="-2"
+                take-profit-placeholder="18"
+              />
 
               <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <p class="text-sm text-blue-700 dark:text-blue-400">
@@ -542,17 +479,20 @@
             <p>暂无回测历史记录</p>
           </div>
           <div v-else class="space-y-4">
-            <div v-for="(group, dateKey) in groupedBacktestHistory" :key="dateKey" class="space-y-2">
+            <div v-for="(group, nameKey) in groupedBacktestHistory" :key="nameKey" class="space-y-2">
               <div 
                 class="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-t-lg border-b border-border cursor-pointer hover:bg-muted/50 transition-colors"
-                @click="toggleDateExpanded(dateKey)"
+                @click="toggleDateExpanded(nameKey)"
               >
                 <div class="text-sm font-semibold text-foreground flex items-center flex-1 flex-wrap gap-2">
                   <i 
-                    :class="['fas mr-2 text-primary transition-transform', expandedDates.has(dateKey) ? 'fa-chevron-down' : 'fa-chevron-right']"
+                    :class="['fas mr-2 text-primary transition-transform', expandedDates.has(nameKey) ? 'fa-chevron-down' : 'fa-chevron-right']"
                   ></i>
-                  <i class="fas fa-calendar-alt mr-2 text-primary"></i>
-                  <span>{{ dateKey }}</span>
+                  <i class="fas fa-tag mr-2 text-primary"></i>
+                  <span>{{ nameKey }}</span>
+                  <span class="text-xs text-muted-foreground font-normal">
+                    ({{ group.length }}条记录)
+                  </span>
                   <span v-if="getDateConfig(group)" class="text-xs text-muted-foreground font-normal flex items-center gap-2 ml-2">
                     <span v-if="getDateConfig(group).useStopLoss" class="flex items-center">
                       <i class="fas fa-arrow-down mr-1 text-blue-600 dark:text-blue-400"></i>
@@ -564,15 +504,24 @@
                     </span>
                   </span>
                 </div>
-                <button
-                  @click.stop="openDateStatistics(group)"
-                  class="btn btn-primary px-3 py-1 text-xs"
-                >
-                  <i class="fas fa-chart-bar mr-1"></i>
-                  数据统计
-                </button>
+                <div class="flex gap-2">
+                  <button
+                    @click.stop="openDateStatistics(group)"
+                    class="btn btn-primary px-3 py-1 text-xs"
+                  >
+                    <i class="fas fa-chart-bar mr-1"></i>
+                    数据统计
+                  </button>
+                  <button
+                    @click.stop="showDeleteBacktestNameConfirm(nameKey, group)"
+                    class="btn btn-danger px-3 py-1 text-xs"
+                  >
+                    <i class="fas fa-trash mr-1"></i>
+                    删除全部
+                  </button>
+                </div>
               </div>
-              <div v-show="expandedDates.has(dateKey)" class="space-y-1">
+              <div v-show="expandedDates.has(nameKey)" class="space-y-1">
                 <div
                   v-for="record in group"
                   :key="record.id"
@@ -622,6 +571,16 @@
                       <i class="fas fa-eye mr-1"></i>
                       查看
                     </button>
+                    <button
+                      @click="showDeleteBacktestHistoryConfirm(record.id)"
+                      :disabled="deletingHistoryId === record.id"
+                      class="btn btn-danger px-3 py-1 text-sm"
+                      :class="{ 'opacity-50 cursor-not-allowed': deletingHistoryId === record.id }"
+                    >
+                      <i v-if="deletingHistoryId === record.id" class="fas fa-spinner fa-spin mr-1"></i>
+                      <i v-else class="fas fa-trash mr-1"></i>
+                      {{ deletingHistoryId === record.id ? '删除中...' : '删除' }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -630,6 +589,30 @@
         </div>
       </div>
     </div>
+
+    <!-- 确认对话框 - 删除回测历史记录 -->
+    <ConfirmDialog
+      :show="showDeleteBacktestHistoryConfirmDialog"
+      @update:show="showDeleteBacktestHistoryConfirmDialog = $event"
+      title="确认删除回测历史记录"
+      message="确定要删除这条回测历史记录吗？删除后将无法恢复。"
+      confirm-text="确认删除"
+      cancel-text="取消"
+      type="danger"
+      @confirm="handleDeleteBacktestHistoryConfirm"
+    />
+
+    <!-- 确认对话框 - 删除同名称的所有回测历史记录 -->
+    <ConfirmDialog
+      :show="showDeleteBacktestNameConfirmDialog"
+      @update:show="showDeleteBacktestNameConfirmDialog = $event"
+      title="确认删除回测历史记录"
+      :message="`确定要删除回测名称「${pendingDeleteBacktestName}」下的所有 ${pendingDeleteBacktestNameRecords.length} 条回测历史记录吗？删除后将无法恢复。`"
+      confirm-text="确认删除"
+      cancel-text="取消"
+      type="danger"
+      @confirm="handleDeleteBacktestNameConfirm"
+    />
 
     <!-- 批量回测数据统计对话框 -->
     <BacktestStatistics
@@ -649,6 +632,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import ParameterTutorial from './parameter-help/ParameterTutorial.vue'
 import TaskDetails from './batch-scan/TaskDetails.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
+import BuySellStrategy from './BuySellStrategy.vue'
 
 const router = useRouter()
 
@@ -714,7 +698,9 @@ const backtestLoading = ref(false)
 const loadingBacktestTaskId = ref(null) // 正在加载回测的任务ID
 const scanResultsForBacktest = ref([])
 const backtestConfig = ref({
-  buyStrategy: 'fixed_amount',
+  backtestName: '', // 回测名称
+  buyStrategy: 'equal_distribution', // 默认使用平均分配策略
+  initialCapital: 100000,
   useStopLoss: true,
   useTakeProfit: true,
   stopLossPercent: -2.0,
@@ -730,26 +716,53 @@ const showBacktestStatisticsDialog = ref(false)
 const selectedDateRecords = ref([]) // 选中日期的记录，用于数据统计
 const retryingHistoryId = ref(null)
 const expandedDates = ref(new Set()) // 展开的日期集合
+const showDeleteBacktestHistoryConfirmDialog = ref(false)
+const pendingDeleteHistoryId = ref(null)
+const deletingHistoryId = ref(null)
+const showDeleteBacktestNameConfirmDialog = ref(false)
+const pendingDeleteBacktestName = ref(null)
+const pendingDeleteBacktestNameRecords = ref([])
+const deletingBacktestName = ref(null)
 
-// 按创建时间分组的历史记录
+// 获取回测名称（如果没有名称，使用日期时间）
+const getBacktestName = (record) => {
+  if (record.backtestName && record.backtestName.trim() !== '') {
+    return record.backtestName
+  }
+  // 使用创建日期时间作为名称
+  const date = new Date(record.createdAt)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 按回测名称分组的历史记录（但按日期排序）
 const groupedBacktestHistory = computed(() => {
   const groups = {}
   backtestHistory.value.forEach(record => {
-    const date = new Date(record.createdAt)
-    const dateKey = date.toLocaleDateString('zh-CN', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    })
-    if (!groups[dateKey]) {
-      groups[dateKey] = []
+    const name = getBacktestName(record)
+    if (!groups[name]) {
+      groups[name] = []
     }
-    groups[dateKey].push(record)
+    groups[name].push(record)
   })
-  // 按日期倒序排序（最新的在前）
+  
+  // 对每个组内的记录按创建时间倒序排序（最新的在前）
+  Object.keys(groups).forEach(name => {
+    groups[name].sort((a, b) => {
+      const dateA = new Date(a.createdAt)
+      const dateB = new Date(b.createdAt)
+      return dateB - dateA
+    })
+  })
+  
+  // 按组内第一条记录的创建时间倒序排序（最新的在前）
   const sortedGroups = {}
   Object.keys(groups).sort((a, b) => {
-    // 将日期字符串转换为Date对象进行比较
     const dateA = new Date(groups[a][0].createdAt)
     const dateB = new Date(groups[b][0].createdAt)
     return dateB - dateA
@@ -758,6 +771,14 @@ const groupedBacktestHistory = computed(() => {
   })
   return sortedGroups
 })
+
+// 根据回测名称获取所有记录
+const getRecordsByBacktestName = (nameKey) => {
+  return backtestHistory.value.filter(record => {
+    const recordName = getBacktestName(record)
+    return recordName === nameKey
+  })
+}
 
 const maxDate = computed(() => {
   const today = new Date()
@@ -1074,6 +1095,7 @@ const openBacktestDialog = async (task) => {
   selectedTaskForBacktest.value = task
   scanResultsForBacktest.value = []
   backtestConfig.value.periodStatDates = {}
+  backtestConfig.value.backtestName = '' // 重置回测名称
   loadingBacktestTaskId.value = task.id
   backtestLoading.value = true
   
@@ -1107,6 +1129,10 @@ const openBacktestDialog = async (task) => {
 }
 
 const canRunBatchBacktest = computed(() => {
+  // 检查回测名称是否填写
+  if (!backtestConfig.value.backtestName || backtestConfig.value.backtestName.trim() === '') {
+    return false
+  }
   // 检查所有周期是否都设置了统计日
   if (scanResultsForBacktest.value.length === 0) {
     return false
@@ -1119,7 +1145,11 @@ const canRunBatchBacktest = computed(() => {
 
 const runBatchBacktest = async () => {
   if (!canRunBatchBacktest.value) {
-    alert('请为所有周期设置统计日')
+    if (!backtestConfig.value.backtestName || backtestConfig.value.backtestName.trim() === '') {
+      alert('请填写回测名称')
+    } else {
+      alert('请为所有周期设置统计日')
+    }
     return
   }
 
@@ -1134,8 +1164,10 @@ const runBatchBacktest = async () => {
       `/platform/api/batch-scan/tasks/${selectedTaskForBacktest.value.id}/backtest`,
       {
         task_id: selectedTaskForBacktest.value.id,
+        backtest_name: backtestConfig.value.backtestName.trim(),
         period_stat_dates: backtestConfig.value.periodStatDates,
         buy_strategy: backtestConfig.value.buyStrategy,
+        initial_capital: backtestConfig.value.initialCapital,
         use_stop_loss: backtestConfig.value.useStopLoss,
         use_take_profit: backtestConfig.value.useTakeProfit,
         stop_loss_percent: backtestConfig.value.stopLossPercent,
@@ -1164,15 +1196,9 @@ const openBacktestHistoryDialog = async () => {
   if (!selectedTaskForBacktest.value) return
   
   showBacktestHistoryDialog.value = true
-  // 默认展开所有日期
+  // 默认折叠所有回测名称分组
   expandedDates.value.clear()
   await loadBacktestHistory()
-  // 加载完成后展开所有日期
-  nextTick(() => {
-    Object.keys(groupedBacktestHistory.value).forEach(dateKey => {
-      expandedDates.value.add(dateKey)
-    })
-  })
 }
 
 const loadBacktestHistory = async () => {
@@ -1201,11 +1227,11 @@ const viewBacktestHistoryDetail = (historyId) => {
   router.push(`/platform/backtest?historyId=${historyId}`)
 }
 
-const toggleDateExpanded = (dateKey) => {
-  if (expandedDates.value.has(dateKey)) {
-    expandedDates.value.delete(dateKey)
+const toggleDateExpanded = (nameKey) => {
+  if (expandedDates.value.has(nameKey)) {
+    expandedDates.value.delete(nameKey)
   } else {
-    expandedDates.value.add(dateKey)
+    expandedDates.value.add(nameKey)
   }
 }
 
@@ -1260,6 +1286,82 @@ const retryFailedBacktest = async (historyId) => {
     alert('重试失败: ' + (error.response?.data?.detail || error.message))
   } finally {
     retryingHistoryId.value = null
+  }
+}
+
+const showDeleteBacktestHistoryConfirm = (historyId) => {
+  pendingDeleteHistoryId.value = historyId
+  showDeleteBacktestHistoryConfirmDialog.value = true
+}
+
+const handleDeleteBacktestHistoryConfirm = async () => {
+  const historyId = pendingDeleteHistoryId.value
+  if (!historyId) return
+  
+  deletingHistoryId.value = historyId
+  try {
+    const response = await axios.delete(`/platform/api/backtest/history/${historyId}`)
+    if (response.data.success) {
+      // 从列表中移除
+      backtestHistory.value = backtestHistory.value.filter(r => r.id !== historyId)
+      alert('删除成功！')
+    } else {
+      alert('删除失败: ' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('删除回测历史记录失败:', error)
+    alert('删除失败: ' + (error.response?.data?.detail || error.message))
+  } finally {
+    deletingHistoryId.value = null
+    pendingDeleteHistoryId.value = null
+    showDeleteBacktestHistoryConfirmDialog.value = false
+  }
+}
+
+const showDeleteBacktestNameConfirm = (nameKey, records) => {
+  // 确保获取所有同名称的记录（包括可能不在当前分组中的）
+  const allRecords = getRecordsByBacktestName(nameKey)
+  pendingDeleteBacktestName.value = nameKey
+  pendingDeleteBacktestNameRecords.value = allRecords
+  showDeleteBacktestNameConfirmDialog.value = true
+}
+
+const handleDeleteBacktestNameConfirm = async () => {
+  const nameKey = pendingDeleteBacktestName.value
+  const records = pendingDeleteBacktestNameRecords.value
+  if (!nameKey || !records || records.length === 0) return
+  
+  deletingBacktestName.value = nameKey
+  try {
+    // 批量删除所有记录
+    const deletePromises = records.map(record => 
+      axios.delete(`/platform/api/backtest/history/${record.id}`)
+    )
+    
+    const results = await Promise.allSettled(deletePromises)
+    const successCount = results.filter(r => r.status === 'fulfilled' && r.value.data.success).length
+    const failCount = results.length - successCount
+    
+    // 从列表中移除已成功删除的记录
+    const deletedIds = results
+      .map((r, index) => r.status === 'fulfilled' && r.value.data.success ? records[index].id : null)
+      .filter(id => id !== null)
+    
+    backtestHistory.value = backtestHistory.value.filter(r => !deletedIds.includes(r.id))
+    
+    if (failCount === 0) {
+      alert(`删除成功！已删除 ${successCount} 条记录。`)
+    } else {
+      alert(`部分删除成功：成功 ${successCount} 条，失败 ${failCount} 条。`)
+    }
+  } catch (error) {
+    console.error('批量删除回测历史记录失败:', error)
+    alert('删除失败: ' + (error.response?.data?.detail || error.message))
+  } finally {
+    deletingBacktestName.value = null
+    pendingDeleteBacktestName.value = null
+    pendingDeleteBacktestNameRecords.value = []
+    showDeleteBacktestNameConfirmDialog.value = false
   }
 }
 </script>

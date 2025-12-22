@@ -261,21 +261,21 @@
                   <div class="text-base sm:text-lg font-bold">{{ statisticsResult.totalRecords }}</div>
                 </div>
                 <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">盈利股票数</div>
-                  <div class="text-base sm:text-lg font-bold text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</div>
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">盈利/亏损股票数</div>
+                  <div class="text-base sm:text-lg font-bold">
+                    <span class="text-red-600 dark:text-red-400">{{ statisticsResult.profitableRecords }}</span>
+                    <span class="text-muted-foreground mx-1">/</span>
+                    <span class="text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</span>
+                  </div>
                 </div>
-                <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">亏损股票数</div>
-                  <div class="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">{{ statisticsResult.lossRecords }}</div>
-                </div>
-              </div>
-              <div class="grid grid-cols-3 gap-1.5">
                 <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体胜率</div>
                   <div class="text-base sm:text-lg font-bold" :class="statisticsResult.winRate >= 50 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                     {{ formatPercent(statisticsResult.winRate) }}%
                   </div>
                 </div>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
                 <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">整体收益率</div>
                   <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
@@ -288,12 +288,12 @@
                     {{ statisticsResult.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(statisticsResult.totalProfit) }}
                   </div>
                 </div>
-              </div>
-              <div class="grid grid-cols-3 gap-1.5">
                 <div class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">总投入资金</div>
                   <div class="text-base sm:text-lg font-bold truncate">¥{{ formatNumber(statisticsResult.totalInvestment) }}</div>
                 </div>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
                 <div v-if="statisticsResult.totalMarketReturnRate !== null && statisticsResult.totalMarketReturnRate !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">大盘收益率</div>
                   <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalMarketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
@@ -304,6 +304,12 @@
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">超额收益</div>
                   <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalExcessReturn >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
                     {{ statisticsResult.totalExcessReturn >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalExcessReturn) }}%
+                  </div>
+                </div>
+                <div v-if="statisticsResult.annualizedReturnRate !== null && statisticsResult.annualizedReturnRate !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">年化收益率</div>
+                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.annualizedReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ statisticsResult.annualizedReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.annualizedReturnRate) }}%
                   </div>
                 </div>
               </div>
@@ -608,6 +614,48 @@ const router = useRouter()
   function formatPercent(num) {
     if (num === null || num === undefined) return '0.00'
     return Number(num).toFixed(2)
+  }
+
+  // 判断是否是交易日（排除周末，不包括节假日）
+  function isTradingDay(dateStr) {
+    try {
+      const date = new Date(dateStr)
+      const weekday = date.getDay() // 0=周日, 1=周一, ..., 6=周六
+      return weekday >= 1 && weekday <= 5 // 周一到周五是交易日
+    } catch (e) {
+      return false
+    }
+  }
+
+  // 计算两个日期之间的交易日数量
+  function countTradingDays(startDateStr, endDateStr) {
+    try {
+      const startDate = new Date(startDateStr)
+      const endDate = new Date(endDateStr)
+      
+      if (startDate > endDate) {
+        return 0
+      }
+      
+      let tradingDays = 0
+      const currentDate = new Date(startDate)
+      
+      // 遍历从开始日期到结束日期的每一天
+      while (currentDate <= endDate) {
+        if (isTradingDay(currentDate.toISOString().split('T')[0])) {
+          tradingDays++
+        }
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+      
+      return Math.max(1, tradingDays) // 至少返回1，避免除零错误
+    } catch (e) {
+      // 如果计算失败，返回日历天数作为后备
+      const startDate = new Date(startDateStr)
+      const endDate = new Date(endDateStr)
+      const daysDiff = Math.max(1, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)))
+      return daysDiff
+    }
   }
   
   // 切换周期展开状态
@@ -1542,6 +1590,45 @@ const router = useRouter()
         totalExcessReturn = totalReturnRate - totalMarketReturnRate
       }
 
+      // 计算年化收益率
+      // 找到最早的回测日期和最晚的统计日期
+      let earliestBacktestDate = null
+      let latestStatDate = null
+      
+      filteredRecords.forEach(record => {
+        const config = record.config || {}
+        const backtestDate = config.backtest_date
+        const statDate = config.stat_date
+        
+        if (backtestDate) {
+          if (!earliestBacktestDate || backtestDate < earliestBacktestDate) {
+            earliestBacktestDate = backtestDate
+          }
+        }
+        
+        if (statDate) {
+          if (!latestStatDate || statDate > latestStatDate) {
+            latestStatDate = statDate
+          }
+        }
+      })
+      
+      let annualizedReturnRate = null
+      if (earliestBacktestDate && latestStatDate && totalReturnRate !== null) {
+        // 计算交易日数量（排除周末和节假日）
+        const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
+        
+        // 计算年化收益率：使用复利公式 (1 + 总收益率/100)^(250/交易日数) - 1
+        // 一年大约有250个交易日（365天 - 52周*2天周末 - 约10-15个节假日）
+        if (tradingDays > 0) {
+          const totalReturnDecimal = totalReturnRate / 100
+          const tradingDaysPerYear = 250 // 一年大约250个交易日
+          // 使用复利公式计算年化收益率，基于交易日
+          const annualizedMultiplier = tradingDaysPerYear / tradingDays
+          annualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
+        }
+      }
+
       // 按周期分组统计
       const periodGroups = groupByPeriod(recordDetails)
       const periodStats = periodGroups.map((group, index) => {
@@ -1637,6 +1724,7 @@ const router = useRouter()
         totalReturnRate,
         totalMarketReturnRate,  // 整体大盘收益率
         totalExcessReturn,  // 整体超额收益
+        annualizedReturnRate,  // 年化收益率
         periodStats: periodStats,
         filteredRecords: recordDetails
       }
