@@ -23,12 +23,17 @@
                 @click="statisticsFiltersExpanded = !statisticsFiltersExpanded"
                 class="text-muted-foreground hover:text-foreground transition-colors"
                 title="收起/展开筛选条件"
+                :disabled="dataLoading"
               >
                 <i :class="statisticsFiltersExpanded ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
               </button>
               <h3 class="text-sm font-semibold flex items-center">
                 <i class="fas fa-filter mr-1 text-primary"></i>
                 筛选条件
+                <span v-if="dataLoading" class="ml-2 text-xs text-muted-foreground">
+                  <i class="fas fa-spinner fa-spin mr-1"></i>
+                  加载中...
+                </span>
               </h3>
             </div>
             <div class="flex items-center gap-2">
@@ -36,7 +41,7 @@
                 v-if="allStocksDataLoaded"
                 @click="calculateStatistics"
                 class="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-xs"
-                :disabled="statisticsLoading"
+                :disabled="statisticsLoading || dataLoading"
               >
                 <i v-if="statisticsLoading" class="fas fa-spinner fa-spin mr-1"></i>
                 <i v-else class="fas fa-filter mr-1"></i>
@@ -44,7 +49,11 @@
               </button>
             </div>
           </div>
-          <div v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div v-if="dataLoading" class="text-center py-4">
+            <i class="fas fa-spinner fa-spin text-2xl mb-2 text-primary"></i>
+            <p class="text-muted-foreground text-sm">正在加载数据...</p>
+          </div>
+          <div v-else v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <!-- 平台期 -->
             <div>
               <label class="block text-xs font-medium mb-1">平台期</label>
@@ -231,7 +240,12 @@
             <i class="fas fa-calculator mr-1 text-primary"></i>
             统计结果
           </h3>
-          <div v-if="statisticsLoading" class="text-center py-4 flex-shrink-0">
+          <div v-if="dataLoading" class="text-center py-8 flex-shrink-0">
+            <i class="fas fa-spinner fa-spin text-3xl mb-3 text-primary"></i>
+            <p class="text-muted-foreground text-sm">数据加载中...</p>
+            <p class="text-xs text-muted-foreground mt-1">正在获取回测历史记录详情</p>
+          </div>
+          <div v-else-if="statisticsLoading" class="text-center py-4 flex-shrink-0">
             <i class="fas fa-spinner fa-spin text-xl mb-2 text-primary"></i>
             <p class="text-muted-foreground text-sm">计算中...</p>
           </div>
