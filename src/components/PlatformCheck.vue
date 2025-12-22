@@ -33,18 +33,33 @@
             输入股票代码
           </h2>
           <div class="flex flex-col sm:flex-row gap-4 sm:items-start">
-            <div class="flex-grow">
-              <input
-                v-model="stockCode"
-                @keyup.enter="checkStock"
-                class="input w-full"
-                type="text"
-                placeholder="例如: sh.600000 或 sz.000001"
-                :disabled="loading"
-              />
-              <p class="text-xs text-muted-foreground mt-2">
-                请输入完整的股票代码，如：sh.600000（上海）或 sz.000001（深圳）
-              </p>
+            <div class="flex-grow space-y-4">
+              <div>
+                <input
+                  v-model="stockCode"
+                  @keyup.enter="checkStock"
+                  class="input w-full"
+                  type="text"
+                  placeholder="例如: sh.600000 或 sz.000001"
+                  :disabled="loading"
+                />
+                <p class="text-xs text-muted-foreground mt-2">
+                  请输入完整的股票代码，如：sh.600000（上海）或 sz.000001（深圳）
+                </p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">查询日期</label>
+                <input
+                  v-model="queryDate"
+                  type="date"
+                  class="input w-full"
+                  :max="maxDate"
+                  :disabled="loading"
+                />
+                <p class="text-xs text-muted-foreground mt-1">
+                  选择查询日期，默认为今天
+                </p>
+              </div>
             </div>
             <button
               @click="checkStock"
@@ -695,11 +710,18 @@ import ThemeToggle from './ThemeToggle.vue'
 const router = useRouter()
 const route = useRoute()
 const stockCode = ref('')
+const queryDate = ref('')
 const loading = ref(false)
 const error = ref(null)
 const result = ref(null)
 const isDarkMode = ref(false)
 const selectedDay = ref(null)
+
+// 计算最大日期（今天）
+const maxDate = computed(() => {
+  const today = new Date()
+  return today.toISOString().split('T')[0]
+})
 
 // 计算属性：检查是否有有效的涨幅百分比
 const hasValidChangePercent = computed(() => {
@@ -907,9 +929,16 @@ async function checkStock() {
   selectedDay.value = null
 
   try {
-    const response = await axios.post('/platform/api/platform/check', {
+    const requestData = {
       code: stockCode.value.trim()
-    })
+    }
+    
+    // 如果设置了查询日期，添加到请求中
+    if (queryDate.value && queryDate.value.trim()) {
+      requestData.query_date = queryDate.value.trim()
+    }
+    
+    const response = await axios.post('/platform/api/platform/check', requestData)
 
     result.value = response.data
   } catch (e) {
@@ -962,6 +991,8 @@ provide('toggleDarkMode', toggleDarkMode)
 // 处理股票代码参数并执行分析
 function handleStockCodeFromRoute() {
   const codeFromRoute = route.query.code
+  const dateFromRoute = route.query.date
+  
   if (codeFromRoute) {
     const code = String(codeFromRoute).trim()
     console.log('从路由参数获取股票代码:', code, '当前stockCode:', stockCode.value)
@@ -969,15 +1000,25 @@ function handleStockCodeFromRoute() {
     // 只有当代码不同时才更新和执行检查，避免重复请求
     if (code !== stockCode.value) {
       stockCode.value = code
+      
+      // 如果有查询日期参数，设置查询日期
+      if (dateFromRoute) {
+        queryDate.value = String(dateFromRoute).trim()
+      }
+      
       // 自动执行检查
+      checkStock()
+    } else if (dateFromRoute && String(dateFromRoute).trim() !== queryDate.value) {
+      // 如果代码相同但日期不同，更新日期并重新检查
+      queryDate.value = String(dateFromRoute).trim()
       checkStock()
     }
   }
 }
 
 // 监听路由变化，处理股票代码参数
-watch(() => route.query.code, (newCode, oldCode) => {
-  console.log('路由参数变化:', { newCode, oldCode })
+watch(() => [route.query.code, route.query.date], ([newCode, newDate], [oldCode, oldDate]) => {
+  console.log('路由参数变化:', { newCode, newDate, oldCode, oldDate })
   if (newCode) {
     handleStockCodeFromRoute()
   }
@@ -999,7 +1040,12 @@ onMounted(() => {
     document.documentElement.classList.add('dark')
   }
   
-  // 检查URL查询参数中是否有股票代码
+  // 初始化查询日期为今天
+  if (!queryDate.value) {
+    queryDate.value = maxDate.value
+  }
+  
+  // 检查URL查询参数中是否有股票代码和日期
   handleStockCodeFromRoute()
 })
 </script>

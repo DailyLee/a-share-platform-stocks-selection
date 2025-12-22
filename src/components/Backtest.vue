@@ -1418,12 +1418,19 @@ function toggleSelectAll() {
 
 // 跳转到单股检查页面
 function goToStockCheck(stock) {
+  const query = {
+    code: stock.code,
+    from: 'backtest'
+  }
+  
+  // 如果有回测日期，添加到查询参数中
+  if (backtestConfig.value.backtestDate) {
+    query.date = backtestConfig.value.backtestDate
+  }
+  
   router.push({
     path: '/platform/check',
-    query: {
-      code: stock.code,
-      from: 'backtest'
-    }
+    query: query
   })
 }
 

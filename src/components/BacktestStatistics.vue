@@ -42,16 +42,6 @@
                 <i v-else class="fas fa-filter mr-1"></i>
                 {{ statisticsLoading ? '筛选中...' : '筛选' }}
               </button>
-              <button
-                @click="loadAllData(true)"
-                class="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-xs"
-                :disabled="dataLoading"
-              >
-                <i v-if="dataLoading" class="fas fa-spinner fa-spin mr-1"></i>
-                <i v-else-if="allStocksDataLoaded" class="fas fa-sync-alt mr-1"></i>
-                <i v-else class="fas fa-download mr-1"></i>
-                {{ dataLoading ? '加载中...' : (allStocksDataLoaded ? '重新加载' : '加载数据') }}
-              </button>
             </div>
           </div>
           <div v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -291,85 +281,84 @@
               </div>
             </div>
   
-            <!-- 筛选出的股票详情 -->
-            <div v-if="statisticsResult.filteredRecords && statisticsResult.filteredRecords.length > 0" class="mt-2 flex-shrink-0">
-              <div class="flex items-center justify-between mb-2">
-                <h4 class="text-xs sm:text-sm font-semibold flex items-center">
-                  <i class="fas fa-list mr-1 text-primary"></i>
-                  股票详情
-                </h4>
-                <button
-                  @click="showStockDetails = !showStockDetails"
-                  class="px-3 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors text-xs"
-                >
-                  <i :class="[showStockDetails ? 'fas fa-chevron-up' : 'fas fa-chevron-down', 'mr-1']"></i>
-                  {{ showStockDetails ? '收起' : '展开' }}
-                </button>
-              </div>
-              <div v-show="showStockDetails" class="space-y-2 sm:space-y-4 -mx-2 sm:mx-0 px-2 sm:px-0">
+            <!-- 周期统计 -->
+            <div v-if="statisticsResult.periodStats && statisticsResult.periodStats.length > 0" class="mt-2 flex-shrink-0">
+              <h4 class="text-xs sm:text-sm font-semibold mb-2 flex items-center">
+                <i class="fas fa-calendar-alt mr-1 text-primary"></i>
+                周期统计
+              </h4>
+              <div class="space-y-2">
                 <div 
-                  v-for="(record, index) in statisticsResult.filteredRecords" 
+                  v-for="(periodStat, index) in statisticsResult.periodStats" 
                   :key="index"
                   class="border border-border rounded-md overflow-hidden"
                 >
+                  <!-- 周期统计头部 -->
                   <div class="bg-muted/50 p-2 sm:p-3 border-b border-border">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
-                      <span class="text-xs sm:text-sm font-medium">扫描日期: {{ record.scanDate }}</span>
-                      <span class="text-xs text-muted-foreground">共 {{ record.stocks ? record.stocks.length : 0 }} 只股票</span>
+                    <div class="flex items-center justify-between">
+                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">周期</div>
+                          <div class="text-sm font-medium">{{ periodStat.periodLabel }}</div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">股票数</div>
+                          <div class="text-sm font-medium">{{ periodStat.stockCount }}</div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">收益</div>
+                          <div class="text-sm font-medium" :class="periodStat.totalProfit >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                            {{ periodStat.totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(periodStat.totalProfit) }}
+                          </div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">收益率</div>
+                          <div class="text-sm font-medium" :class="periodStat.returnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                            {{ periodStat.returnRate >= 0 ? '+' : '' }}{{ formatPercent(periodStat.returnRate) }}%
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        @click="togglePeriodExpanded(index)"
+                        class="ml-2 px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors text-xs"
+                      >
+                        <i :class="[expandedPeriods.has(index) ? 'fas fa-chevron-up' : 'fas fa-chevron-down']"></i>
+                      </button>
+                    </div>
+                    <div v-if="periodStat.marketReturnRate !== null && periodStat.marketReturnRate !== undefined" class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                      <div>
+                        <div class="text-xs text-muted-foreground mb-0.5">大盘收益</div>
+                        <div class="text-sm font-medium" :class="periodStat.marketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ periodStat.marketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(periodStat.marketReturnRate) }}%
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-xs text-muted-foreground mb-0.5">超额收益</div>
+                        <div class="text-sm font-medium" :class="periodStat.excessReturn >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ periodStat.excessReturn >= 0 ? '+' : '' }}{{ formatPercent(periodStat.excessReturn) }}%
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div v-if="record.stocks && record.stocks.length > 0" class="overflow-x-auto -mx-2 sm:mx-0">
+                  <!-- 股票详情（展开时显示） -->
+                  <div v-show="expandedPeriods.has(index)" class="overflow-x-auto -mx-2 sm:mx-0">
                     <table class="w-full text-xs sm:text-sm">
                       <thead>
                         <tr class="border-b border-border bg-muted/30">
                           <th class="text-left p-2 sm:p-3 font-medium sticky left-0 bg-muted/30 z-10">股票代码</th>
                           <th class="text-left p-2 sm:p-3 font-medium sticky left-[100px] sm:left-[120px] bg-muted/30 z-10">股票名称</th>
-                          <th class="text-left p-2 sm:p-3 font-medium">行业</th>
-                          <th class="text-left p-2 sm:p-3 font-medium">平台期(天)</th>
-                          <th class="text-left p-2 sm:p-3 font-medium">突破前兆</th>
-                          <th class="text-left p-2 sm:p-3 font-medium">确认突破</th>
-                          <th class="text-left p-2 sm:p-3 font-medium">箱体质量</th>
                           <th class="text-left p-2 sm:p-3 font-medium">收益率</th>
+                          <th class="text-left p-2 sm:p-3 font-medium">操作</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr 
-                          v-for="(stock, stockIndex) in record.stocks" 
+                          v-for="(stock, stockIndex) in periodStat.stocks" 
                           :key="stockIndex"
                           class="border-b border-border/50 hover:bg-muted/30 transition-colors"
                         >
                           <td class="p-2 sm:p-3 font-mono sticky left-0 bg-background z-10 text-xs sm:text-sm">{{ stock.code }}</td>
                           <td class="p-2 sm:p-3 sticky left-[100px] sm:left-[120px] bg-background z-10 text-xs sm:text-sm">{{ stock.name }}</td>
-                          <td class="p-2 sm:p-3 text-muted-foreground text-xs sm:text-sm">{{ stock.industry || '-' }}</td>
-                          <td class="p-2 sm:p-3">
-                            <span v-if="stock.platformPeriods && stock.platformPeriods.length > 0" class="inline-flex items-center gap-1">
-                              <span v-for="(period, idx) in stock.platformPeriods" :key="idx" class="px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs">
-                                {{ period }}天
-                              </span>
-                            </span>
-                            <span v-else class="text-muted-foreground">-</span>
-                          </td>
-                          <td class="p-2 sm:p-3">
-                            <span v-if="stock.breakthroughSignals && stock.breakthroughSignals.length > 0" class="inline-flex items-center gap-1 flex-wrap">
-                              <span v-for="(signal, idx) in stock.breakthroughSignals" :key="idx" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-green-100 text-green-800 text-xs">
-                                {{ signal }}
-                              </span>
-                            </span>
-                            <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
-                          </td>
-                          <td class="p-2 sm:p-3">
-                            <span v-if="stock.hasBreakthroughConfirmation !== undefined && stock.hasBreakthroughConfirmation !== null">
-                              <span v-if="stock.hasBreakthroughConfirmation" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-purple-100 text-purple-800 text-xs">是</span>
-                              <span v-else class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gray-100 text-gray-800 text-xs">否</span>
-                            </span>
-                            <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
-                          </td>
-                          <td class="p-2 sm:p-3">
-                            <span v-if="stock.boxQuality !== null && stock.boxQuality !== undefined" class="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-orange-100 text-orange-800 text-xs">
-                              {{ stock.boxQuality.toFixed(3) }}
-                            </span>
-                            <span v-else class="text-muted-foreground text-xs" title="该股票在扫描时未启用箱体检测或不是基本平台期，因此没有箱体质量数据">-</span>
-                          </td>
                           <td class="p-2 sm:p-3 text-xs sm:text-sm">
                             <span v-if="stock.returnRate !== null && stock.returnRate !== undefined" 
                                   :class="[
@@ -382,27 +371,22 @@
                             </span>
                             <span v-else class="text-muted-foreground text-xs sm:text-sm">-</span>
                           </td>
+                          <td class="p-2 sm:p-3 text-xs sm:text-sm">
+                            <button
+                              @click.stop="goToStockCheck(stock, periodStat)"
+                              class="px-2 py-1 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors flex items-center gap-1"
+                              title="单股查询"
+                            >
+                              <i class="fas fa-search"></i>
+                              <span class="hidden sm:inline">查询</span>
+                            </button>
+                          </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
-                  <div v-else class="p-4 text-center text-muted-foreground">
-                    该记录中没有股票信息
-                  </div>
                 </div>
               </div>
-            </div>
-            
-            <!-- 加载全量数据按钮 -->
-            <div v-if="statisticsResult && hasFiltersApplied()" class="mt-4 flex justify-center flex-shrink-0">
-              <button
-                @click="loadAllDataWithoutFilters"
-                class="px-4 py-2 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors text-sm"
-                :disabled="statisticsLoading"
-              >
-                <i class="fas fa-list-ul mr-2"></i>
-                加载全量数据（不筛选）
-              </button>
             </div>
           </div>
           <div v-else-if="!allStocksDataLoaded" class="text-center py-8 flex-shrink-0">
@@ -424,9 +408,12 @@
     </div>
   </template>
   
-  <script setup>
-  import { ref, watch } from 'vue'
-  import axios from 'axios'
+<script setup>
+import { ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import axios from 'axios'
+  
+const router = useRouter()
   
   const props = defineProps({
     // 回测历史记录列表（简化版，只包含id、backtestDate、statDate等基本信息）
@@ -468,7 +455,7 @@
   const allStocksData = ref(null) // 存储所有股票的完整数据
   const allStocksDataLoaded = ref(false) // 是否已加载完整数据
   const dataLoading = ref(false) // 数据加载状态
-  const showStockDetails = ref(false) // 是否显示股票详情
+  const expandedPeriods = ref(new Set()) // 展开的周期索引集合
   
   // 缓存相关
   let scanHistoryCache = null
@@ -593,6 +580,111 @@
   function formatPercent(num) {
     if (num === null || num === undefined) return '0.00'
     return Number(num).toFixed(2)
+  }
+  
+  // 切换周期展开状态
+  function togglePeriodExpanded(index) {
+    if (expandedPeriods.value.has(index)) {
+      expandedPeriods.value.delete(index)
+    } else {
+      expandedPeriods.value.add(index)
+    }
+  }
+  
+  // 跳转到单股检查页面
+  function goToStockCheck(stock, periodStat) {
+    const query = {
+      code: stock.code
+    }
+    
+    // 从周期统计中获取回测日期（从第一个记录中获取）
+    if (periodStat && periodStat.records && periodStat.records.length > 0) {
+      const firstRecord = periodStat.records[0]
+      if (firstRecord && firstRecord.scanDate) {
+        query.date = firstRecord.scanDate
+      } else if (firstRecord && firstRecord.record && firstRecord.record.config && firstRecord.record.config.backtest_date) {
+        query.date = firstRecord.record.config.backtest_date
+      }
+    }
+    
+    router.push({
+      path: '/platform/check',
+      query: query
+    })
+  }
+  
+  // 判断是否是批量统计（有周期概率）
+  function isBatchStatistics(records) {
+    // 检查是否有周期概率字段，或者检查配置中是否有批量统计相关的字段
+    for (const record of records) {
+      const config = record.config || {}
+      // 如果有周期概率相关的配置，认为是批量统计
+      if (config.period_probabilities || config.batch_statistics) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  // 按星期划分周期
+  function groupByWeek(records) {
+    const weekGroups = {}
+    records.forEach(record => {
+      const scanDate = record.scanDate || record.record?.config?.backtest_date
+      if (!scanDate) return
+      
+      const date = new Date(scanDate)
+      // 获取该日期所在周的周一日期（作为周期标识）
+      const dayOfWeek = date.getDay()
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // 如果是周日，向前推6天；否则推到周一
+      const monday = new Date(date)
+      monday.setDate(date.getDate() + diff)
+      monday.setHours(0, 0, 0, 0)
+      
+      // 格式化周标识：YYYY-MM-DD（周一日期）
+      const weekKey = monday.toISOString().split('T')[0]
+      // 格式化显示：YYYY年MM月DD日周
+      const weekLabel = `${monday.getFullYear()}年${monday.getMonth() + 1}月${monday.getDate()}日周`
+      
+      if (!weekGroups[weekKey]) {
+        weekGroups[weekKey] = {
+          label: weekLabel,
+          records: []
+        }
+      }
+      weekGroups[weekKey].records.push(record)
+    })
+    
+    return Object.keys(weekGroups).sort().map(weekKey => ({
+      periodLabel: weekGroups[weekKey].label,
+      records: weekGroups[weekKey].records
+    }))
+  }
+  
+  // 按周期分组（如果有周期概率，使用周期概率；否则按星期分组）
+  function groupByPeriod(records) {
+    // 获取原始记录列表用于判断是否是批量统计
+    const originalRecords = records.map(r => r.record).filter(r => r)
+    if (isBatchStatistics(originalRecords)) {
+      // 批量统计：按周期概率分组
+      const periodGroups = {}
+      records.forEach(record => {
+        const config = record.record?.config || {}
+        const period = config.period || config.period_probability || '未知周期'
+        if (!periodGroups[period]) {
+          periodGroups[period] = []
+        }
+        periodGroups[period].push(record)
+      })
+      
+      return Object.keys(periodGroups).sort().map(period => ({
+        periodLabel: `周期 ${period}`,
+        records: periodGroups[period]
+      }))
+    } else {
+      // 非批量统计：按星期分组
+      return groupByWeek(records)
+    }
   }
   
   // 加载完整数据（只在进入时或历史记录变化时调用）
@@ -1351,7 +1443,8 @@
 
         recordDetails.push({
           scanDate: config.backtest_date || '',
-          stocks: stocks
+          stocks: stocks,
+          record: record // 保存原始记录引用，用于周期分组
         })
       })
 
@@ -1391,6 +1484,91 @@
       const totalStocks = profitableStocks + lossStocks
       const winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
 
+      // 按周期分组统计
+      const periodGroups = groupByPeriod(recordDetails)
+      const periodStats = periodGroups.map((group, index) => {
+        let periodStockCount = 0
+        let periodInvestment = 0
+        let periodProfit = 0
+        let periodMarketReturnRate = null
+        const periodStocks = []
+        
+        group.records.forEach(recordDetail => {
+          const record = recordDetail.record
+          if (!record) return
+          
+          const config = record.config || {}
+          const result = record.result || {}
+          
+          // 获取该记录中筛选后的股票代码列表
+          const recordStockCodes = new Set(recordDetail.stocks.map(s => s.code))
+          
+          // 从stockDetails中获取筛选后股票的收益数据
+          const stockDetails = result.stockDetails || []
+          const filteredStockDetails = stockDetails.filter(detail => 
+            recordStockCodes.has(detail.code)
+          )
+          
+          filteredStockDetails.forEach(detail => {
+            const buyAmount = detail.buyAmount || 0
+            periodInvestment += buyAmount
+            periodProfit += (detail.profit || 0)
+            periodStockCount++
+            
+            // 从recordDetail.stocks中获取股票信息
+            const stock = recordDetail.stocks.find(s => s.code === detail.code)
+            if (stock) {
+              periodStocks.push({
+                code: stock.code || '',
+                name: stock.name || '',
+                returnRate: detail.returnRate !== undefined ? detail.returnRate : stock.returnRate
+              })
+            }
+          })
+          
+          // 获取大盘收益率（如果有）
+          if (result.summary && result.summary.marketReturnRate !== null && result.summary.marketReturnRate !== undefined) {
+            if (periodMarketReturnRate === null) {
+              periodMarketReturnRate = result.summary.marketReturnRate
+            } else {
+              // 如果有多个记录，按投入资金加权平均
+              const recordInvestment = filteredStockDetails.reduce((sum, d) => sum + (d.buyAmount || 0), 0)
+              const totalInvestmentForAvg = periodInvestment
+              if (totalInvestmentForAvg > 0 && recordInvestment > 0) {
+                const weight = recordInvestment / totalInvestmentForAvg
+                periodMarketReturnRate = periodMarketReturnRate * (1 - weight) + result.summary.marketReturnRate * weight
+              } else {
+                // 如果无法加权，取简单平均
+                periodMarketReturnRate = (periodMarketReturnRate + result.summary.marketReturnRate) / 2
+              }
+            }
+          }
+        })
+        
+        // 计算周期收益率
+        let periodReturnRate = 0
+        if (periodInvestment > 0) {
+          periodReturnRate = (periodProfit / periodInvestment) * 100
+        }
+        
+        // 计算超额收益
+        let excessReturn = null
+        if (periodMarketReturnRate !== null && periodMarketReturnRate !== undefined) {
+          excessReturn = periodReturnRate - periodMarketReturnRate
+        }
+        
+        return {
+          periodLabel: group.periodLabel,
+          stockCount: periodStockCount,
+          totalProfit: periodProfit,
+          returnRate: periodReturnRate,
+          marketReturnRate: periodMarketReturnRate,
+          excessReturn: excessReturn,
+          stocks: periodStocks,
+          records: group.records // 保存记录信息，用于获取回测日期
+        }
+      })
+
       statisticsResult.value = {
         totalRecords,
         profitableRecords: profitableStocks,  // 使用盈利股票数
@@ -1399,8 +1577,12 @@
         totalInvestment,
         totalProfit,
         totalReturnRate,
+        periodStats: periodStats,
         filteredRecords: recordDetails
       }
+      
+      // 重置展开状态
+      expandedPeriods.value.clear()
     } catch (e) {
       console.error('计算统计数据失败:', e)
       statisticsError.value = '计算统计数据失败: ' + (e.response?.data?.detail || e.message)
@@ -1408,7 +1590,7 @@
       statisticsLoading.value = false
     }
   }
-
+  
   // 监听历史记录变化，自动加载完整数据
   watch(() => props.historyRecords, async (newRecords) => {
     if (newRecords && newRecords.length > 0) {

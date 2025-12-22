@@ -474,6 +474,7 @@
                         <th class="text-left p-2">代码</th>
                         <th class="text-left p-2">名称</th>
                         <th class="text-left p-2">行业</th>
+                        <th class="text-left p-2">操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -481,6 +482,15 @@
                         <td class="p-2">{{ stock.code }}</td>
                         <td class="p-2">{{ stock.name }}</td>
                         <td class="p-2">{{ stock.industry || '未知' }}</td>
+                        <td class="p-2">
+                          <button
+                            @click.stop="goToStockCheck(stock)"
+                            class="px-2 py-1 text-xs rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            title="单股查询"
+                          >
+                            <i class="fas fa-search"></i>
+                          </button>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -2106,11 +2116,18 @@ function toggleSelectAll() {
 
 // 跳转到单股检查页面
 function goToStockCheck(stock) {
+  const query = {
+    code: stock.code
+  }
+  
+  // 如果从扫描历史详情页面调用，传递扫描日期
+  if (selectedScanHistoryRecord.value && selectedScanHistoryRecord.value.scanDate) {
+    query.date = selectedScanHistoryRecord.value.scanDate
+  }
+  
   router.push({
     path: '/platform/check',
-    query: {
-      code: stock.code
-    }
+    query: query
   });
 }
 

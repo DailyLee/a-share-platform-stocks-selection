@@ -966,6 +966,7 @@ async def test_scan(config_request: ScanConfigRequest):
 class PlatformCheckRequest(BaseModel):
     """Request model for single stock platform check."""
     code: str = Field(..., description="Stock code (e.g., 'sh.600000')")
+    query_date: Optional[str] = Field(None, description="Query date (YYYY-MM-DD), defaults to today")
 
 
 class PlatformCheckResponse(BaseModel):
@@ -1016,8 +1017,20 @@ async def check_platform(request: PlatformCheckRequest):
             # Include common windows: 30, 60, 90, 80, 100, 120 to match scan results
             comprehensive_windows = sorted(list(set([30, 60, 90, 80, 100, 120])))
             max_window = max(comprehensive_windows)
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=max_window * 2)).strftime('%Y-%m-%d')
+            # Use query_date if provided, otherwise use today
+            if request.query_date:
+                try:
+                    end_date = datetime.strptime(request.query_date, '%Y-%m-%d').strftime('%Y-%m-%d')
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid query_date format. Expected format: 'YYYY-MM-DD'"
+                    )
+            else:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+            # Calculate start_date based on end_date
+            end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+            start_date = (end_datetime - timedelta(days=max_window * 2)).strftime('%Y-%m-%d')
             
             # Fetch K-line data
             df = fetch_kline_data(code, start_date, end_date)
