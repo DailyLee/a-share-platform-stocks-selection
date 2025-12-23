@@ -2013,15 +2013,16 @@ async def run_backtest_stream(request: BacktestRequest):
 # =================================
 
 @app.get("/api/backtest/history")
-async def get_backtest_history_list_endpoint(batch_task_id: Optional[str] = None):
+async def get_backtest_history_list_endpoint(batch_task_id: Optional[str] = None, backtest_name: Optional[str] = None):
     """
     获取回测历史记录列表
     
     Args:
         batch_task_id: 可选的批量任务ID，用于过滤批量回测数据
+        backtest_name: 可选的回测名称，用于过滤特定名称的回测数据
     """
     try:
-        records = get_backtest_history_list(batch_task_id=batch_task_id)
+        records = get_backtest_history_list(batch_task_id=batch_task_id, backtest_name=backtest_name)
         # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
         sanitized_records = sanitize_float_for_json(records)
         return {
@@ -2159,6 +2160,7 @@ class BatchBacktestRequest(BaseModel):
     selected_stocks: List[Dict[str, Any]]  # 选中的股票列表
     profit_loss_combinations: List[Dict[str, Any]]  # 止盈止损组合列表
     # 每个组合包含: use_stop_loss, use_take_profit, stop_loss_percent, take_profit_percent
+    backtest_name: Optional[str] = None  # 回测名称（用于归类历史记录）
 
 
 class BatchBacktestResult(BaseModel):
@@ -2211,6 +2213,7 @@ async def run_batch_backtest(request: BatchBacktestRequest):
                 config_dict = {
                     'backtest_date': request.backtest_date,
                     'stat_date': request.stat_date,
+                    'backtest_name': request.backtest_name,  # 回测名称
                     'buy_strategy': request.buy_strategy,
                     'use_stop_loss': combination.get('use_stop_loss', False),
                     'use_take_profit': combination.get('use_take_profit', False),
@@ -2724,6 +2727,7 @@ class BatchTaskBacktestRequest(BaseModel):
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -2.0  # 止损百分比
     take_profit_percent: float = 18.0  # 止盈百分比
+    platform_periods: Optional[List[int]] = None  # 平台期筛选（可选），如果提供则只买入选中平台期的股票
 
 
 class BatchTaskBacktestResult(BaseModel):
@@ -2928,8 +2932,43 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                 
                 # 获取扫描到的股票列表
                 scanned_stocks = scan_result.get('scannedStocks', [])
+                
+                # 如果设置了平台期筛选，过滤股票
+                if request.platform_periods and len(request.platform_periods) > 0:
+                    filtered_stocks = []
+                    for stock in scanned_stocks:
+                        # 检查股票是否有选中的平台期
+                        stock_platform_periods = []
+                        
+                        # 从 selection_reasons 中获取平台期
+                        if stock.get('selection_reasons') and isinstance(stock['selection_reasons'], dict):
+                            for key in stock['selection_reasons'].keys():
+                                try:
+                                    period = int(key)
+                                    stock_platform_periods.append(period)
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        # 从 platform_windows 中获取平台期
+                        if stock.get('platform_windows') and isinstance(stock['platform_windows'], list):
+                            for period in stock['platform_windows']:
+                                try:
+                                    period_int = int(period)
+                                    if period_int not in stock_platform_periods:
+                                        stock_platform_periods.append(period_int)
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        # 如果股票的平台期与选中的平台期有交集，则保留该股票
+                        if any(period in request.platform_periods for period in stock_platform_periods):
+                            filtered_stocks.append(stock)
+                    
+                    scanned_stocks = filtered_stocks
+                    if len(scanned_stocks) > 0:
+                        print(f"{Fore.CYAN}[{idx + 1}/{total}] 平台期筛选: 原始股票数={len(scan_result.get('scannedStocks', []))}, 筛选后={len(scanned_stocks)}, 选中平台期={request.platform_periods}{Style.RESET_ALL}")
+                
                 if not scanned_stocks or len(scanned_stocks) == 0:
-                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有扫描到股票{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有符合条件的股票（平台期筛选后）{Style.RESET_ALL}")
                     failed += 1
                     
                     # 保存失败记录到数据库
@@ -2937,6 +2976,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         config_dict = {
                             'backtest_date': scan_date,
                             'stat_date': stat_date_str,
+                            'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
                             'use_stop_loss': request.use_stop_loss,
                             'use_take_profit': request.use_take_profit,
@@ -2948,14 +2988,14 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         }
                         result_dict = {
                             'status': 'failed',
-                            'error': '该扫描日期没有扫描到股票',
+                            'error': '该扫描日期没有符合条件的股票（平台期筛选后）',
                             'summary': {}
                         }
                         history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
                         results.append({
                             'index': idx + 1,
                             'status': 'failed',
-                            'message': '该扫描日期没有扫描到股票',
+                            'message': '该扫描日期没有符合条件的股票（平台期筛选后）',
                             'scanDate': scan_date,
                             'historyId': history_id
                         })
@@ -2964,7 +3004,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         results.append({
                             'index': idx + 1,
                             'status': 'failed',
-                            'message': '该扫描日期没有扫描到股票',
+                            'message': '该扫描日期没有符合条件的股票（平台期筛选后）',
                             'scanDate': scan_date
                         })
                     continue

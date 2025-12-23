@@ -174,6 +174,14 @@
                     </div>
                     <div class="flex items-center gap-2">
                       <button
+                        @click.stop="loadScanHistoryToPage(record)"
+                        class="px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-600/80 transition-colors flex items-center"
+                        title="加载到扫描工具"
+                      >
+                        <i class="fas fa-upload mr-1"></i>
+                        加载结果
+                      </button>
+                      <button
                         @click.stop="goToBacktestFromScanHistory(record)"
                         class="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors flex items-center"
                         title="数据回测"
@@ -844,7 +852,7 @@
                   箱体质量阈值
                 </ParameterLabel>
                 <input v-model.number="config.box_quality_threshold" class="input" id="boxQualityThreshold"
-                  type="number" step="0.05" min="0.1" max="0.9" placeholder="例如: 0.6">
+                  type="number" step="0.01" min="0.1" max="1.0" placeholder="例如: 0.94">
                 <p class="text-xs text-muted-foreground mt-1">箱体形态的最低质量要求 (0.6 = 60%)</p>
               </div>
             </div>
@@ -1073,11 +1081,61 @@
                 <button @click="exportToCSV" class="btn btn-secondary text-xs py-1 px-2">
                   <i class="fas fa-download mr-1"></i> 导出
                 </button>
-                <button class="btn btn-secondary text-xs py-1 px-2">
+                <button 
+                  @click="showFilterPanel = !showFilterPanel" 
+                  class="btn btn-secondary text-xs py-1 px-2"
+                  :class="showFilterPanel ? 'bg-primary text-primary-foreground' : ''"
+                >
                   <i class="fas fa-filter mr-1"></i> 筛选
+                  <span v-if="selectedPlatformPeriods.length > 0 && selectedPlatformPeriods.length < availablePlatformPeriods.length" 
+                    class="ml-1 px-1 bg-primary/20 rounded text-xs">
+                    {{ selectedPlatformPeriods.length }}
+                  </span>
                 </button>
               </div>
             </div>
+            
+            <!-- 筛选面板 -->
+            <div v-if="showFilterPanel" class="p-4 border-b border-border bg-muted/20">
+              <div class="mb-3">
+                <h3 class="text-sm font-semibold mb-2 flex items-center">
+                  <i class="fas fa-filter mr-1 text-primary"></i>
+                  平台期筛选
+                </h3>
+                <div class="flex flex-wrap gap-2">
+                  <label 
+                    v-for="period in availablePlatformPeriods" 
+                    :key="period"
+                    class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                    :class="selectedPlatformPeriods.includes(period) ? 'bg-primary/20 border-primary' : ''"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="period"
+                      v-model="selectedPlatformPeriods"
+                      class="checkbox mr-1.5"
+                    />
+                    <span class="text-xs">{{ period }}天</span>
+                  </label>
+                  <button
+                    @click="selectAllPlatformPeriods"
+                    class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+                  >
+                    全选
+                  </button>
+                  <button
+                    @click="clearPlatformPeriodFilter"
+                    class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+                  >
+                    清空
+                  </button>
+                </div>
+                <p class="text-xs text-muted-foreground mt-2">
+                  已选择 {{ selectedPlatformPeriods.length }} / {{ availablePlatformPeriods.length }} 个平台期
+                </p>
+              </div>
+            </div>
+            
             <!-- 桌面端表格视图 -->
             <div class="hidden md:block overflow-x-auto">
               <table class="w-full">
@@ -1092,8 +1150,8 @@
                           @change="toggleSelectAll"
                           class="checkbox"
                         />
-                        <span class="text-xs text-muted-foreground">
-                          ({{ selectedStocks ? selectedStocks.length : 0 }} / {{ platformStocks.length }})
+                        <span class="text-xs text-muted-foreground whitespace-nowrap">
+                          ({{ selectedStocks ? selectedStocks.length : 0 }} / {{ filteredStocks.length }})
                         </span>
                       </div>
                     </th>
@@ -1202,16 +1260,14 @@
                             <div class="text-xs text-muted-foreground">
                               <span class="flex items-center">
                                 <i class="fas fa-bolt text-amber-500 mr-1"></i>
-                                {{ stock.breakthrough_prediction.signal_count }}个技术指标显示突破信号
+                                {{ getActiveBreakthroughSignals(stock.breakthrough_prediction.signals).length }}个技术指标显示突破信号
                               </span>
                               <div class="mt-1 flex flex-wrap gap-1">
-                                <span v-for="(hasSignal, indicator) in stock.breakthrough_prediction.signals"
-                                  :key="indicator" :class="[
-                                    'px-1.5 py-0.5 rounded text-xs',
-                                    hasSignal ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400' : 'bg-muted text-muted-foreground'
-                                  ]">
+                                <span v-for="indicator in getActiveBreakthroughSignals(stock.breakthrough_prediction.signals)"
+                                  :key="indicator" 
+                                  class="px-1.5 py-0.5 rounded text-xs bg-amber-500/20 text-amber-700 dark:text-amber-400">
                                   {{ indicator }}
-                                  <i v-if="hasSignal" class="fas fa-check-circle text-xs ml-0.5"></i>
+                                  <i class="fas fa-check-circle text-xs ml-0.5"></i>
                                 </span>
                               </div>
                             </div>
@@ -1318,7 +1374,7 @@
                     <option value="20">20</option>
                   </select>
                   <span class="text-sm text-muted-foreground">
-                    条数据，共 {{ platformStocks.length }} 条
+                    条数据，共 {{ filteredStocks.length }} 条
                   </span>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -1350,8 +1406,8 @@
                     class="checkbox"
                   />
                 </div>
-                <span class="text-xs text-muted-foreground">
-                  {{ selectedStocks ? selectedStocks.length : 0 }} / {{ platformStocks.length }} 只
+                <span class="text-xs text-muted-foreground whitespace-nowrap">
+                  {{ selectedStocks ? selectedStocks.length : 0 }} / {{ filteredStocks.length }} 只
                 </span>
               </div>
               
@@ -1453,6 +1509,27 @@
                         </div>
                       </div>
 
+                      <!-- 突破前兆识别结果 -->
+                      <div
+                        v-if="stock.breakthrough_prediction && stock.breakthrough_prediction.has_breakthrough_signal"
+                        class="mt-2 border-t border-border pt-1">
+                        <div class="text-xs font-medium text-primary">突破前兆:</div>
+                        <div class="text-xs text-muted-foreground">
+                          <span class="flex items-center">
+                            <i class="fas fa-bolt text-amber-500 mr-1"></i>
+                            {{ getActiveBreakthroughSignals(stock.breakthrough_prediction.signals).length }}个技术指标显示突破信号
+                          </span>
+                          <div class="mt-1 flex flex-wrap gap-1">
+                            <span v-for="indicator in getActiveBreakthroughSignals(stock.breakthrough_prediction.signals)"
+                              :key="indicator" 
+                              class="px-1.5 py-0.5 rounded text-xs bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                              {{ indicator }}
+                              <i class="fas fa-check-circle text-xs ml-0.5"></i>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
                       <!-- 窗口权重得分 -->
                       <div v-if="stock.weighted_score !== undefined" class="mt-2 border-t border-border pt-1">
                         <div class="text-xs font-medium text-primary">加权得分:</div>
@@ -1495,7 +1572,7 @@
               <div class="flex flex-col space-y-3 my-4 px-2">
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-muted-foreground">
-                    每页 {{ pageSize }} 条，共 {{ platformStocks.length }} 条
+                    每页 {{ pageSize }} 条，共 {{ filteredStocks.length }} 条
                   </span>
                   <div class="flex items-center space-x-1">
                     <button class="btn btn-secondary text-xs py-1 px-2" @click="prevPage" :disabled="currentPage <= 1">
@@ -1549,7 +1626,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, inject, provide, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject, provide, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import KlineChart from './components/KlineChart.vue'; // 缩略图K线图组件
@@ -1575,7 +1652,7 @@ const config = ref({
   
   // 基本参数
   windowsInput: '30,60,90', // 中期窗口期设置（默认）
-  expected_count: 10, // 期望返回的股票数量，默认为10
+  expected_count: 30, // 期望返回的股票数量，默认为30
 
   // 价格参数
   box_threshold: 0.3, // 箱体阈值
@@ -1609,7 +1686,7 @@ const config = ref({
 
   // 箱体检测参数
   use_box_detection: true, // 是否启用箱体检测
-  box_quality_threshold: 0.9, // 箱体质量阈值
+  box_quality_threshold: 0.94, // 箱体质量阈值
 
   // 基本面筛选参数
   use_fundamental_filter: false, // 是否启用基本面筛选
@@ -1640,15 +1717,114 @@ const windowWeights = ref({}); // 窗口权重
 const expandedReasons = ref({}); // 跟踪每个股票的选择理由是否展开
 const selectedStocks = ref([]); // 选中的股票列表（用于回测）
 
+// 筛选相关状态
+const showFilterPanel = ref(false); // 筛选面板显示状态
+const selectedPlatformPeriods = ref([]); // 选中的平台期列表
+const availablePlatformPeriods = ref([]); // 可用的平台期列表（从结果中统计）
+
+// 筛选后的股票列表
+const filteredStocks = computed(() => {
+  if (selectedPlatformPeriods.value.length === 0 || selectedPlatformPeriods.value.length === availablePlatformPeriods.value.length) {
+    // 如果没有选择或全选，返回所有股票
+    return platformStocks.value;
+  }
+  
+  // 根据选中的平台期筛选股票
+  return platformStocks.value.filter(stock => {
+    // 获取股票的所有平台期
+    const stockPeriods = []
+    
+    // 从 selection_reasons 中获取平台期
+    if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+      Object.keys(stock.selection_reasons).forEach(key => {
+        const period = parseInt(key)
+        if (!isNaN(period)) {
+          stockPeriods.push(period)
+        }
+      })
+    }
+    
+    // 从 platform_windows 中获取平台期
+    if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+      stock.platform_windows.forEach(period => {
+        if (!stockPeriods.includes(period)) {
+          stockPeriods.push(period)
+        }
+      })
+    }
+    
+    // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
+    return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+  })
+})
+
 // 分页相关状态
 const currentPage = ref(1);
 const pageSize = ref(10);
-const totalPages = computed(() => Math.ceil(platformStocks.value.length / pageSize.value));
+const totalPages = computed(() => Math.ceil(filteredStocks.value.length / pageSize.value));
 const paginatedStocks = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   const end = start + pageSize.value;
-  return platformStocks.value.slice(start, end);
+  return filteredStocks.value.slice(start, end);
 });
+
+// 统计可用平台期（从结果中提取）
+function updateAvailablePlatformPeriods() {
+  const periodsSet = new Set()
+  
+  platformStocks.value.forEach(stock => {
+    // 从 selection_reasons 中获取平台期
+    if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+      Object.keys(stock.selection_reasons).forEach(key => {
+        const period = parseInt(key)
+        if (!isNaN(period)) {
+          periodsSet.add(period)
+        }
+      })
+    }
+    
+    // 从 platform_windows 中获取平台期
+    if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+      stock.platform_windows.forEach(period => {
+        if (!isNaN(period)) {
+          periodsSet.add(period)
+        }
+      })
+    }
+  })
+  
+  // 排序并更新可用平台期列表
+  availablePlatformPeriods.value = Array.from(periodsSet).sort((a, b) => a - b)
+  
+  // 如果可用平台期列表为空，清空选中的平台期
+  if (availablePlatformPeriods.value.length === 0) {
+    selectedPlatformPeriods.value = []
+    return
+  }
+  
+  // 如果当前没有选中任何平台期，或者选中的平台期数量不等于可用平台期数量，或者有选中的平台期不在新的列表中，则默认全选
+  if (selectedPlatformPeriods.value.length === 0 || 
+      selectedPlatformPeriods.value.length !== availablePlatformPeriods.value.length ||
+      !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
+    selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+  }
+}
+
+// 全选平台期
+function selectAllPlatformPeriods() {
+  selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+}
+
+// 清空平台期筛选
+function clearPlatformPeriodFilter() {
+  selectedPlatformPeriods.value = []
+}
+
+// 监听筛选变化，重置分页
+watch(selectedPlatformPeriods, () => {
+  currentPage.value = 1
+  expandedReasons.value = {}
+}, { deep: true })
 
 // 分页控制函数
 function goToPage (page) {
@@ -2008,6 +2184,34 @@ function openFullChart (stock) {
   showFullChart.value = true;
 }
 
+// 获取有信号的突破前兆指标列表
+function getActiveBreakthroughSignals(signals) {
+  if (!signals || typeof signals !== 'object') {
+    return []
+  }
+  
+  const activeSignals = []
+  
+  // 检查每个指标是否有信号
+  Object.entries(signals).forEach(([indicator, hasSignal]) => {
+    // 支持多种格式：布尔值、数字1/0、字符串'true'/'false'
+    let isActive = false
+    if (hasSignal === true || hasSignal === 1) {
+      isActive = true
+    } else if (typeof hasSignal === 'string') {
+      isActive = hasSignal.toLowerCase() === 'true'
+    } else if (typeof hasSignal === 'boolean') {
+      isActive = hasSignal === true
+    }
+    
+    if (isActive) {
+      activeSignals.push(indicator)
+    }
+  })
+  
+  return activeSignals
+}
+
 // 切换选择理由的展开/收起状态
 function toggleReasonExpand (stockCode) {
   // 如果该股票的展开状态尚未初始化，则初始化为true（展开）
@@ -2310,7 +2514,7 @@ async function exportToCase (stock) {
 
 // 导出扫描结果到CSV文件
 function exportToCSV () {
-  if (platformStocks.value.length === 0) {
+  if (filteredStocks.value.length === 0) {
     showToast('没有可导出的数据', 'error');
     return;
   }
@@ -2319,8 +2523,8 @@ function exportToCSV () {
     // CSV 表头
     const headers = ['代码', '名称', '行业', '选择理由'];
     
-    // 构建CSV行数据
-    const rows = platformStocks.value.map(stock => {
+    // 构建CSV行数据（使用筛选后的股票）
+    const rows = filteredStocks.value.map(stock => {
       // 格式化选择理由
       let reasons = '';
       if (stock.selection_reasons) {
@@ -2371,7 +2575,7 @@ function exportToCSV () {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    showToast(`已导出 ${platformStocks.value.length} 条数据`, 'success');
+    showToast(`已导出 ${filteredStocks.value.length} 条数据`, 'success');
   } catch (error) {
     console.error('导出CSV失败:', error);
     showToast(`导出失败: ${error.message || '未知错误'}`, 'error');
@@ -2562,6 +2766,9 @@ function startPolling (taskId) {
           platformStocks.value = processedResults;
           console.log('处理后的平台股票数据:', platformStocks.value);
 
+          // 统计可用平台期并设置默认全选
+          updateAvailablePlatformPeriods();
+
           // 重置分页状态
           currentPage.value = 1;
           
@@ -2591,6 +2798,8 @@ async function fetchPlatformStocks () {
   error.value = null;
   taskError.value = null;
   platformStocks.value = []; // Clear previous results
+  availablePlatformPeriods.value = []; // 清空可用平台期
+  selectedPlatformPeriods.value = []; // 清空选中的平台期
   expandedReasons.value = {}; // 重置所有选择理由为收起状态
   hasSearched.value = true; // Mark that a search was initiated
   currentPage.value = 1; // 重置到第一页
@@ -2711,6 +2920,8 @@ async function fetchPlatformStocksLegacy () {
   loading.value = true;
   error.value = null;
   platformStocks.value = [];
+  availablePlatformPeriods.value = []; // 清空可用平台期
+  selectedPlatformPeriods.value = []; // 清空选中的平台期
   hasSearched.value = true;
   currentPage.value = 1; // 重置到第一页
   expandedReasons.value = {}; // 重置所有选择理由为收起状态
@@ -2803,6 +3014,9 @@ async function fetchPlatformStocksLegacy () {
 
       platformStocks.value = processedResults;
       console.log('处理后的平台股票数据:', platformStocks.value);
+      
+      // 统计可用平台期并设置默认全选
+      updateAvailablePlatformPeriods();
       
       // 默认全选所有扫描结果
       selectedStocks.value = [...processedResults];
@@ -3097,6 +3311,94 @@ async function executeClearScanHistory() {
   } catch (e) {
     console.error('清空扫描历史记录失败:', e)
     error.value = '清空扫描历史记录失败: ' + (e.response?.data?.detail || e.message)
+  }
+}
+
+// 加载扫描历史记录到扫描工具页面
+async function loadScanHistoryToPage(record) {
+  try {
+    // 如果记录中没有完整的股票数据，需要先获取详情
+    let scanRecord = record
+    if (!record.scannedStocks || record.scannedStocks.length === 0) {
+      const response = await axios.get(`/platform/api/scan/history/${record.id}`)
+      if (response.data.success) {
+        scanRecord = response.data.data
+      } else {
+        error.value = '加载扫描历史详情失败'
+        return
+      }
+    }
+
+    // 检查是否有股票数据
+    if (!scanRecord.scannedStocks || scanRecord.scannedStocks.length === 0) {
+      error.value = '该扫描记录中没有股票数据'
+      return
+    }
+
+    // 处理股票数据，转换为扫描工具页面需要的格式
+    const processedStocks = scanRecord.scannedStocks.map(stock => {
+      const processedStock = {
+        code: stock.code || '',
+        name: stock.name || '',
+        industry: stock.industry || '未知行业',
+        selection_reasons: stock.selection_reasons || {},
+        platform_windows: stock.platform_windows || [],
+        kline_data: stock.kline_data || [],
+        markLines: stock.mark_lines || stock.markLines || [],
+        supportLevels: stock.supportLevels || [],
+        resistanceLevels: stock.resistanceLevels || [],
+        breakthrough_prediction: stock.breakthrough_prediction || null,
+        volume_analysis: stock.volume_analysis || null,
+        box_analysis: stock.box_analysis || null,
+        details: stock.details || {}
+      }
+      
+      // 如果后端返回了mark_lines字段，将其重命名为markLines
+      if (stock.mark_lines && !processedStock.markLines) {
+        processedStock.markLines = stock.mark_lines
+      }
+      
+      return processedStock
+    })
+
+    // 更新平台股票数据
+    platformStocks.value = processedStocks
+    console.log('已加载扫描历史记录到扫描工具页面，股票数量:', processedStocks.length)
+
+    // 设置状态，确保结果区域可见
+    loading.value = false
+    hasSearched.value = true
+    error.value = null
+
+    // 统计可用平台期并设置默认全选
+    updateAvailablePlatformPeriods()
+
+    // 重置分页状态
+    currentPage.value = 1
+    expandedReasons.value = {}
+
+    // 默认全选所有扫描结果
+    selectedStocks.value = [...processedStocks]
+    console.log('✓ 已加载扫描历史，默认全选所有股票:', selectedStocks.value.length, '只')
+
+    // 关闭扫描历史对话框
+    showScanHistoryDialog.value = false
+    selectedScanHistoryRecord.value = null
+
+    // 显示成功提示
+    showToast(`已加载 ${processedStocks.length} 只股票到扫描工具`, 'success')
+
+    // 滚动到结果区域
+    nextTick(() => {
+      const resultsSection = document.querySelector('.card.overflow-hidden')
+      if (resultsSection) {
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  } catch (e) {
+    console.error('加载扫描历史到扫描工具页面失败:', e)
+    error.value = '加载扫描历史数据失败: ' + (e.response?.data?.detail || e.message)
+    showToast('加载失败: ' + (e.response?.data?.detail || e.message), 'error')
   }
 }
 

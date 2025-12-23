@@ -423,8 +423,8 @@
                                   :class="[
                                     'px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium',
                                     stock.returnRate >= 0 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : 'bg-red-100 text-red-800'
+                                      ? 'bg-red-100 text-red-800' 
+                                      : 'bg-green-100 text-green-800'
                                   ]">
                               {{ stock.returnRate >= 0 ? '+' : '' }}{{ stock.returnRate.toFixed(2) }}%
                             </span>

@@ -80,6 +80,58 @@
       </div>
     </div>
 
+    <!-- 买入条件配置 -->
+    <div v-if="showBuyConditions && availablePlatformPeriods && availablePlatformPeriods.length > 0" class="mb-6">
+      <h3 class="text-sm font-medium mb-3 flex items-center">
+        <i class="fas fa-filter mr-2 text-primary"></i>
+        买入条件配置
+      </h3>
+      <div class="bg-muted/30 p-4 rounded-md">
+        <!-- 平台期筛选 -->
+        <div>
+          <label class="block text-sm font-medium mb-2">
+            <i class="fas fa-calendar-week mr-1 text-primary"></i>
+            平台期筛选
+          </label>
+          <p class="text-xs text-muted-foreground mb-2">
+            只买入选中平台期的股票，不选中的平台期中的股票不参与买入
+          </p>
+          <div class="flex flex-wrap gap-2 mb-2">
+            <label 
+              v-for="period in availablePlatformPeriods" 
+              :key="period"
+              class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+              :class="selectedPlatformPeriods.includes(period) ? 'bg-primary/20 border-primary' : ''"
+            >
+              <input
+                type="checkbox"
+                :value="period"
+                :checked="selectedPlatformPeriods.includes(period)"
+                @change="handlePlatformPeriodChange(period, $event.target.checked)"
+                class="checkbox mr-1.5"
+              />
+              <span class="text-xs">{{ period }}天</span>
+            </label>
+            <button
+              @click="selectAllPlatformPeriods"
+              class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+            >
+              全选
+            </button>
+            <button
+              @click="clearPlatformPeriodFilter"
+              class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+            >
+              清空
+            </button>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            已选择 {{ selectedPlatformPeriods.length }} / {{ availablePlatformPeriods.length }} 个平台期
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- 卖出策略 -->
     <div class="mb-6">
       <h3 class="text-sm font-medium mb-3 flex items-center">
@@ -192,10 +244,25 @@ const props = defineProps({
   takeProfitPlaceholder: {
     type: String,
     default: '18'
+  },
+  // 是否显示买入条件配置
+  showBuyConditions: {
+    type: Boolean,
+    default: false
+  },
+  // 可用的平台期列表（从股票中统计）
+  availablePlatformPeriods: {
+    type: Array,
+    default: () => []
+  },
+  // 选中的平台期列表（默认全选）
+  selectedPlatformPeriods: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:selectedPlatformPeriods'])
 
 const updateBuyStrategy = (value) => {
   emit('update:modelValue', {
@@ -221,6 +288,32 @@ const handleNumberInput = (field, event) => {
   if (!isNaN(numValue)) {
     updateField(field, numValue)
   }
+}
+
+// 处理平台期选择变化
+const handlePlatformPeriodChange = (period, checked) => {
+  const newSelected = [...props.selectedPlatformPeriods]
+  if (checked) {
+    if (!newSelected.includes(period)) {
+      newSelected.push(period)
+    }
+  } else {
+    const index = newSelected.indexOf(period)
+    if (index > -1) {
+      newSelected.splice(index, 1)
+    }
+  }
+  emit('update:selectedPlatformPeriods', newSelected)
+}
+
+// 全选平台期
+const selectAllPlatformPeriods = () => {
+  emit('update:selectedPlatformPeriods', [...props.availablePlatformPeriods])
+}
+
+// 清空平台期筛选
+const clearPlatformPeriodFilter = () => {
+  emit('update:selectedPlatformPeriods', [])
 }
 </script>
 

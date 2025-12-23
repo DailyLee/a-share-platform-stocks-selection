@@ -84,6 +84,10 @@
             :show-help-text="true"
             stop-loss-placeholder="-3"
             take-profit-placeholder="10"
+            :show-buy-conditions="selectedStocks.length > 0"
+            :available-platform-periods="availablePlatformPeriods"
+            :selected-platform-periods="selectedPlatformPeriods"
+            @update:selected-platform-periods="selectedPlatformPeriods = $event"
           />
 
           <!-- 回测股票预览 -->
@@ -91,7 +95,7 @@
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-sm font-medium flex items-center">
                 <i class="fas fa-list mr-2 text-primary"></i>
-                回测股票预览（已选 {{ selectedStockCodes.size }} / 共 {{ selectedStocks.length }} 只）
+                回测股票预览（已选 {{ stocksForBacktest.length }} / 共 {{ selectedStocks.length }} 只）
               </h3>
               <div class="flex items-center space-x-2">
                 <button
@@ -145,7 +149,7 @@
                 <p class="text-sm" :class="selectedStocks.length > 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
                   <strong v-if="selectedStocks.length > 0">已加载回测股票：</strong>
                   <strong v-else>提示：</strong>
-                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，当前选中 {{ selectedStockCodes.size }} 只，可以开始回测。</span>
+                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，当前选中 {{ stocksForBacktest.length }} 只（已应用平台期筛选），可以开始回测。</span>
                   <span v-else>请先在扫描工具页面选择股票，然后点击"数据回测"按钮进入此页面。</span>
                 </p>
               </div>
@@ -906,6 +910,19 @@
                     />
                   </div>
                 </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">
+                    <i class="fas fa-tag mr-1 text-primary"></i>
+                    回测名称（可选，用于分类存储）
+                  </label>
+                  <input
+                    v-model="batchBacktestConfig.backtestName"
+                    type="text"
+                    class="input w-full"
+                    placeholder="例如：策略A回测、2024年回测等"
+                  />
+                  <p class="text-xs text-muted-foreground mt-1">不同名称的回测数据将分开存储，避免数据覆盖</p>
+                </div>
               </div>
 
               <!-- 止盈止损组合列表 -->
@@ -1161,6 +1178,10 @@ const selectedStockCodes = ref(new Set())
 // 扫描配置（从扫描工具页面获取，用于设置默认回测日）
 const scanConfig = ref(null)
 
+// 买入条件配置 - 平台期筛选
+const availablePlatformPeriods = ref([]) // 可用的平台期列表（从股票中统计）
+const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
+
 // 回测历史相关
 const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
@@ -1175,6 +1196,7 @@ const batchBacktestLoading = ref(false)
 const batchBacktestConfig = ref({
   backtestDate: '',
   statDate: '',
+  backtestName: '', // 回测名称
   profitLossCombinations: []
 })
 const batchBacktestResult = ref(null)
@@ -1238,9 +1260,42 @@ const maxDate = computed(() => {
   return today.toISOString().split('T')[0]
 })
 
-// 获取实际选中的股票列表（用于回测）
+// 获取实际选中的股票列表（用于回测，应用平台期筛选）
 const stocksForBacktest = computed(() => {
-  return selectedStocks.value.filter(stock => selectedStockCodes.value.has(stock.code))
+  // 先过滤出用户手动选中的股票
+  let filtered = selectedStocks.value.filter(stock => selectedStockCodes.value.has(stock.code))
+  
+  // 如果设置了平台期筛选，进一步过滤
+  if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
+    filtered = filtered.filter(stock => {
+      // 获取股票的所有平台期
+      const stockPeriods = []
+      
+      // 从 selection_reasons 中获取平台期
+      if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+        Object.keys(stock.selection_reasons).forEach(key => {
+          const period = parseInt(key)
+          if (!isNaN(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 从 platform_windows 中获取平台期
+      if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+        stock.platform_windows.forEach(period => {
+          if (!stockPeriods.includes(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
+      return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+    })
+  }
+  
+  return filtered
 })
 
 // 是否全选
@@ -1363,6 +1418,58 @@ function goToStockCheck(stock) {
   })
 }
 
+// 统计可用平台期（从股票中提取）
+function updateAvailablePlatformPeriods() {
+  const periodsSet = new Set()
+  
+  selectedStocks.value.forEach(stock => {
+    // 从 selection_reasons 中获取平台期
+    if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+      Object.keys(stock.selection_reasons).forEach(key => {
+        const period = parseInt(key)
+        if (!isNaN(period)) {
+          periodsSet.add(period)
+        }
+      })
+    }
+    
+    // 从 platform_windows 中获取平台期
+    if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+      stock.platform_windows.forEach(period => {
+        if (!isNaN(period)) {
+          periodsSet.add(period)
+        }
+      })
+    }
+  })
+  
+  // 排序并更新可用平台期列表
+  availablePlatformPeriods.value = Array.from(periodsSet).sort((a, b) => a - b)
+  
+  // 如果可用平台期列表为空，清空选中的平台期
+  if (availablePlatformPeriods.value.length === 0) {
+    selectedPlatformPeriods.value = []
+    return
+  }
+  
+  // 如果当前没有选中任何平台期，或者选中的平台期数量不等于可用平台期数量，或者有选中的平台期不在新的列表中，则默认全选
+  if (selectedPlatformPeriods.value.length === 0 || 
+      selectedPlatformPeriods.value.length !== availablePlatformPeriods.value.length ||
+      !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
+    selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+  }
+}
+
+// 全选平台期
+function selectAllPlatformPeriods() {
+  selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+}
+
+// 清空平台期筛选
+function clearPlatformPeriodFilter() {
+  selectedPlatformPeriods.value = []
+}
+
 // 从 sessionStorage 加载选中的股票和扫描配置
 function loadSelectedStocksAndConfig() {
   try {
@@ -1377,6 +1484,9 @@ function loadSelectedStocksAndConfig() {
       try {
         selectedStocks.value = JSON.parse(savedStocks)
         console.log('✓ 从 sessionStorage 加载选中的股票成功:', selectedStocks.value.length, '只')
+        
+        // 统计可用平台期并设置默认全选
+        updateAvailablePlatformPeriods()
         
         // 默认全选所有股票
         selectedStockCodes.value.clear()
@@ -3033,6 +3143,7 @@ async function runBatchBacktest() {
     const response = await axios.post('/platform/api/backtest/batch', {
       backtest_date: batchBacktestConfig.value.backtestDate,
       stat_date: batchBacktestConfig.value.statDate,
+      backtest_name: batchBacktestConfig.value.backtestName?.trim() || null,
       buy_strategy: backtestConfig.value.buyStrategy,
       initial_capital: backtestConfig.value.initialCapital,
       selected_stocks: selectedStocks.value,
@@ -3065,6 +3176,7 @@ watch(showBatchBacktestDialog, (newVal) => {
     // 初始化批量回测配置
     batchBacktestConfig.value.backtestDate = backtestConfig.value.backtestDate || ''
     batchBacktestConfig.value.statDate = backtestConfig.value.statDate || ''
+    batchBacktestConfig.value.backtestName = '' // 重置回测名称
     // 如果没有组合，添加一个默认组合
     if (batchBacktestConfig.value.profitLossCombinations.length === 0) {
       addProfitLossCombination()

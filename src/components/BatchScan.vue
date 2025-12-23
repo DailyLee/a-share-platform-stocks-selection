@@ -425,6 +425,10 @@
                 :show-help-text="false"
                 stop-loss-placeholder="-2"
                 take-profit-placeholder="18"
+                :show-buy-conditions="scanResultsForBacktest.length > 0"
+                :available-platform-periods="availablePlatformPeriods"
+                :selected-platform-periods="selectedPlatformPeriods"
+                @update:selected-platform-periods="selectedPlatformPeriods = $event"
               />
 
               <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
@@ -510,6 +514,14 @@
                     <span v-if="getDateConfig(group).useTakeProfit" class="flex items-center">
                       <i class="fas fa-arrow-up mr-1 text-red-600 dark:text-red-400"></i>
                       止盈: {{ getDateConfig(group).takeProfitPercent }}%
+                    </span>
+                    <span v-if="getGroupReturnRate(group) !== null" class="flex items-center font-medium" :class="getGroupReturnRate(group) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
+                      <i class="fas fa-chart-line mr-1"></i>
+                      收益率: {{ getGroupReturnRate(group) >= 0 ? '+' : '' }}{{ getGroupReturnRate(group).toFixed(2) }}%
+                    </span>
+                    <span v-if="getGroupWinRate(group) !== null" class="flex items-center font-medium" :class="getGroupWinRate(group) >= 50 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
+                      <i class="fas fa-trophy mr-1"></i>
+                      胜率: {{ getGroupWinRate(group).toFixed(1) }}%
                     </span>
                   </span>
                 </div>
@@ -716,6 +728,10 @@ const backtestConfig = ref({
   takeProfitPercent: 18.0,
   periodStatDates: {} // 每个周期对应的统计日 { scanDate: statDate }
 })
+
+// 买入条件配置 - 平台期筛选
+const availablePlatformPeriods = ref([]) // 可用的平台期列表（从所有扫描结果的股票中统计）
+const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
 
 // 批量回测历史相关
 const showBacktestHistoryDialog = ref(false)
@@ -1102,6 +1118,8 @@ const openBacktestDialog = async (task) => {
   scanResultsForBacktest.value = []
   backtestConfig.value.periodStatDates = {}
   backtestConfig.value.backtestName = '' // 重置回测名称
+  availablePlatformPeriods.value = [] // 清空可用平台期
+  selectedPlatformPeriods.value = [] // 清空选中的平台期
   loadingBacktestTaskId.value = task.id
   backtestLoading.value = true
   
@@ -1110,6 +1128,9 @@ const openBacktestDialog = async (task) => {
     const response = await axios.get(`/platform/api/batch-scan/tasks/${task.id}/results`)
     if (response.data.success) {
       scanResultsForBacktest.value = response.data.data
+      
+      // 统计可用平台期并设置默认全选
+      await updateAvailablePlatformPeriods()
       
       // 为每个周期设置默认统计日（回测日后的第一个周五）
       const periodStatDates = {}
@@ -1132,6 +1153,67 @@ const openBacktestDialog = async (task) => {
   }
   
   showBacktestDialog.value = true
+}
+
+// 统计可用平台期（从所有扫描结果的股票中提取）
+async function updateAvailablePlatformPeriods() {
+  const periodsSet = new Set()
+  
+  // 遍历所有扫描结果，加载每个结果的详情以获取股票数据
+  for (const result of scanResultsForBacktest.value) {
+    try {
+      // 如果结果中没有完整的股票数据，需要获取详情
+      let scanResult = result
+      if (!result.scannedStocks || result.scannedStocks.length === 0) {
+        const response = await axios.get(`/platform/api/batch-scan/results/${result.id}`)
+        if (response.data.success) {
+          scanResult = response.data.data
+        }
+      }
+      
+      // 从股票数据中提取平台期
+      if (scanResult.scannedStocks && Array.isArray(scanResult.scannedStocks)) {
+        scanResult.scannedStocks.forEach(stock => {
+          // 从 selection_reasons 中获取平台期
+          if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+            Object.keys(stock.selection_reasons).forEach(key => {
+              const period = parseInt(key)
+              if (!isNaN(period)) {
+                periodsSet.add(period)
+              }
+            })
+          }
+          
+          // 从 platform_windows 中获取平台期
+          if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+            stock.platform_windows.forEach(period => {
+              if (!isNaN(period)) {
+                periodsSet.add(period)
+              }
+            })
+          }
+        })
+      }
+    } catch (error) {
+      console.warn(`加载扫描结果 ${result.id} 详情失败:`, error)
+    }
+  }
+  
+  // 排序并更新可用平台期列表
+  availablePlatformPeriods.value = Array.from(periodsSet).sort((a, b) => a - b)
+  
+  // 如果可用平台期列表为空，清空选中的平台期
+  if (availablePlatformPeriods.value.length === 0) {
+    selectedPlatformPeriods.value = []
+    return
+  }
+  
+  // 如果当前没有选中任何平台期，或者选中的平台期数量不等于可用平台期数量，或者有选中的平台期不在新的列表中，则默认全选
+  if (selectedPlatformPeriods.value.length === 0 || 
+      selectedPlatformPeriods.value.length !== availablePlatformPeriods.value.length ||
+      !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
+    selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+  }
 }
 
 const canRunBatchBacktest = computed(() => {
@@ -1166,19 +1248,26 @@ const runBatchBacktest = async () => {
 
   backtestLoading.value = true
   try {
+    const requestData = {
+      task_id: selectedTaskForBacktest.value.id,
+      backtest_name: backtestConfig.value.backtestName.trim(),
+      period_stat_dates: backtestConfig.value.periodStatDates,
+      buy_strategy: backtestConfig.value.buyStrategy,
+      initial_capital: backtestConfig.value.initialCapital,
+      use_stop_loss: backtestConfig.value.useStopLoss,
+      use_take_profit: backtestConfig.value.useTakeProfit,
+      stop_loss_percent: backtestConfig.value.stopLossPercent,
+      take_profit_percent: backtestConfig.value.takeProfitPercent
+    }
+    
+    // 如果设置了平台期筛选，添加平台期筛选参数
+    if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
+      requestData.platform_periods = selectedPlatformPeriods.value
+    }
+    
     const response = await axios.post(
       `/platform/api/batch-scan/tasks/${selectedTaskForBacktest.value.id}/backtest`,
-      {
-        task_id: selectedTaskForBacktest.value.id,
-        backtest_name: backtestConfig.value.backtestName.trim(),
-        period_stat_dates: backtestConfig.value.periodStatDates,
-        buy_strategy: backtestConfig.value.buyStrategy,
-        initial_capital: backtestConfig.value.initialCapital,
-        use_stop_loss: backtestConfig.value.useStopLoss,
-        use_take_profit: backtestConfig.value.useTakeProfit,
-        stop_loss_percent: backtestConfig.value.stopLossPercent,
-        take_profit_percent: backtestConfig.value.takeProfitPercent
-      }
+      requestData
     )
 
     if (response.data) {
@@ -1251,6 +1340,76 @@ const getDateConfig = (records) => {
     stopLossPercent: firstRecord.stopLossPercent !== undefined ? firstRecord.stopLossPercent : -2.0,
     takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 18.0
   }
+}
+
+// 获取日期分组的平均收益率
+const getGroupReturnRate = (records) => {
+  if (!records || records.length === 0) return null
+  
+  // 过滤出有收益率的记录（排除失败的记录）
+  const validRecords = records.filter(record => 
+    record.summary && 
+    record.summary.totalReturnRate !== null && 
+    record.summary.totalReturnRate !== undefined &&
+    record.status !== 'failed'
+  )
+  
+  if (validRecords.length === 0) return null
+  
+  // 计算平均收益率
+  const sum = validRecords.reduce((acc, record) => acc + record.summary.totalReturnRate, 0)
+  return sum / validRecords.length
+}
+
+// 获取日期分组的胜率（基于股票数量，与数据统计保持一致）
+const getGroupWinRate = (records) => {
+  if (!records || records.length === 0) return null
+  
+  // 统计所有股票中的盈利和亏损股票数
+  let profitableStocks = 0
+  let lossStocks = 0
+  
+  records.forEach(record => {
+    // 跳过失败的记录
+    if (record.status === 'failed') return
+    
+    // 批量回测历史记录列表只包含summary，不包含完整的result.stockDetails
+    // 需要从summary中获取股票统计信息，或者需要加载完整记录
+    // 但为了性能，我们先尝试从summary中获取
+    
+    // 方式1: 尝试从record.result.stockDetails获取（如果API返回了完整数据）
+    if (record.result && record.result.stockDetails && Array.isArray(record.result.stockDetails)) {
+      record.result.stockDetails.forEach(detail => {
+        const profit = detail.profit
+        if (profit !== null && profit !== undefined) {
+          if (profit > 0) {
+            profitableStocks++
+          } else if (profit < 0) {
+            lossStocks++
+          }
+        }
+      })
+    }
+    // 方式2: 从summary中获取（批量回测历史记录列表通常只有summary）
+    else if (record.summary) {
+      // summary中可能包含profitableStocks和lossStocks字段
+      const summaryProfitable = record.summary.profitableStocks
+      const summaryLoss = record.summary.lossStocks
+      
+      if (summaryProfitable !== null && summaryProfitable !== undefined && 
+          summaryLoss !== null && summaryLoss !== undefined) {
+        profitableStocks += summaryProfitable
+        lossStocks += summaryLoss
+      }
+      // 如果summary中没有这些字段，无法计算准确的股票胜率
+    }
+  })
+  
+  // 计算胜率（基于股票数量）
+  const totalStocks = profitableStocks + lossStocks
+  if (totalStocks === 0) return null
+  
+  return (profitableStocks / totalStocks) * 100
 }
 
 const openAllStatistics = () => {

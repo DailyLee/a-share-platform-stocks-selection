@@ -888,15 +888,60 @@ class StockDatabase:
         Returns:
             The ID of the saved history record
         """
+        import random
+        import time
+        
         with self._lock:
             with self._transaction() as conn:
                 cursor = conn.cursor()
                 
-                # Generate a unique ID
-                history_id = f"backtest_{int(datetime.now().timestamp() * 1000)}"
-                now = datetime.now().isoformat()
+                # Generate a unique ID with random suffix to avoid collisions
+                # Format: backtest_{timestamp_ms}_{random_4digits}
+                max_retries = 10
+                for attempt in range(max_retries):
+                    timestamp_ms = int(time.time() * 1000)
+                    random_suffix = random.randint(1000, 9999)
+                    history_id = f"backtest_{timestamp_ms}_{random_suffix}"
+                    now = datetime.now().isoformat()
+                    
+                    try:
+                        # Insert history record
+                        cursor.execute('''
+                            INSERT INTO backtest_history (id, config, result, created_at, batch_task_id)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (
+                            history_id,
+                            json.dumps(config, ensure_ascii=False),
+                            json.dumps(result, ensure_ascii=False),
+                            now,
+                            batch_task_id
+                        ))
+                        
+                        return history_id
+                    except sqlite3.IntegrityError:
+                        # ID冲突，重试生成新ID
+                        if attempt < max_retries - 1:
+                            time.sleep(0.001)  # 等待1毫秒后重试
+                            continue
+                        else:
+                            # 如果重试多次仍然失败，使用UUID作为后备方案
+                            import uuid
+                            history_id = f"backtest_{uuid.uuid4().hex[:16]}"
+                            cursor.execute('''
+                                INSERT INTO backtest_history (id, config, result, created_at, batch_task_id)
+                                VALUES (?, ?, ?, ?, ?)
+                            ''', (
+                                history_id,
+                                json.dumps(config, ensure_ascii=False),
+                                json.dumps(result, ensure_ascii=False),
+                                now,
+                                batch_task_id
+                            ))
+                            return history_id
                 
-                # Insert history record
+                # 理论上不会到达这里，但为了安全起见
+                import uuid
+                history_id = f"backtest_{uuid.uuid4().hex[:16]}"
                 cursor.execute('''
                     INSERT INTO backtest_history (id, config, result, created_at, batch_task_id)
                     VALUES (?, ?, ?, ?, ?)
@@ -904,19 +949,19 @@ class StockDatabase:
                     history_id,
                     json.dumps(config, ensure_ascii=False),
                     json.dumps(result, ensure_ascii=False),
-                    now,
+                    datetime.now().isoformat(),
                     batch_task_id
                 ))
-                
                 return history_id
     
-    def get_backtest_history_list(self, limit: int = 100, batch_task_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_backtest_history_list(self, limit: int = 100, batch_task_id: Optional[str] = None, backtest_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get list of all backtest history records (metadata only).
         
         Args:
             limit: Maximum number of records to return
             batch_task_id: Optional filter by batch task ID
+            backtest_name: Optional filter by backtest name
         
         Returns:
             List of history record metadata
@@ -925,28 +970,34 @@ class StockDatabase:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            if batch_task_id:
-                cursor.execute('''
-                    SELECT id, config, result, created_at, batch_task_id
-                    FROM backtest_history
-                    WHERE batch_task_id = ?
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                ''', (batch_task_id, limit))
-            else:
-                cursor.execute('''
-                    SELECT id, config, result, created_at, batch_task_id
-                    FROM backtest_history
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                ''', (limit,))
+            # Build query based on filters
+            query = 'SELECT id, config, result, created_at, batch_task_id FROM backtest_history WHERE 1=1'
+            params = []
             
+            if batch_task_id:
+                query += ' AND batch_task_id = ?'
+                params.append(batch_task_id)
+            
+            query += ' ORDER BY created_at DESC LIMIT ?'
+            params.append(limit)
+            
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             
             records = []
             for row in rows:
                 config = json.loads(row[1])
                 result = json.loads(row[2])
+                
+                # Filter by backtest_name if provided (normalize empty string to None)
+                if backtest_name is not None:
+                    config_backtest_name = config.get('backtest_name')
+                    if config_backtest_name and isinstance(config_backtest_name, str):
+                        config_backtest_name = config_backtest_name.strip() or None
+                    # Normalize backtest_name filter (empty string to None)
+                    filter_backtest_name = backtest_name.strip() if isinstance(backtest_name, str) and backtest_name.strip() else None
+                    if config_backtest_name != filter_backtest_name:
+                        continue  # Skip records that don't match the backtest_name filter
                 
                 # 检查是否是失败记录
                 is_failed = result.get('status') == 'failed' or config.get('status') == 'failed'
@@ -1072,6 +1123,7 @@ class StockDatabase:
             config: Backtest configuration dictionary containing:
                 - backtest_date: str
                 - stat_date: str
+                - backtest_name: str (optional, for grouping)
                 - use_stop_loss: bool
                 - use_take_profit: bool
                 - stop_loss_percent: float
@@ -1092,12 +1144,26 @@ class StockDatabase:
             ''')
             rows = cursor.fetchall()
             
+            # Get backtest_name from config (normalize empty string to None for comparison)
+            config_backtest_name = config.get('backtest_name')
+            if config_backtest_name and isinstance(config_backtest_name, str):
+                config_backtest_name = config_backtest_name.strip() or None
+            
             # Compare each record's config
             for row in rows:
                 try:
                     existing_config = json.loads(row[1])
                     
-                    # Compare key fields
+                    # Get existing backtest_name (normalize empty string to None for comparison)
+                    existing_backtest_name = existing_config.get('backtest_name')
+                    if existing_backtest_name and isinstance(existing_backtest_name, str):
+                        existing_backtest_name = existing_backtest_name.strip() or None
+                    
+                    # Compare backtest_name first - if different, they are not duplicates
+                    if existing_backtest_name != config_backtest_name:
+                        continue  # Different names, skip this record
+                    
+                    # Compare key fields (only if backtest_name matches)
                     if (existing_config.get('backtest_date') == config.get('backtest_date') and
                         existing_config.get('stat_date') == config.get('stat_date') and
                         existing_config.get('use_stop_loss') == config.get('use_stop_loss') and

@@ -6,7 +6,8 @@ from typing import Dict, List, Any, Optional
 from .stock_database import get_stock_database
 
 # Maximum number of history records to keep
-MAX_HISTORY_RECORDS = 100
+# 增加到10000以支持更多回测名称的历史记录，避免数据被截断
+MAX_HISTORY_RECORDS = 10000
 
 
 def save_backtest_history(config: Dict[str, Any], result: Dict[str, Any], batch_task_id: Optional[str] = None) -> str:
@@ -27,18 +28,19 @@ def save_backtest_history(config: Dict[str, Any], result: Dict[str, Any], batch_
     return history_id
 
 
-def get_backtest_history_list(batch_task_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_backtest_history_list(batch_task_id: Optional[str] = None, backtest_name: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get list of all backtest history records (metadata only).
     
     Args:
         batch_task_id: Optional filter by batch task ID
+        backtest_name: Optional filter by backtest name
     
     Returns:
         List of history record metadata
     """
     db = get_stock_database()
-    return db.get_backtest_history_list(MAX_HISTORY_RECORDS, batch_task_id)
+    return db.get_backtest_history_list(MAX_HISTORY_RECORDS, batch_task_id, backtest_name)
 
 
 def get_backtest_history(history_id: str) -> Optional[Dict[str, Any]]:
