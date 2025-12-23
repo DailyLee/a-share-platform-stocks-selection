@@ -683,7 +683,7 @@ const scanConfig = ref({
   use_breakthrough_confirmation: true,
   breakthrough_confirmation_days: 1,
   use_box_detection: true,
-  box_quality_threshold: 0.9,
+  box_quality_threshold: 0.94,
   use_fundamental_filter: false,
   revenue_growth_percentile: 0.3,
   profit_growth_percentile: 0.3,
