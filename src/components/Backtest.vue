@@ -95,7 +95,10 @@
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-sm font-medium flex items-center">
                 <i class="fas fa-list mr-2 text-primary"></i>
-                回测股票预览（已选 {{ stocksForBacktest.length }} / 共 {{ selectedStocks.length }} 只）
+                回测股票预览（已选 {{ stocksForBacktest.length }} / 共 {{ stocksForPreview.length }} 只）
+                <span v-if="stocksForPreview.length < selectedStocks.length" class="text-xs text-muted-foreground ml-2">
+                  (已应用平台期筛选)
+                </span>
               </h3>
               <div class="flex items-center space-x-2">
                 <button
@@ -109,7 +112,7 @@
             <div class="bg-muted/30 p-4 rounded-md max-h-60 overflow-y-auto">
               <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 <div 
-                  v-for="stock in selectedStocks" 
+                  v-for="stock in stocksForPreview" 
                   :key="stock.code" 
                   class="flex items-center justify-between text-sm p-1.5 rounded transition-colors group"
                 >
@@ -1167,8 +1170,8 @@ const backtestConfig = ref({
   initialCapital: 100000, // 初始资金（用于平均分配策略）
   useStopLoss: true, // 使用止损
   useTakeProfit: true, // 使用止盈
-  stopLossPercent: -2, // 止损百分比
-  takeProfitPercent: 18 // 止盈百分比
+  stopLossPercent: -1.6, // 止损百分比
+  takeProfitPercent: 16 // 止盈百分比
 })
 
 // 选中的股票列表（从扫描工具页面获取）
@@ -1260,6 +1263,42 @@ const maxDate = computed(() => {
   return today.toISOString().split('T')[0]
 })
 
+// 根据平台期筛选获取符合条件的股票列表（用于预览）
+const stocksForPreview = computed(() => {
+  // 如果设置了平台期筛选，只显示符合选中平台期的股票
+  if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
+    return selectedStocks.value.filter(stock => {
+      // 获取股票的所有平台期
+      const stockPeriods = []
+      
+      // 从 selection_reasons 中获取平台期
+      if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+        Object.keys(stock.selection_reasons).forEach(key => {
+          const period = parseInt(key)
+          if (!isNaN(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 从 platform_windows 中获取平台期
+      if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+        stock.platform_windows.forEach(period => {
+          if (!stockPeriods.includes(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
+      return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+    })
+  }
+  
+  // 如果没有设置平台期筛选或全选，显示所有股票
+  return selectedStocks.value
+})
+
 // 获取实际选中的股票列表（用于回测，应用平台期筛选）
 const stocksForBacktest = computed(() => {
   // 先过滤出用户手动选中的股票
@@ -1298,10 +1337,13 @@ const stocksForBacktest = computed(() => {
   return filtered
 })
 
-// 是否全选
+// 是否全选（只考虑符合平台期筛选的股票）
 const isAllSelected = computed(() => {
-  return selectedStocks.value.length > 0 && 
-         selectedStockCodes.value.size === selectedStocks.value.length
+  const previewStocks = stocksForPreview.value
+  if (previewStocks.length === 0) return false
+  
+  // 检查所有符合平台期筛选的股票是否都被选中
+  return previewStocks.every(stock => selectedStockCodes.value.has(stock.code))
 })
 
 // 检查是否可以运行回测
@@ -1387,14 +1429,17 @@ function toggleStock(code) {
   }
 }
 
-// 全选/反选所有股票
+// 全选/反选所有股票（只针对符合平台期筛选的股票）
 function toggleSelectAll() {
+  const previewStocks = stocksForPreview.value
   if (isAllSelected.value) {
-    // 反选：清空所有选择
-    selectedStockCodes.value.clear()
+    // 反选：取消选择所有符合平台期筛选的股票
+    previewStocks.forEach(stock => {
+      selectedStockCodes.value.delete(stock.code)
+    })
   } else {
-    // 全选：选择所有股票
-    selectedStocks.value.forEach(stock => {
+    // 全选：选择所有符合平台期筛选的股票
+    previewStocks.forEach(stock => {
       selectedStockCodes.value.add(stock.code)
     })
   }
@@ -1453,11 +1498,25 @@ function updateAvailablePlatformPeriods() {
   }
   
   // 如果当前没有选中任何平台期，或者选中的平台期数量不等于可用平台期数量，或者有选中的平台期不在新的列表中，则默认全选
+  const wasEmpty = selectedPlatformPeriods.value.length === 0
   if (selectedPlatformPeriods.value.length === 0 || 
       selectedPlatformPeriods.value.length !== availablePlatformPeriods.value.length ||
       !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
     selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
   }
+  
+  // 自动选中所有符合平台期筛选的股票
+  selectStocksByPlatformPeriods()
+}
+
+// 根据平台期筛选自动选中符合条件的股票
+function selectStocksByPlatformPeriods() {
+  const previewStocks = stocksForPreview.value
+  // 选中所有符合平台期筛选的股票
+  previewStocks.forEach(stock => {
+    selectedStockCodes.value.add(stock.code)
+  })
+  console.log('✓ 自动选中符合平台期筛选的股票:', previewStocks.length, '只')
 }
 
 // 全选平台期
@@ -1487,13 +1546,7 @@ function loadSelectedStocksAndConfig() {
         
         // 统计可用平台期并设置默认全选
         updateAvailablePlatformPeriods()
-        
-        // 默认全选所有股票
-        selectedStockCodes.value.clear()
-        selectedStocks.value.forEach(stock => {
-          selectedStockCodes.value.add(stock.code)
-        })
-        console.log('✓ 默认全选所有股票:', selectedStockCodes.value.size, '只')
+        // updateAvailablePlatformPeriods 会自动选中符合平台期筛选的股票
       } catch (e) {
         console.error('✗ 解析 sessionStorage 中的选中股票失败:', e)
       }
@@ -1982,12 +2035,8 @@ async function loadHistoryRecordToCurrent(record) {
       return
     }
     
-    // 默认全选所有股票
-    selectedStockCodes.value.clear()
-    selectedStocks.value.forEach(stock => {
-      selectedStockCodes.value.add(stock.code)
-    })
-    console.log('✓ 默认全选所有股票:', selectedStockCodes.value.size, '只')
+    // 统计可用平台期并设置默认全选，同时自动选中符合平台期筛选的股票
+    updateAvailablePlatformPeriods()
     
     // 加载扫描配置（用于设置默认回测日，向后兼容）
     // 优先级：1. 历史记录中的 scan_config  2. 从扫描历史记录查找  3. sessionStorage
@@ -3118,8 +3167,8 @@ function addProfitLossCombination() {
   batchBacktestConfig.value.profitLossCombinations.push({
     useStopLoss: true,
     useTakeProfit: true,
-    stopLossPercent: -2,
-    takeProfitPercent: 18
+    stopLossPercent: -1.6,
+    takeProfitPercent: 16
   })
 }
 
@@ -4227,6 +4276,14 @@ watch(() => route.fullPath, async (newPath, oldPath) => {
     await loadBacktestData()
   }
 })
+
+// 监听平台期筛选变化，自动选中符合新筛选条件的股票
+watch(selectedPlatformPeriods, () => {
+  // 当平台期筛选变化时，自动选中所有符合新筛选条件的股票
+  if (selectedStocks.value.length > 0) {
+    selectStocksByPlatformPeriods()
+  }
+}, { deep: true })
 
 onBeforeUnmount(() => {
   // 清理图表实例

@@ -155,20 +155,23 @@
           </div>
           <div v-if="modelValue.useStopLoss" class="ml-6 flex items-center space-x-2">
             <label :for="`stopLossPercent-${uniqueId}`" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
-            <input
-              :id="`stopLossPercent-${uniqueId}`"
-              :value="modelValue.stopLossPercent"
-              @input="handleNumberInput('stopLossPercent', $event)"
-              type="number"
-              step="0.1"
-              min="-100"
-              max="0"
-              class="input w-24"
-              :placeholder="stopLossPlaceholder"
-            />
+            <div class="flex items-center">
+              <span class="text-sm text-muted-foreground mr-1">-</span>
+              <input
+                :id="`stopLossPercent-${uniqueId}`"
+                :value="Math.abs(modelValue.stopLossPercent)"
+                @input="handleStopLossInput($event)"
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                class="input w-24"
+                :placeholder="stopLossPlaceholder ? Math.abs(parseFloat(stopLossPlaceholder) || 2) : '2'"
+              />
+            </div>
             <span class="text-sm text-muted-foreground">%</span>
             <p v-if="showHelpText" class="text-xs text-muted-foreground ml-2">
-              (负数，例如：-3 表示下跌3%时止损)
+              (只需输入数字，系统自动转换为负数，例如：输入 3 表示下跌3%时止损)
             </p>
           </div>
         </div>
@@ -221,8 +224,8 @@ const props = defineProps({
       initialCapital: 100000,
       useStopLoss: true,
       useTakeProfit: true,
-      stopLossPercent: -2.0,
-      takeProfitPercent: 18.0
+      stopLossPercent: -1.6,
+      takeProfitPercent: 16.0
     })
   },
   // 用于生成唯一的ID，避免多个实例冲突
@@ -238,12 +241,12 @@ const props = defineProps({
   // 止损占位符
   stopLossPlaceholder: {
     type: String,
-    default: '-2'
+    default: '-1.6'
   },
   // 止盈占位符
   takeProfitPlaceholder: {
     type: String,
-    default: '18'
+    default: '16'
   },
   // 是否显示买入条件配置
   showBuyConditions: {
@@ -287,6 +290,20 @@ const handleNumberInput = (field, event) => {
   const numValue = parseFloat(value)
   if (!isNaN(numValue)) {
     updateField(field, numValue)
+  }
+}
+
+// 专门处理止损百分比输入：用户只需输入正数，自动转换为负数
+const handleStopLossInput = (event) => {
+  const value = event.target.value
+  if (value === '') {
+    // 如果输入为空，保持原值
+    return
+  }
+  const numValue = parseFloat(value)
+  if (!isNaN(numValue) && numValue >= 0) {
+    // 将正数转换为负数
+    updateField('stopLossPercent', -numValue)
   }
 }
 

@@ -423,8 +423,8 @@
                 v-model="backtestConfig"
                 unique-id="batch"
                 :show-help-text="false"
-                stop-loss-placeholder="-2"
-                take-profit-placeholder="18"
+                stop-loss-placeholder="-1.6"
+                take-profit-placeholder="16"
                 :show-buy-conditions="scanResultsForBacktest.length > 0"
                 :available-platform-periods="availablePlatformPeriods"
                 :selected-platform-periods="selectedPlatformPeriods"
@@ -724,8 +724,8 @@ const backtestConfig = ref({
   initialCapital: 100000,
   useStopLoss: true,
   useTakeProfit: true,
-  stopLossPercent: -2.0,
-  takeProfitPercent: 18.0,
+  stopLossPercent: -1.6,
+  takeProfitPercent: 16.0,
   periodStatDates: {} // 每个周期对应的统计日 { scanDate: statDate }
 })
 
@@ -1337,8 +1337,8 @@ const getDateConfig = (records) => {
   return {
     useStopLoss: firstRecord.useStopLoss !== undefined ? firstRecord.useStopLoss : false,
     useTakeProfit: firstRecord.useTakeProfit !== undefined ? firstRecord.useTakeProfit : false,
-    stopLossPercent: firstRecord.stopLossPercent !== undefined ? firstRecord.stopLossPercent : -2.0,
-    takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 18.0
+    stopLossPercent: firstRecord.stopLossPercent !== undefined ? firstRecord.stopLossPercent : -1.6,
+    takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 16.0
   }
 }
 
