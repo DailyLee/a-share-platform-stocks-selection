@@ -446,7 +446,9 @@ def scan_platform_stocks(stock_list: list[dict], config: dict = None) -> list[di
     buffer_days = int(max_window * 0.5) + 20
     end_date = datetime.today().strftime('%Y-%m-%d')
     # Calculate start date considering the max window and buffer
-    start_date_obj = datetime.today() - timedelta(days=max_window + buffer_days)
+    # Ensure minimum data range for proper analysis (minimum 180 days)
+    min_data_days = max(max_window + buffer_days, 180)
+    start_date_obj = datetime.today() - timedelta(days=min_data_days)
     start_date = start_date_obj.strftime('%Y-%m-%d')
 
     results = []
@@ -624,6 +626,11 @@ def scan_platform_stocks(stock_list: list[dict], config: dict = None) -> list[di
             f"\n{Fore.CYAN}======================================{Style.RESET_ALL}")
         print(f"{Fore.CYAN}扫描完成{Style.RESET_ALL}")
         print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}扫描配置:{Style.RESET_ALL}")
+        print(f"  - 日期范围: {Fore.GREEN}{start_date} to {end_date}{Style.RESET_ALL}")
+        print(f"  - 数据范围: {Fore.GREEN}{min_data_days} 天{Style.RESET_ALL}")
+        print(f"  - 窗口期: {Fore.GREEN}{cfg['windows']}{Style.RESET_ALL}")
+        print(f"  - 最大窗口期: {Fore.GREEN}{max_window} 天{Style.RESET_ALL}")
         print(f"  - 总股票数: {Fore.GREEN}{len(stock_list)}{Style.RESET_ALL}")
         print(f"  - 成功获取: {Fore.GREEN}{success_count}{Style.RESET_ALL}")
         print(f"  - 空数据: {Fore.YELLOW}{empty_count}{Style.RESET_ALL}")

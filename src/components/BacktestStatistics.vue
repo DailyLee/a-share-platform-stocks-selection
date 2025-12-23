@@ -231,6 +231,31 @@
                 <p v-if="allStockAttributes.industries.size === 0" class="text-xs text-muted-foreground text-center py-1">暂无数据</p>
               </div>
             </div>
+
+            <!-- 每个周期选择前n个数据 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">每个周期选择前n个数据</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  v-model.number="statisticsFilters.topNPerPeriod"
+                  :min="1"
+                  placeholder="全选"
+                  class="input w-full text-xs py-1"
+                />
+                <button
+                  v-if="statisticsFilters.topNPerPeriod !== null && statisticsFilters.topNPerPeriod > 0"
+                  @click="statisticsFilters.topNPerPeriod = null"
+                  class="px-2 py-1 text-xs rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors whitespace-nowrap"
+                  title="清除，显示全部数据"
+                >
+                  全选
+                </button>
+              </div>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                留空或点击"全选"表示显示该周期所有数据
+              </p>
+            </div>
           </div>
         </div>
   
@@ -474,7 +499,8 @@ const router = useRouter()
     breakthroughNone: false, // 是否筛选完全没有突破前兆的股票
     breakthroughConfirmation: null, // true/false/null (null表示不筛选)
     boxQualityThreshold: 0,
-    industries: [] // 选中的行业列表
+    industries: [], // 选中的行业列表
+    topNPerPeriod: null // 每个周期选择前n个数据（null表示全选）
   })
   
   // 所有股票的属性集合（用于筛选条件选项）
@@ -702,38 +728,48 @@ const router = useRouter()
     return false
   }
   
-  // 按星期划分周期
+  // 按回测统计日划分周期
   function groupByWeek(records) {
-    const weekGroups = {}
+    const statDateGroups = {}
     records.forEach(record => {
-      const scanDate = record.scanDate || record.record?.config?.backtest_date
-      if (!scanDate) return
+      // 获取回测统计日期（stat_date）
+      const statDate = record.record?.config?.stat_date
+      if (!statDate) {
+        // 如果没有统计日期，使用回测日期作为后备
+        const scanDate = record.scanDate || record.record?.config?.backtest_date
+        if (!scanDate) return
+        
+        const date = new Date(scanDate)
+        const dateKey = date.toISOString().split('T')[0]
+        const dateLabel = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+        
+        if (!statDateGroups[dateKey]) {
+          statDateGroups[dateKey] = {
+            label: dateLabel,
+            records: []
+          }
+        }
+        statDateGroups[dateKey].records.push(record)
+        return
+      }
       
-      const date = new Date(scanDate)
-      // 获取该日期所在周的周一日期（作为周期标识）
-      const dayOfWeek = date.getDay()
-      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // 如果是周日，向前推6天；否则推到周一
-      const monday = new Date(date)
-      monday.setDate(date.getDate() + diff)
-      monday.setHours(0, 0, 0, 0)
+      // 使用统计日期作为周期标识
+      const date = new Date(statDate)
+      const dateKey = date.toISOString().split('T')[0]
+      const dateLabel = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
       
-      // 格式化周标识：YYYY-MM-DD（周一日期）
-      const weekKey = monday.toISOString().split('T')[0]
-      // 格式化显示：YYYY年MM月DD日周
-      const weekLabel = `${monday.getFullYear()}年${monday.getMonth() + 1}月${monday.getDate()}日周`
-      
-      if (!weekGroups[weekKey]) {
-        weekGroups[weekKey] = {
-          label: weekLabel,
+      if (!statDateGroups[dateKey]) {
+        statDateGroups[dateKey] = {
+          label: dateLabel,
           records: []
         }
       }
-      weekGroups[weekKey].records.push(record)
+      statDateGroups[dateKey].records.push(record)
     })
     
-    return Object.keys(weekGroups).sort().map(weekKey => ({
-      periodLabel: weekGroups[weekKey].label,
-      records: weekGroups[weekKey].records
+    return Object.keys(statDateGroups).sort().map(dateKey => ({
+      periodLabel: statDateGroups[dateKey].label,
+      records: statDateGroups[dateKey].records
     }))
   }
   
@@ -1034,7 +1070,8 @@ const router = useRouter()
       filters.breakthroughNone ||
       filters.breakthroughConfirmation !== null ||
       filters.boxQualityThreshold > 0 ||
-      filters.industries.length > 0
+      filters.industries.length > 0 ||
+      (filters.topNPerPeriod !== null && filters.topNPerPeriod > 0)
     )
   }
   
@@ -1053,7 +1090,8 @@ const router = useRouter()
       breakthroughNone: false,
       breakthroughConfirmation: null,
       boxQualityThreshold: 0,
-      industries: []
+      industries: [],
+      topNPerPeriod: null
     }
     
     // 计算统计数据（不筛选）
@@ -1564,7 +1602,7 @@ const router = useRouter()
 
       // 计算胜率（基于股票数量）
       const totalStocks = profitableStocks + lossStocks
-      const winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
+      let winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
 
       // 计算整体大盘收益率（按投入资金加权平均）
       let totalMarketReturnRate = null
@@ -1631,13 +1669,16 @@ const router = useRouter()
 
       // 按周期分组统计
       const periodGroups = groupByPeriod(recordDetails)
+      const topN = statisticsFilters.value.topNPerPeriod
       const periodStats = periodGroups.map((group, index) => {
         let periodStockCount = 0
         let periodInvestment = 0
         let periodProfit = 0
         let periodMarketReturnRate = null
         const periodStocks = []
+        const periodStockDetails = [] // 存储股票详情，用于排序和筛选
         
+        // 按照原始扫描顺序收集股票详情
         group.records.forEach(recordDetail => {
           const record = recordDetail.record
           if (!record) return
@@ -1648,43 +1689,66 @@ const router = useRouter()
           // 获取该记录中筛选后的股票代码列表
           const recordStockCodes = new Set(recordDetail.stocks.map(s => s.code))
           
-          // 从stockDetails中获取筛选后股票的收益数据
+          // 从stockDetails中获取筛选后股票的收益数据，并创建一个映射以便快速查找
           const stockDetails = result.stockDetails || []
-          const filteredStockDetails = stockDetails.filter(detail => 
-            recordStockCodes.has(detail.code)
-          )
-          
-          filteredStockDetails.forEach(detail => {
-            const buyAmount = detail.buyAmount || 0
-            periodInvestment += buyAmount
-            periodProfit += (detail.profit || 0)
-            periodStockCount++
-            
-            // 从recordDetail.stocks中获取股票信息
-            const stock = recordDetail.stocks.find(s => s.code === detail.code)
-            if (stock) {
-              periodStocks.push({
-                code: stock.code || '',
-                name: stock.name || '',
-                returnRate: detail.returnRate !== undefined ? detail.returnRate : stock.returnRate
-              })
+          const stockDetailsMap = new Map()
+          stockDetails.forEach(detail => {
+            if (recordStockCodes.has(detail.code)) {
+              stockDetailsMap.set(detail.code, detail)
             }
           })
           
+          // 按照recordDetail.stocks的原始顺序遍历股票（保持原始扫描顺序）
+          recordDetail.stocks.forEach(stock => {
+            const detail = stockDetailsMap.get(stock.code)
+            if (detail) {
+              const returnRate = detail.returnRate !== undefined ? detail.returnRate : stock.returnRate
+              periodStockDetails.push({
+                code: stock.code || '',
+                name: stock.name || '',
+                returnRate: returnRate,
+                buyAmount: detail.buyAmount || 0,
+                profit: detail.profit || 0,
+                record: record,
+                marketReturnRate: result.summary?.marketReturnRate
+              })
+            }
+          })
+        })
+        
+        // 如果设置了topN，按照原始顺序只取前n个（不排序）
+        let finalStockDetails = periodStockDetails
+        if (topN !== null && topN > 0 && periodStockDetails.length > 0) {
+          // 只取前n个，保持原始顺序
+          finalStockDetails = periodStockDetails.slice(0, topN)
+        }
+        
+        // 使用筛选后的股票详情计算周期统计
+        finalStockDetails.forEach(detail => {
+          periodInvestment += detail.buyAmount
+          periodProfit += detail.profit
+          periodStockCount++
+          
+          periodStocks.push({
+            code: detail.code,
+            name: detail.name,
+            returnRate: detail.returnRate
+          })
+          
           // 获取大盘收益率（如果有）
-          if (result.summary && result.summary.marketReturnRate !== null && result.summary.marketReturnRate !== undefined) {
+          if (detail.marketReturnRate !== null && detail.marketReturnRate !== undefined) {
             if (periodMarketReturnRate === null) {
-              periodMarketReturnRate = result.summary.marketReturnRate
+              periodMarketReturnRate = detail.marketReturnRate
             } else {
               // 如果有多个记录，按投入资金加权平均
-              const recordInvestment = filteredStockDetails.reduce((sum, d) => sum + (d.buyAmount || 0), 0)
+              const recordInvestment = detail.buyAmount
               const totalInvestmentForAvg = periodInvestment
               if (totalInvestmentForAvg > 0 && recordInvestment > 0) {
                 const weight = recordInvestment / totalInvestmentForAvg
-                periodMarketReturnRate = periodMarketReturnRate * (1 - weight) + result.summary.marketReturnRate * weight
+                periodMarketReturnRate = periodMarketReturnRate * (1 - weight) + detail.marketReturnRate * weight
               } else {
                 // 如果无法加权，取简单平均
-                periodMarketReturnRate = (periodMarketReturnRate + result.summary.marketReturnRate) / 2
+                periodMarketReturnRate = (periodMarketReturnRate + detail.marketReturnRate) / 2
               }
             }
           }
@@ -1713,6 +1777,119 @@ const router = useRouter()
           records: group.records // 保存记录信息，用于获取回测日期
         }
       })
+
+      // 如果设置了topN，基于周期统计结果重新计算整体统计
+      if (topN !== null && topN > 0) {
+        // 重新计算整体统计（基于周期统计的结果）
+        let recalculatedTotalInvestment = 0
+        let recalculatedTotalProfit = 0
+        let recalculatedProfitableStocks = 0
+        let recalculatedLossStocks = 0
+        let recalculatedTotalMarketReturnRate = null
+        const recalculatedRecordReturns = []
+        
+        // 从周期统计中重新计算整体统计
+        periodStats.forEach(periodStat => {
+          // 从原始记录中获取该周期的投资金额
+          let periodInvestment = 0
+          periodStat.records.forEach(recordDetail => {
+            const record = recordDetail.record
+            if (!record) return
+            
+            const result = record.result || {}
+            const stockDetails = result.stockDetails || []
+            
+            // 获取该周期筛选后的股票代码
+            const periodStockCodes = new Set(periodStat.stocks.map(s => s.code))
+            
+            stockDetails.forEach(detail => {
+              if (periodStockCodes.has(detail.code)) {
+                periodInvestment += detail.buyAmount || 0
+              }
+            })
+          })
+          
+          recalculatedTotalInvestment += periodInvestment
+          recalculatedTotalProfit += periodStat.totalProfit
+          
+          // 统计盈利和亏损股票数
+          periodStat.stocks.forEach(stock => {
+            if (stock.returnRate !== null && stock.returnRate !== undefined) {
+              if (stock.returnRate > 0) {
+                recalculatedProfitableStocks++
+              } else if (stock.returnRate < 0) {
+                recalculatedLossStocks++
+              }
+            }
+          })
+          
+          // 保存周期数据用于计算大盘收益率
+          if (periodInvestment > 0) {
+            recalculatedRecordReturns.push({
+              investment: periodInvestment,
+              profit: periodStat.totalProfit,
+              returnRate: periodStat.returnRate,
+              marketReturnRate: periodStat.marketReturnRate
+            })
+          }
+        })
+        
+        // 计算整体收益率（加权平均）
+        let recalculatedTotalReturnRate = 0
+        if (recalculatedTotalInvestment > 0) {
+          recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
+        }
+        
+        // 重新计算大盘收益率（按投入资金加权平均）
+        if (recalculatedRecordReturns.length > 0 && recalculatedTotalInvestment > 0) {
+          let weightedMarketSum = 0
+          let totalWeightedInvestment = 0
+          
+          recalculatedRecordReturns.forEach(r => {
+            if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
+              weightedMarketSum += r.marketReturnRate * r.investment
+              totalWeightedInvestment += r.investment
+            }
+          })
+          
+          if (totalWeightedInvestment > 0) {
+            recalculatedTotalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
+          }
+        }
+        
+        // 重新计算超额收益
+        let recalculatedTotalExcessReturn = null
+        if (recalculatedTotalMarketReturnRate !== null && recalculatedTotalMarketReturnRate !== undefined) {
+          recalculatedTotalExcessReturn = recalculatedTotalReturnRate - recalculatedTotalMarketReturnRate
+        }
+        
+        // 重新计算胜率
+        const recalculatedTotalStocks = recalculatedProfitableStocks + recalculatedLossStocks
+        const recalculatedWinRate = recalculatedTotalStocks > 0 ? (recalculatedProfitableStocks / recalculatedTotalStocks) * 100 : 0
+        
+        // 重新计算年化收益率（使用原有的日期范围）
+        let recalculatedAnnualizedReturnRate = null
+        if (earliestBacktestDate && latestStatDate && recalculatedTotalReturnRate !== null) {
+          const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
+          if (tradingDays > 0) {
+            const totalReturnDecimal = recalculatedTotalReturnRate / 100
+            const tradingDaysPerYear = 250
+            const annualizedMultiplier = tradingDaysPerYear / tradingDays
+            recalculatedAnnualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
+          }
+        }
+        
+        // 更新整体统计数据
+        totalInvestment = recalculatedTotalInvestment
+        totalProfit = recalculatedTotalProfit
+        totalReturnRate = recalculatedTotalReturnRate
+        totalMarketReturnRate = recalculatedTotalMarketReturnRate
+        totalExcessReturn = recalculatedTotalExcessReturn
+        annualizedReturnRate = recalculatedAnnualizedReturnRate
+        profitableStocks = recalculatedProfitableStocks
+        lossStocks = recalculatedLossStocks
+        winRate = recalculatedWinRate
+      }
 
       statisticsResult.value = {
         totalRecords,

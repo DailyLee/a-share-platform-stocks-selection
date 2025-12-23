@@ -1029,8 +1029,10 @@ async def check_platform(request: PlatformCheckRequest):
             else:
                 end_date = datetime.now().strftime('%Y-%m-%d')
             # Calculate start_date based on end_date
+            # Ensure minimum data range for proper analysis (minimum 180 days)
             end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
-            start_date = (end_datetime - timedelta(days=max_window * 2)).strftime('%Y-%m-%d')
+            min_data_days = max(max_window * 2, 180)
+            start_date = (end_datetime - timedelta(days=min_data_days)).strftime('%Y-%m-%d')
             
             # Fetch K-line data
             df = fetch_kline_data(code, start_date, end_date)
@@ -1394,51 +1396,113 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 detail=f"平均分配策略：所有股票在回测日 {request.backtest_date} 到统计日 {request.stat_date} 期间都没有有效的K线数据"
             )
         
-        # 重新计算每只股票的分配金额（基于实际有数据的股票数）
-        buy_amount_per_stock = initial_capital / len(stock_price_info)
-        print(f"{Fore.CYAN}实际有数据的股票数: {len(stock_price_info)}, 每只股票分配金额: {buy_amount_per_stock:.2f}{Style.RESET_ALL}")
+        # 重新计算每只股票的目标分配金额（基于实际有数据的股票数）
+        target_amount_per_stock = initial_capital / len(stock_price_info)
+        print(f"{Fore.CYAN}实际有数据的股票数: {len(stock_price_info)}, 每只股票目标分配金额: {target_amount_per_stock:.2f}{Style.RESET_ALL}")
         
-        # 计算基础买入金额和剩余资金
+        # 优化后的平均分配算法：尽量让每只股票的买入金额接近目标金额
+        stock_allocations = []  # [(stock, buy_price, quantity, actual_amount, kline_df, buy_day_data), ...]
         total_used = 0
-        stock_allocations = []  # [(stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data), ...]
         
+        # 第一轮：计算每只股票的基础买入数量（向下取整到100股的整数倍）
+        base_allocations = []
         for stock, buy_price, buy_day_data, kline_df in stock_price_info:
-            # 基础分配：按平均分配金额买入
-            base_quantity = int(buy_amount_per_stock / buy_price / 100) * 100
+            # 计算目标股数（可以是小数）
+            target_quantity = target_amount_per_stock / buy_price
+            # 向下取整到100股的整数倍
+            base_quantity = int(target_quantity / 100) * 100
             base_amount = base_quantity * buy_price
+            base_allocations.append((stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data))
             total_used += base_amount
-            stock_allocations.append((stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data))
         
         # 计算剩余资金
         remaining_capital = initial_capital - total_used
         print(f"{Fore.CYAN}基础买入总金额: {total_used:.2f}, 剩余资金: {remaining_capital:.2f}{Style.RESET_ALL}")
         
-        # 将剩余资金分配给股票（优先分配给价格较低的股票，可以买入更多手）
-        if remaining_capital > 0 and len(stock_allocations) > 0:
-            # 按价格排序，价格低的优先
-            stock_allocations.sort(key=lambda x: x[1])  # 按 buy_price 排序
+        # 第二轮：均匀分配剩余资金，让每只股票的买入金额尽可能接近目标金额
+        if remaining_capital > 0 and len(base_allocations) > 0:
+            # 按每只股票距离目标金额的差距排序（差距大的优先分配）
+            # 差距 = 目标金额 - 当前已分配金额
+            allocation_gaps = []
+            for stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data in base_allocations:
+                gap = target_amount_per_stock - base_amount
+                allocation_gaps.append((gap, stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data))
             
-            for i, (stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data) in enumerate(stock_allocations):
-                if remaining_capital <= 0:
-                    break
+            # 按差距从大到小排序（差距大的优先分配剩余资金）
+            allocation_gaps.sort(key=lambda x: x[0], reverse=True)
+            
+            # 均匀分配剩余资金
+            updated_allocations = []
+            for gap, stock, buy_price, base_quantity, base_amount, kline_df, buy_day_data in allocation_gaps:
+                current_quantity = base_quantity
+                current_amount = base_amount
                 
-                # 计算可以再买入多少手（每手100股）
-                additional_hands = int(remaining_capital / buy_price / 100)
-                if additional_hands > 0:
-                    additional_quantity = additional_hands * 100
-                    additional_amount = additional_quantity * buy_price
-                    if additional_amount <= remaining_capital:
-                        # 更新分配
-                        stock_allocations[i] = (
-                            stock, buy_price, 
-                            base_quantity + additional_quantity, 
-                            base_amount + additional_amount, 
-                            kline_df, buy_day_data
-                        )
-                        remaining_capital -= additional_amount
-                        print(f"{Fore.GREEN}为 {stock.get('name', stock['code'])} 追加买入 {additional_quantity} 股，追加金额 {additional_amount:.2f}{Style.RESET_ALL}")
+                if remaining_capital > 0:
+                    # 计算还需要多少资金才能达到目标金额
+                    needed_amount = min(gap, remaining_capital)
+                    
+                    # 计算可以买入多少手（每手100股）
+                    additional_hands = int(needed_amount / buy_price / 100)
+                    if additional_hands > 0:
+                        additional_quantity = additional_hands * 100
+                        additional_amount = additional_quantity * buy_price
+                        # 确保不超过剩余资金
+                        if additional_amount <= remaining_capital:
+                            current_quantity += additional_quantity
+                            current_amount += additional_amount
+                            remaining_capital -= additional_amount
+                            print(f"{Fore.GREEN}为 {stock.get('name', stock['code'])} 追加买入 {additional_quantity} 股，追加金额 {additional_amount:.2f}，总金额 {current_amount:.2f}{Style.RESET_ALL}")
+                
+                updated_allocations.append((stock, buy_price, current_quantity, current_amount, kline_df, buy_day_data))
+            
+            # 如果还有剩余资金，更均匀地分配给所有股票
+            # 限制每只股票的最大买入金额不超过目标金额的120%，确保分配均匀
+            max_amount_per_stock = target_amount_per_stock * 1.2
+            if remaining_capital > 0:
+                final_allocations = []
+                # 按当前金额从低到高排序，优先分配给金额较低的股票
+                updated_allocations.sort(key=lambda x: x[3])  # 按 current_amount 排序
+                
+                for stock, buy_price, current_quantity, current_amount, kline_df, buy_day_data in updated_allocations:
+                    # 如果当前金额已经达到或超过最大限制，不再分配
+                    if current_amount >= max_amount_per_stock:
+                        final_allocations.append((stock, buy_price, current_quantity, current_amount, kline_df, buy_day_data))
+                        continue
+                    
+                    if remaining_capital > 0:
+                        # 计算还可以分配多少资金（不超过最大限制）
+                        available_amount = min(max_amount_per_stock - current_amount, remaining_capital)
+                        
+                        # 计算可以买入多少手（每手100股）
+                        additional_hands = int(available_amount / buy_price / 100)
+                        if additional_hands > 0:
+                            additional_quantity = additional_hands * 100
+                            additional_amount = additional_quantity * buy_price
+                            # 确保不超过可用金额和剩余资金
+                            if additional_amount <= available_amount and additional_amount <= remaining_capital:
+                                current_quantity += additional_quantity
+                                current_amount += additional_amount
+                                remaining_capital -= additional_amount
+                                print(f"{Fore.YELLOW}为 {stock.get('name', stock['code'])} 追加买入 {additional_quantity} 股，追加金额 {additional_amount:.2f}，总金额 {current_amount:.2f}{Style.RESET_ALL}")
+                    
+                    final_allocations.append((stock, buy_price, current_quantity, current_amount, kline_df, buy_day_data))
+                
+                stock_allocations = final_allocations
+            else:
+                stock_allocations = updated_allocations
+        else:
+            # 如果没有剩余资金，直接使用基础分配
+            stock_allocations = base_allocations
         
-        print(f"{Fore.CYAN}最终使用资金: {initial_capital - remaining_capital:.2f}, 剩余资金: {remaining_capital:.2f}{Style.RESET_ALL}")
+        # 计算最终使用的总资金
+        final_total_used = sum(amount for _, _, _, amount, _, _ in stock_allocations)
+        print(f"{Fore.CYAN}最终使用资金: {final_total_used:.2f}, 剩余资金: {initial_capital - final_total_used:.2f}{Style.RESET_ALL}")
+        
+        # 打印每只股票的分配情况，用于验证平均分配
+        print(f"{Fore.CYAN}股票分配详情:{Style.RESET_ALL}")
+        for stock, buy_price, quantity, amount, _, _ in stock_allocations:
+            deviation = abs(amount - target_amount_per_stock) / target_amount_per_stock * 100
+            print(f"  {stock.get('name', stock['code'])}: {quantity}股 × {buy_price:.2f} = {amount:.2f}元 (目标: {target_amount_per_stock:.2f}, 偏差: {deviation:.2f}%)")
         
         # 使用优化后的分配进行买入和卖出处理
         total_stocks = len(stock_allocations)

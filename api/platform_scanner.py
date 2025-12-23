@@ -140,7 +140,15 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     # Use the maximum window size plus some buffer for the start date
     max_window = max(config.windows) if config.windows else 90
     end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
-    start_date = (end_date_obj - timedelta(days=max_window * 2)
+    
+    # Ensure minimum data range for proper analysis
+    # Even if window is small (e.g., 30), we need enough data for:
+    # - MA calculations (max MA period is 60 days for window > 60)
+    # - Volume analysis (needs comparison period)
+    # - Other technical indicators
+    # Minimum: 180 days to ensure sufficient data for all analyses
+    min_data_days = max(max_window * 2, 180)
+    start_date = (end_date_obj - timedelta(days=min_data_days)
                   ).strftime('%Y-%m-%d')
 
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
@@ -905,6 +913,11 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
     print(f"{Fore.CYAN}Scan completed{Style.RESET_ALL}")
     print(f"{Fore.CYAN}======================================{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}Scan configuration:{Style.RESET_ALL}")
+    print(f"  - Date range: {Fore.GREEN}{start_date} to {end_date}{Style.RESET_ALL}")
+    print(f"  - Data range: {Fore.GREEN}{min_data_days} days{Style.RESET_ALL}")
+    print(f"  - Windows: {Fore.GREEN}{config.windows}{Style.RESET_ALL}")
+    print(f"  - Max window: {Fore.GREEN}{max_window} days{Style.RESET_ALL}")
     print(
         f"Total stocks processed: {Fore.GREEN}{success_count + empty_count + error_count}{Style.RESET_ALL}")
     print(f"  - Success: {Fore.GREEN}{success_count}{Style.RESET_ALL}")

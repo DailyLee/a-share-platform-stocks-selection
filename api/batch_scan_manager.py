@@ -171,8 +171,10 @@ class BatchScanManager:
             
             # ===== 性能优化：预加载所有股票的历史数据 =====
             # 计算需要的数据范围（考虑最大窗口期）
+            # Ensure minimum data range for proper analysis (minimum 180 days)
             max_window = max(scan_config_dict.get('windows', [30, 60, 90])) if scan_config_dict.get('windows') else 90
-            data_start_date = (start_date - timedelta(days=max_window * 2)).strftime('%Y-%m-%d')
+            min_data_days = max(max_window * 2, 180)
+            data_start_date = (start_date - timedelta(days=min_data_days)).strftime('%Y-%m-%d')
             data_end_date = task['endDate']
             
             print(f"{Fore.CYAN}[BATCH_SCAN] 开始预加载历史数据: {data_start_date} 至 {data_end_date}{Style.RESET_ALL}")

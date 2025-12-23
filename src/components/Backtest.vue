@@ -1368,6 +1368,9 @@ function loadSelectedStocksAndConfig() {
   try {
     console.log('开始加载选中的股票和扫描配置...')
     
+    // 清除之前的回测结果，避免显示旧数据
+    backtestResult.value = null
+    
     // 从 sessionStorage 获取选中的股票
     const savedStocks = sessionStorage.getItem('selectedStocks')
     if (savedStocks) {
@@ -1837,7 +1840,7 @@ async function executeDeleteBacktestHistoryByDate(backtestDate) {
 }
 
 // 加载历史记录到当前回测
-function loadHistoryRecordToCurrent(record) {
+async function loadHistoryRecordToCurrent(record) {
   if (record && record.config) {
     // 加载回测配置
     backtestConfig.value.backtestDate = record.config.backtest_date
@@ -1877,29 +1880,69 @@ function loadHistoryRecordToCurrent(record) {
     console.log('✓ 默认全选所有股票:', selectedStockCodes.value.size, '只')
     
     // 加载扫描配置（用于设置默认回测日，向后兼容）
-    // 优先使用 selected_stocks 中的信息，如果没有则尝试从 scan_config 加载
-    if (record.config.selected_stocks && record.config.selected_stocks.length > 0) {
-      // 新格式：从 selected_stocks 中提取信息，尝试从 sessionStorage 获取扫描配置
+    // 优先级：1. 历史记录中的 scan_config  2. 从扫描历史记录查找  3. sessionStorage
+    let scanConfigLoaded = false
+    
+    // 优先使用历史记录中的 scan_config
+    if (record.config.scan_config) {
+      scanConfig.value = record.config.scan_config
+      scanConfigLoaded = true
+      console.log('✓ 从历史记录中加载扫描配置成功')
+    } 
+    // 如果没有 scan_config，尝试从扫描历史记录中查找对应的扫描配置
+    else if (record.config.backtest_date) {
+      try {
+        // 加载扫描历史记录
+        const scanHistory = await loadScanHistoryForStatistics()
+        let matchingScanRecord = scanHistory.find(sh => sh.scanDate === record.config.backtest_date)
+        
+        // 如果列表中没有完整数据，尝试获取详情
+        if (matchingScanRecord && (!matchingScanRecord.scannedStocks || matchingScanRecord.scannedStocks.length === 0)) {
+          const detail = await getScanHistoryDetail(matchingScanRecord.id)
+          if (detail) {
+            matchingScanRecord = detail
+          }
+        }
+        
+        if (matchingScanRecord && matchingScanRecord.scanConfig) {
+          scanConfig.value = matchingScanRecord.scanConfig
+          scanConfigLoaded = true
+          console.log('✓ 从扫描历史记录中查找并加载扫描配置成功')
+        } else {
+          console.warn('⚠ 在扫描历史记录中未找到匹配的扫描配置，backtest_date:', record.config.backtest_date)
+        }
+      } catch (e) {
+        console.warn('从扫描历史记录查找扫描配置失败:', e)
+      }
+    }
+    
+    // 如果还是没有找到，尝试从 sessionStorage 获取（向后兼容）
+    if (!scanConfigLoaded) {
       try {
         const savedScanConfig = sessionStorage.getItem('scanConfig')
         if (savedScanConfig) {
           scanConfig.value = JSON.parse(savedScanConfig)
+          scanConfigLoaded = true
+          console.log('✓ 从 sessionStorage 加载扫描配置成功')
         }
-        sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value))
-        console.log('✓ 股票已加载并保存到 sessionStorage')
       } catch (e) {
-        console.error('保存数据到 sessionStorage 失败:', e)
+        console.warn('从 sessionStorage 加载扫描配置失败:', e)
       }
-    } else if (record.config.scan_config) {
-      // 旧格式：向后兼容
-      scanConfig.value = record.config.scan_config
-      try {
-        sessionStorage.setItem('scanConfig', JSON.stringify(record.config.scan_config))
-        sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value))
-        console.log('✓ 扫描配置和股票已加载并保存到 sessionStorage（旧格式）')
-      } catch (e) {
-        console.error('保存数据到 sessionStorage 失败:', e)
+    }
+    
+    // 保存股票和扫描配置到 sessionStorage
+    try {
+      sessionStorage.setItem('selectedStocks', JSON.stringify(selectedStocks.value))
+      if (scanConfigLoaded && scanConfig.value) {
+        sessionStorage.setItem('scanConfig', JSON.stringify(scanConfig.value))
+        console.log('✓ 股票和扫描配置已保存到 sessionStorage')
+        // 如果加载了扫描配置，重新初始化日期（使用扫描配置中的扫描日期）
+        initDates()
+      } else {
+        console.log('✓ 股票已保存到 sessionStorage（扫描配置未找到）')
       }
+    } catch (e) {
+      console.error('保存数据到 sessionStorage 失败:', e)
     }
     
     // 加载并显示回测结果数据
@@ -1915,9 +1958,13 @@ function loadHistoryRecordToCurrent(record) {
         })
       } else {
         console.warn('⚠ 回测结果中没有summary数据')
+        // 如果没有summary数据，清除回测结果
+        backtestResult.value = null
       }
     } else {
       console.warn('历史记录中没有回测结果数据')
+      // 如果没有回测结果，确保清除旧数据
+      backtestResult.value = null
     }
     
     selectedHistoryRecord.value = null
@@ -3954,6 +4001,10 @@ async function loadHistoryRecordById(historyId) {
     return
   }
   
+  // 清除之前的回测结果，避免显示旧数据
+  backtestResult.value = null
+  console.log('✓ 已清除之前的回测结果（准备加载新的历史记录）')
+  
   currentLoadingHistoryId = historyId
   
   try {
@@ -3969,7 +4020,7 @@ async function loadHistoryRecordById(historyId) {
         console.warn('⚠ 历史记录中没有summary数据，record.result:', record.result)
       }
       // 加载历史记录到当前回测配置
-      loadHistoryRecordToCurrent(record)
+      await loadHistoryRecordToCurrent(record)
     } else {
       console.error('API返回失败:', response.data)
       error.value = '加载回测历史详情失败'
@@ -3982,51 +4033,88 @@ async function loadHistoryRecordById(historyId) {
   }
 }
 
-// 检查并加载历史记录的函数
+// 统一的数据加载函数：优先使用历史记录ID，如果没有则从sessionStorage获取
+async function loadBacktestData() {
+  const historyId = route.query.historyId
+  
+  console.log('开始加载回测数据，优先级：历史记录ID > sessionStorage')
+  console.log('检查historyId参数:', historyId, '当前路由:', route.fullPath)
+  
+  // 清除之前的回测结果，避免显示旧数据
+  backtestResult.value = null
+  console.log('✓ 已清除之前的回测结果')
+  
+  // 优先级1：如果有历史记录ID，从历史记录加载
+  if (historyId) {
+    console.log('✓ 发现historyId，优先从历史记录加载数据:', historyId)
+    try {
+      await loadHistoryRecordById(historyId)
+      console.log('✓ 从历史记录加载数据完成')
+      return true
+    } catch (e) {
+      console.error('✗ 从历史记录加载数据失败:', e)
+      // 如果历史记录加载失败，继续尝试从 sessionStorage 加载
+      console.log('⚠ 历史记录加载失败，尝试从 sessionStorage 加载')
+    }
+  }
+  
+  // 优先级2：如果没有历史记录ID或加载失败，从sessionStorage加载
+  console.log('从 sessionStorage 加载选中的股票和扫描配置')
+  const loaded = loadSelectedStocksAndConfig()
+  if (loaded) {
+    // 初始化日期（会使用扫描配置中的扫描日期作为默认回测日）
+    initDates()
+    console.log('✓ 从 sessionStorage 加载数据完成')
+    return true
+  } else {
+    console.log('✗ sessionStorage 中没有找到数据')
+    return false
+  }
+}
+
+// 检查并加载历史记录的函数（保留用于watch）
 async function checkAndLoadHistory() {
   const historyId = route.query.historyId
-  console.log('检查historyId参数:', historyId, '当前路由:', route.fullPath, 'query对象:', route.query)
   if (historyId) {
-    console.log('发现historyId，准备加载数据:', historyId)
+    console.log('watch触发：发现historyId，准备加载数据:', historyId)
     await loadHistoryRecordById(historyId)
-  } else {
-    console.log('没有historyId参数，跳过加载')
   }
 }
 
 onMounted(async () => {
-  // 加载选中的股票和扫描配置
-  loadSelectedStocksAndConfig()
-  // 初始化日期（会使用扫描配置中的扫描日期作为默认回测日）
-  initDates()
-  
-  // 检查URL中是否有historyId参数，如果有则加载历史记录到当前回测
-  await checkAndLoadHistory()
+  // 统一的数据加载入口：优先使用历史记录ID，如果没有则从sessionStorage获取
+  await loadBacktestData()
 })
 
 // 当组件被激活时（keepAlive组件从缓存中激活时）
 onActivated(async () => {
-  console.log('Backtest组件被激活，检查historyId参数')
-  await checkAndLoadHistory()
+  console.log('Backtest组件被激活，重新加载数据')
+  await loadBacktestData()
 })
 
 // 监听路由变化，当historyId参数变化时重新加载数据
 watch(() => route.query.historyId, async (newHistoryId, oldHistoryId) => {
   console.log('watch触发: historyId参数变化，从', oldHistoryId, '变为', newHistoryId)
   if (newHistoryId) {
-    console.log('watch: 准备加载新的historyId:', newHistoryId)
+    // 如果有新的historyId，优先从历史记录加载
+    console.log('watch: 准备从历史记录加载新的historyId:', newHistoryId)
     await loadHistoryRecordById(newHistoryId)
+  } else if (oldHistoryId && !newHistoryId) {
+    // 如果historyId被移除，回退到从sessionStorage加载
+    console.log('watch: historyId被移除，回退到从sessionStorage加载')
+    await loadBacktestData()
   }
-}, { immediate: true }) // 立即执行一次
+})
 
-// 也监听整个route对象的变化（更可靠）
+// 监听整个route对象的变化（更可靠）
 watch(() => route.fullPath, async (newPath, oldPath) => {
   console.log('watch fullPath触发: 路由路径变化，从', oldPath, '变为', newPath)
-  if (route.query.historyId) {
-    console.log('watch fullPath: 准备加载historyId:', route.query.historyId)
-    await loadHistoryRecordById(route.query.historyId)
+  // 如果路径变化且没有historyId，重新加载数据（可能从sessionStorage）
+  if (!route.query.historyId && oldPath !== newPath) {
+    console.log('watch fullPath: 路径变化且无historyId，重新加载数据')
+    await loadBacktestData()
   }
-}, { immediate: true }) // 立即执行一次
+})
 
 onBeforeUnmount(() => {
   // 清理图表实例

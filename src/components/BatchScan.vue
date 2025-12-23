@@ -3,10 +3,19 @@
     <div class="max-w-6xl mx-auto">
       <!-- 页面标题 -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold flex items-center">
-          <i class="fas fa-tasks mr-2 text-primary"></i>
-          批量扫描
-        </h1>
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold flex items-center">
+            <i class="fas fa-tasks mr-2 text-primary"></i>
+            批量扫描
+          </h1>
+          <button
+            @click="goBack"
+            class="flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gundam-blue text-white hover:bg-gundam-blue/80 transition-colors"
+          >
+            <i class="fas fa-arrow-left mr-1 sm:mr-2"></i>
+            <span class="hidden sm:inline">返回</span>
+          </button>
+        </div>
         <p class="text-muted-foreground mt-2">
           设置时间区间和扫描周期，系统将按周期自动执行多次扫描
         </p>
@@ -1360,6 +1369,12 @@ const handleDeleteBacktestNameConfirm = async () => {
     pendingDeleteBacktestNameRecords.value = []
     showDeleteBacktestNameConfirmDialog.value = false
   }
+}
+
+// 返回上一页
+function goBack() {
+  // 返回到首页（扫描页面）
+  router.push('/platform')
 }
 </script>
 
