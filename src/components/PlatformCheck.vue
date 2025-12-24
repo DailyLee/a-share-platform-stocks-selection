@@ -146,7 +146,7 @@
                         <i class="fas fa-chart-line text-primary mt-0.5"></i>
                         <div>
                           <span class="text-muted-foreground">价格区间:</span>
-                          <span class="ml-1 font-medium">{{ extractValue(reason, '价格区间') }}</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '价格区间', true) }}</span>
                         </div>
                       </div>
                       
@@ -155,7 +155,7 @@
                         <i class="fas fa-wave-square text-primary mt-0.5"></i>
                         <div>
                           <span class="text-muted-foreground">均线收敛:</span>
-                          <span class="ml-1 font-medium">{{ extractValue(reason, '均线收敛') }}</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '均线收敛', true) }}</span>
                         </div>
                       </div>
                       
@@ -164,7 +164,7 @@
                         <i class="fas fa-chart-area text-primary mt-0.5"></i>
                         <div>
                           <span class="text-muted-foreground">波动率:</span>
-                          <span class="ml-1 font-medium">{{ extractValue(reason, '波动率') }}</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '波动率', true) }}</span>
                         </div>
                       </div>
                       
@@ -173,7 +173,7 @@
                         <i class="fas fa-cube text-primary mt-0.5"></i>
                         <div>
                           <span class="text-muted-foreground">箱体质量:</span>
-                          <span class="ml-1 font-medium">{{ extractValue(reason, '箱体质量') }}</span>
+                          <span class="ml-1 font-medium">{{ extractValue(reason, '箱体质量', true) }}</span>
                         </div>
                       </div>
                       
@@ -706,6 +706,13 @@ import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import KlineChart from './KlineChart.vue'
 import ThemeToggle from './ThemeToggle.vue'
+import {
+  extractValue,
+  extractTextValue,
+  extractLowPositionInfo,
+  extractRapidDeclineInfo,
+  extractBreakthroughInfo
+} from '../utils/selectionReasonsParser.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -749,53 +756,7 @@ function formatChange(value) {
   return isNaN(num) ? '0.00' : num.toFixed(2)
 }
 
-// 辅助函数：从选择理由中提取值（用于数字值）
-function extractValue(reason, key) {
-  // 匹配 "价格区间0.20" 或 "价格区间: 0.20" 格式
-  const regex = new RegExp(`${key}[：:]?\\s*([\\d.]+)`)
-  const match = reason.match(regex)
-  return match ? match[1].trim() : ''
-}
-
-// 提取文本值（用于标准模式等）
-function extractTextValue(reason, key) {
-  // 匹配 "标准模式: 低位+快速下跌后形成平台期" 格式
-  const regex = new RegExp(`${key}[：:]?\\s*([^,，]+)`)
-  const match = reason.match(regex)
-  return match ? match[1].trim() : ''
-}
-
-// 提取低位判断信息
-function extractLowPositionInfo(reason) {
-  const declineMatch = reason.match(/从高点下跌([\d.]+)%/)
-  const dateMatch = reason.match(/高点日期([\d-]+)/)
-  const parts = []
-  if (declineMatch) {
-    parts.push(`从高点下跌${declineMatch[1]}%`)
-  }
-  if (dateMatch) {
-    parts.push(`高点日期: ${dateMatch[1]}`)
-  }
-  return parts.length > 0 ? parts.join('，') : ''
-}
-
-// 提取快速下跌信息
-function extractRapidDeclineInfo(reason) {
-  const match = reason.match(/快速下跌[：:]?\s*([\d.]+)%\s*\(([^)]+)\)/)
-  if (match) {
-    return `${match[1]}% (${match[2]})`
-  }
-  return ''
-}
-
-// 提取突破前兆信息
-function extractBreakthroughInfo(reason) {
-  const match = reason.match(/突破前兆[：:]?\s*(\d+)个指标\s*\(([^)]+)\)/)
-  if (match) {
-    return `${match[1]}个指标 (${match[2]})`
-  }
-  return ''
-}
+// 解析函数已移至公共工具文件 src/utils/selectionReasonsParser.js
 
 // 生成标记线数据（与首页相同的方法）
 function generateMarkLines(result) {

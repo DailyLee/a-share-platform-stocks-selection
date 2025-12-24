@@ -36,28 +36,17 @@
                 </span>
               </h3>
             </div>
-            <div class="flex items-center gap-2">
-              <button
-                v-if="allStocksDataLoaded"
-                @click="calculateStatistics"
-                class="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-xs"
-                :disabled="statisticsLoading || dataLoading"
-              >
-                <i v-if="statisticsLoading" class="fas fa-spinner fa-spin mr-1"></i>
-                <i v-else class="fas fa-filter mr-1"></i>
-                {{ statisticsLoading ? '筛选中...' : '筛选' }}
-              </button>
-            </div>
           </div>
           <div v-if="dataLoading" class="text-center py-4">
             <i class="fas fa-spinner fa-spin text-2xl mb-2 text-primary"></i>
             <p class="text-muted-foreground text-sm">正在加载数据...</p>
           </div>
-          <div v-else v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div v-else v-show="statisticsFiltersExpanded" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <!-- ========== 第一组：基础筛选（平台期相关） ========== -->
             <!-- 平台期 -->
             <div>
               <label class="block text-xs font-medium mb-1">平台期</label>
-              <div class="flex flex-wrap gap-1.5">
+              <div class="flex flex-wrap gap-1">
                 <label 
                   v-for="period in Array.from(allStockAttributes.platformPeriods).sort((a, b) => a - b)" 
                   :key="period"
@@ -75,108 +64,130 @@
               </div>
             </div>
   
-            <!-- 突破前兆 -->
+            <!-- 行业信息 -->
             <div>
+              <label class="block text-xs font-medium mb-1">行业信息</label>
+              <div class="max-h-20 overflow-y-auto border border-border rounded p-1">
+                <label 
+                  v-for="industry in Array.from(allStockAttributes.industries).sort()" 
+                  :key="industry"
+                  class="flex items-center cursor-pointer mb-0.5 px-1 py-0.5 rounded hover:bg-muted/30 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    :value="industry"
+                    v-model="statisticsFilters.industries"
+                    class="checkbox mr-1"
+                  />
+                  <span class="text-xs">{{ industry || '未知行业' }}</span>
+                </label>
+                <p v-if="allStockAttributes.industries.size === 0" class="text-xs text-muted-foreground text-center py-1">暂无数据</p>
+              </div>
+            </div>
+
+            <!-- ========== 第二组：突破相关 ========== -->
+            <!-- 突破前兆 -->
+            <div class="sm:col-span-2 lg:col-span-1">
               <label class="block text-xs font-medium mb-1">突破前兆</label>
-              <div class="space-y-2">
+              <div class="grid grid-cols-2 gap-1.5">
                 <!-- MACD -->
-                <div class="flex items-center gap-2">
-                  <span class="text-xs w-12">MACD:</span>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs w-10 flex-shrink-0">MACD:</span>
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughMACD.include"
                       @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">包含</span>
+                    <span class="text-xs">含</span>
                   </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughMACD.exclude"
                       @change="handleBreakthroughExcludeChange('MACD')"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">不包含</span>
+                    <span class="text-xs">不含</span>
                   </label>
                 </div>
                 <!-- RSI -->
-                <div class="flex items-center gap-2">
-                  <span class="text-xs w-12">RSI:</span>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs w-10 flex-shrink-0">RSI:</span>
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughRSI.include"
                       @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">包含</span>
+                    <span class="text-xs">含</span>
                   </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughRSI.exclude"
                       @change="handleBreakthroughExcludeChange('RSI')"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">不包含</span>
+                    <span class="text-xs">不含</span>
                   </label>
                 </div>
                 <!-- KDJ -->
-                <div class="flex items-center gap-2">
-                  <span class="text-xs w-12">KDJ:</span>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs w-10 flex-shrink-0">KDJ:</span>
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughKDJ.include"
                       @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">包含</span>
+                    <span class="text-xs">含</span>
                   </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughKDJ.exclude"
                       @change="handleBreakthroughExcludeChange('KDJ')"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">不包含</span>
+                    <span class="text-xs">不含</span>
                   </label>
                 </div>
                 <!-- 布林带 -->
-                <div class="flex items-center gap-2">
-                  <span class="text-xs w-12">布林带:</span>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs w-10 flex-shrink-0">布林:</span>
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughBollinger.include"
                       @change="handleBreakthroughSignalChange"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">包含</span>
+                    <span class="text-xs">含</span>
                   </label>
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors flex-1">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughBollinger.exclude"
                       @change="handleBreakthroughExcludeChange('Bollinger')"
-                      class="checkbox mr-1"
+                      class="checkbox mr-0.5"
                     />
-                    <span class="text-xs whitespace-nowrap">不包含</span>
+                    <span class="text-xs">不含</span>
                   </label>
                 </div>
                 <!-- 无突破前兆 -->
-                <div class="flex items-center gap-2">
-                  <label class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors">
+                <div class="col-span-2">
+                  <label class="flex items-center cursor-pointer px-1 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors w-fit">
                     <input
                       type="checkbox"
                       v-model="statisticsFilters.breakthroughNone"
                       @change="handleBreakthroughNoneChange"
                       class="checkbox mr-1"
                     />
-                    <span class="text-xs whitespace-nowrap">无突破前兆</span>
+                    <span class="text-xs">无突破前兆</span>
                   </label>
                 </div>
               </div>
@@ -187,74 +198,162 @@
               <label class="block text-xs font-medium mb-1">确认突破</label>
               <select
                 v-model="statisticsFilters.breakthroughConfirmation"
-                class="input w-full text-xs py-1"
+                class="input w-full text-xs py-1 h-7"
               >
                 <option :value="null">不筛选</option>
                 <option :value="true">是（已确认突破）</option>
                 <option :value="false">否（未确认突破）</option>
               </select>
             </div>
-  
-            <!-- 最小箱体质量 -->
+
+            <!-- ========== 第三组：质量指标（Range Slider） ========== -->
+            <!-- 箱体质量 -->
             <div>
-              <label class="block text-xs font-medium mb-1">最小箱体质量</label>
-              <input
-                type="number"
-                v-model.number="statisticsFilters.boxQualityThreshold"
-                step="0.01"
-                :min="allStockAttributes.minBoxQuality"
-                :max="allStockAttributes.maxBoxQuality"
-                class="input w-full text-xs py-1"
-              />
-              <p class="text-xs text-muted-foreground mt-0.5">
-                范围: {{ allStockAttributes.minBoxQuality.toFixed(2) }} - {{ allStockAttributes.maxBoxQuality.toFixed(2) }}
-              </p>
-            </div>
-  
-            <!-- 行业信息 -->
-            <div>
-              <label class="block text-xs font-medium mb-1">行业信息</label>
-              <div class="max-h-24 overflow-y-auto border border-border rounded p-1.5">
-                <label 
-                  v-for="industry in Array.from(allStockAttributes.industries).sort()" 
-                  :key="industry"
-                  class="flex items-center cursor-pointer mb-0.5 px-1.5 py-0.5 rounded hover:bg-muted/30 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    :value="industry"
-                    v-model="statisticsFilters.industries"
-                    class="checkbox mr-1.5"
-                  />
-                  <span class="text-xs">{{ industry || '未知行业' }}</span>
-                </label>
-                <p v-if="allStockAttributes.industries.size === 0" class="text-xs text-muted-foreground text-center py-1">暂无数据</p>
+              <label class="block text-xs font-medium mb-1">箱体质量</label>
+              <div v-if="allStockAttributes.maxBoxQuality > allStockAttributes.minBoxQuality && allStockAttributes.maxBoxQuality > 0" class="space-y-1.5">
+                <Slider
+                  v-model="boxQualityRangeArray"
+                  :min="allStockAttributes.minBoxQuality"
+                  :max="allStockAttributes.maxBoxQuality"
+                  :step="Math.max(0.01, (allStockAttributes.maxBoxQuality - allStockAttributes.minBoxQuality) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minBoxQuality.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ boxQualityRangeArray[0].toFixed(2) }} - {{ boxQualityRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxBoxQuality.toFixed(2) }}</span>
+                </div>
               </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
 
-            <!-- 每个周期选择前n个数据 -->
+            <!-- 价格区间 -->
             <div>
-              <label class="block text-xs font-medium mb-1">每个周期选择前n个数据</label>
-              <div class="flex items-center gap-2">
-                <input
-                  type="number"
-                  v-model.number="statisticsFilters.topNPerPeriod"
-                  :min="1"
-                  placeholder="全选"
-                  class="input w-full text-xs py-1"
+              <label class="block text-xs font-medium mb-1">价格区间</label>
+              <div v-if="allStockAttributes.maxBoxRange > allStockAttributes.minBoxRange && allStockAttributes.maxBoxRange > 0" class="space-y-1.5">
+                <Slider
+                  v-model="boxRangeArray"
+                  :min="allStockAttributes.minBoxRange"
+                  :max="allStockAttributes.maxBoxRange"
+                  :step="Math.max(0.01, (allStockAttributes.maxBoxRange - allStockAttributes.minBoxRange) / 100)"
                 />
-                <button
-                  v-if="statisticsFilters.topNPerPeriod !== null && statisticsFilters.topNPerPeriod > 0"
-                  @click="statisticsFilters.topNPerPeriod = null"
-                  class="px-2 py-1 text-xs rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors whitespace-nowrap"
-                  title="清除，显示全部数据"
-                >
-                  全选
-                </button>
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minBoxRange.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ boxRangeArray[0].toFixed(2) }} - {{ boxRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxBoxRange.toFixed(2) }}</span>
+                </div>
               </div>
-              <p class="text-xs text-muted-foreground mt-0.5">
-                留空或点击"全选"表示显示该周期所有数据
-              </p>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- 均线收敛 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">均线收敛</label>
+              <div v-if="allStockAttributes.maxMaDiff > allStockAttributes.minMaDiff && allStockAttributes.maxMaDiff > 0" class="space-y-1.5">
+                <Slider
+                  v-model="maDiffRangeArray"
+                  :min="allStockAttributes.minMaDiff"
+                  :max="allStockAttributes.maxMaDiff"
+                  :step="Math.max(0.01, (allStockAttributes.maxMaDiff - allStockAttributes.minMaDiff) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minMaDiff.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ maDiffRangeArray[0].toFixed(2) }} - {{ maDiffRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxMaDiff.toFixed(2) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- 波动率 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">波动率</label>
+              <div v-if="allStockAttributes.maxVolatility > allStockAttributes.minVolatility && allStockAttributes.maxVolatility > 0" class="space-y-1.5">
+                <Slider
+                  v-model="volatilityRangeArray"
+                  :min="allStockAttributes.minVolatility"
+                  :max="allStockAttributes.maxVolatility"
+                  :step="Math.max(0.01, (allStockAttributes.maxVolatility - allStockAttributes.minVolatility) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minVolatility.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ volatilityRangeArray[0].toFixed(2) }} - {{ volatilityRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxVolatility.toFixed(2) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- ========== 第四组：位置和下跌（百分比 Range Slider） ========== -->
+            <!-- 低位判断百分比 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">低位百分比</label>
+              <div v-if="allStockAttributes.maxLowPositionPercent > allStockAttributes.minLowPositionPercent && allStockAttributes.maxLowPositionPercent > 0" class="space-y-1.5">
+                <Slider
+                  v-model="lowPositionPercentRangeArray"
+                  :min="allStockAttributes.minLowPositionPercent"
+                  :max="allStockAttributes.maxLowPositionPercent"
+                  :step="Math.max(0.01, (allStockAttributes.maxLowPositionPercent - allStockAttributes.minLowPositionPercent) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minLowPositionPercent.toFixed(2) }}%</span>
+                  <span class="font-medium text-foreground">
+                    {{ lowPositionPercentRangeArray[0].toFixed(2) }}% - {{ lowPositionPercentRangeArray[1].toFixed(2) }}%
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxLowPositionPercent.toFixed(2) }}%</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- 快速下跌百分比 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">快速下跌百分比</label>
+              <div v-if="allStockAttributes.maxRapidDeclinePercent > allStockAttributes.minRapidDeclinePercent && allStockAttributes.maxRapidDeclinePercent > 0" class="space-y-1.5">
+                <Slider
+                  v-model="rapidDeclinePercentRangeArray"
+                  :min="allStockAttributes.minRapidDeclinePercent"
+                  :max="allStockAttributes.maxRapidDeclinePercent"
+                  :step="Math.max(0.01, (allStockAttributes.maxRapidDeclinePercent - allStockAttributes.minRapidDeclinePercent) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minRapidDeclinePercent.toFixed(2) }}%</span>
+                  <span class="font-medium text-foreground">
+                    {{ rapidDeclinePercentRangeArray[0].toFixed(2) }}% - {{ rapidDeclinePercentRangeArray[1].toFixed(2) }}%
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxRapidDeclinePercent.toFixed(2) }}%</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- ========== 第五组：周期统计（Range Slider） ========== -->
+            <!-- 周期内购买的股票数量 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">周期内股票数量</label>
+              <div v-if="allStockAttributes.maxStockCount > allStockAttributes.minStockCount && allStockAttributes.maxStockCount > 0 && stockCountRangeArray && stockCountRangeArray.length === 2" class="space-y-1.5">
+                <Slider
+                  v-model="stockCountRangeArray"
+                  :min="allStockAttributes.minStockCount"
+                  :max="allStockAttributes.maxStockCount"
+                  :step="1"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minStockCount }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ Math.round(stockCountRangeArray[0]) }} - {{ Math.round(stockCountRangeArray[1]) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxStockCount }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
           </div>
         </div>
@@ -455,12 +554,16 @@
         </div>
   
         <!-- 对话框底部 -->
-        <div class="p-4 sm:p-6 border-t border-border flex justify-end">
+        <div class="p-4 sm:p-6 border-t border-border flex justify-end gap-2">
           <button
-            @click="$emit('close')"
+            v-if="allStocksDataLoaded"
+            @click="calculateStatistics"
             class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/80 transition-colors text-sm"
+            :disabled="statisticsLoading || dataLoading"
           >
-            关闭
+            <i v-if="statisticsLoading" class="fas fa-spinner fa-spin mr-1"></i>
+            <i v-else class="fas fa-filter mr-1"></i>
+            {{ statisticsLoading ? '筛选中...' : '筛选' }}
           </button>
         </div>
       </div>
@@ -468,9 +571,17 @@
   </template>
   
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import {
+  extractBoxRange,
+  extractMaDiff,
+  extractVolatility,
+  extractLowPositionPercent,
+  extractRapidDeclinePercent
+} from '../utils/selectionReasonsParser.js'
+import Slider from './ui/slider.vue'
   
 const router = useRouter()
   
@@ -498,9 +609,14 @@ const router = useRouter()
     breakthroughBollinger: { include: false, exclude: false }, // 包含/不包含布林带
     breakthroughNone: false, // 是否筛选完全没有突破前兆的股票
     breakthroughConfirmation: null, // true/false/null (null表示不筛选)
-    boxQualityThreshold: 0,
+    boxQualityRange: { min: null, max: null }, // 箱体质量范围
     industries: [], // 选中的行业列表
-    topNPerPeriod: null // 每个周期选择前n个数据（null表示全选）
+    boxRange: { min: null, max: null }, // 价格区间范围（min/max为null表示不限制）
+    maDiffRange: { min: null, max: null }, // 均线收敛范围（min/max为null表示不限制）
+    volatilityRange: { min: null, max: null }, // 波动率范围（min/max为null表示不限制）
+    lowPositionPercentRange: { min: null, max: null }, // 低位判断百分比范围（从高点下跌的百分比）
+    rapidDeclinePercentRange: { min: null, max: null }, // 快速下跌百分比范围
+    stockCountRange: { min: null, max: null } // 周期内购买的股票数量范围
   })
   
   // 所有股票的属性集合（用于筛选条件选项）
@@ -508,7 +624,142 @@ const router = useRouter()
     platformPeriods: new Set(), // 所有出现的平台期
     industries: new Set(), // 所有行业
     minBoxQuality: 1, // 最小箱体质量
-    maxBoxQuality: 0 // 最大箱体质量
+    maxBoxQuality: 0, // 最大箱体质量
+    minBoxRange: 0, // 最小价格区间
+    maxBoxRange: 0, // 最大价格区间
+    minMaDiff: 0, // 最小均线收敛
+    maxMaDiff: 0, // 最大均线收敛
+    minVolatility: 0, // 最小波动率
+    maxVolatility: 0, // 最大波动率
+    minLowPositionPercent: 0, // 最小低位判断百分比
+    maxLowPositionPercent: 0, // 最大低位判断百分比
+    minRapidDeclinePercent: 0, // 最小快速下跌百分比
+    maxRapidDeclinePercent: 0, // 最大快速下跌百分比
+    minStockCount: 0, // 最小股票数量
+    maxStockCount: 0 // 最大股票数量
+  })
+
+  // 价格区间数组（用于 shadcn-vue Slider 组件）
+  const boxRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.boxRange.min ?? allStockAttributes.value.minBoxRange
+      const max = statisticsFilters.value.boxRange.max ?? allStockAttributes.value.maxBoxRange
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.boxRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 均线收敛数组（用于 shadcn-vue Slider 组件）
+  const maDiffRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.maDiffRange.min ?? allStockAttributes.value.minMaDiff
+      const max = statisticsFilters.value.maDiffRange.max ?? allStockAttributes.value.maxMaDiff
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.maDiffRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 波动率数组（用于 shadcn-vue Slider 组件）
+  const volatilityRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.volatilityRange.min ?? allStockAttributes.value.minVolatility
+      const max = statisticsFilters.value.volatilityRange.max ?? allStockAttributes.value.maxVolatility
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.volatilityRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 低位判断百分比数组（用于 shadcn-vue Slider 组件）
+  const lowPositionPercentRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.lowPositionPercentRange.min ?? allStockAttributes.value.minLowPositionPercent
+      const max = statisticsFilters.value.lowPositionPercentRange.max ?? allStockAttributes.value.maxLowPositionPercent
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.lowPositionPercentRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 快速下跌百分比数组（用于 shadcn-vue Slider 组件）
+  const rapidDeclinePercentRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.rapidDeclinePercentRange.min ?? allStockAttributes.value.minRapidDeclinePercent
+      const max = statisticsFilters.value.rapidDeclinePercentRange.max ?? allStockAttributes.value.maxRapidDeclinePercent
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.rapidDeclinePercentRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 股票数量数组（用于 shadcn-vue Slider 组件）
+  const stockCountRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.stockCountRange.min ?? allStockAttributes.value.minStockCount ?? 0
+      const max = statisticsFilters.value.stockCountRange.max ?? allStockAttributes.value.maxStockCount ?? 0
+      // 确保返回有效的数组
+      if (min === null || max === null || isNaN(min) || isNaN(max) || min < 0 || max < 0) {
+        return [0, 0]
+      }
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.stockCountRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 箱体质量数组（用于 shadcn-vue Slider 组件）
+  const boxQualityRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.boxQualityRange.min ?? allStockAttributes.value.minBoxQuality
+      const max = statisticsFilters.value.boxQualityRange.max ?? allStockAttributes.value.maxBoxQuality
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.boxQualityRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
   })
   
   // 完整数据缓存（不筛选的完整数据）
@@ -641,6 +892,9 @@ const router = useRouter()
     if (num === null || num === undefined) return '0.00'
     return Number(num).toFixed(2)
   }
+
+
+  // 解析函数已移至公共工具文件 src/utils/selectionReasonsParser.js
 
   // 判断是否是交易日（排除周末，不包括节假日）
   function isTradingDay(dateStr) {
@@ -986,6 +1240,11 @@ const router = useRouter()
       const platformPeriodsSet = new Set()
       const industriesSet = new Set()
       const boxQualities = []
+      const boxRanges = []
+      const maDiffs = []
+      const volatilities = []
+      const lowPositionPercents = []
+      const rapidDeclinePercents = []
 
       allStocks.forEach(stock => {
         // 收集平台期
@@ -1037,6 +1296,30 @@ const router = useRouter()
             }
           })
         }
+
+        // 收集价格区间、均线收敛、波动率、低位百分比、快速下跌百分比（从 selection_reasons 中解析）
+        if (stock.selection_reasons) {
+          const boxRange = extractBoxRange(stock.selection_reasons)
+          if (boxRange !== null) {
+            boxRanges.push(boxRange)
+          }
+          const maDiff = extractMaDiff(stock.selection_reasons)
+          if (maDiff !== null) {
+            maDiffs.push(maDiff)
+          }
+          const volatility = extractVolatility(stock.selection_reasons)
+          if (volatility !== null) {
+            volatilities.push(volatility)
+          }
+          const lowPositionPercent = extractLowPositionPercent(stock.selection_reasons)
+          if (lowPositionPercent !== null) {
+            lowPositionPercents.push(lowPositionPercent)
+          }
+          const rapidDeclinePercent = extractRapidDeclinePercent(stock.selection_reasons)
+          if (rapidDeclinePercent !== null) {
+            rapidDeclinePercents.push(rapidDeclinePercent)
+          }
+        }
       })
 
       // 更新属性集合
@@ -1045,7 +1328,68 @@ const router = useRouter()
       if (boxQualities.length > 0) {
         allStockAttributes.value.minBoxQuality = Math.min(...boxQualities)
         allStockAttributes.value.maxBoxQuality = Math.max(...boxQualities)
-        // 最小箱体质量默认值保持为0，不自动设置
+        // 如果 boxQualityRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.boxQualityRange.min === null || statisticsFilters.value.boxQualityRange.max === null) {
+          statisticsFilters.value.boxQualityRange = {
+            min: allStockAttributes.value.minBoxQuality,
+            max: allStockAttributes.value.maxBoxQuality
+          }
+        }
+      }
+      if (boxRanges.length > 0) {
+        allStockAttributes.value.minBoxRange = Math.min(...boxRanges)
+        allStockAttributes.value.maxBoxRange = Math.max(...boxRanges)
+        // 如果 boxRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.boxRange.min === null || statisticsFilters.value.boxRange.max === null) {
+          statisticsFilters.value.boxRange = {
+            min: allStockAttributes.value.minBoxRange,
+            max: allStockAttributes.value.maxBoxRange
+          }
+        }
+      }
+      if (maDiffs.length > 0) {
+        allStockAttributes.value.minMaDiff = Math.min(...maDiffs)
+        allStockAttributes.value.maxMaDiff = Math.max(...maDiffs)
+        // 如果 maDiffRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.maDiffRange.min === null || statisticsFilters.value.maDiffRange.max === null) {
+          statisticsFilters.value.maDiffRange = {
+            min: allStockAttributes.value.minMaDiff,
+            max: allStockAttributes.value.maxMaDiff
+          }
+        }
+      }
+      if (volatilities.length > 0) {
+        allStockAttributes.value.minVolatility = Math.min(...volatilities)
+        allStockAttributes.value.maxVolatility = Math.max(...volatilities)
+        // 如果 volatilityRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.volatilityRange.min === null || statisticsFilters.value.volatilityRange.max === null) {
+          statisticsFilters.value.volatilityRange = {
+            min: allStockAttributes.value.minVolatility,
+            max: allStockAttributes.value.maxVolatility
+          }
+        }
+      }
+      if (lowPositionPercents.length > 0) {
+        allStockAttributes.value.minLowPositionPercent = Math.min(...lowPositionPercents)
+        allStockAttributes.value.maxLowPositionPercent = Math.max(...lowPositionPercents)
+        // 如果 lowPositionPercentRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.lowPositionPercentRange.min === null || statisticsFilters.value.lowPositionPercentRange.max === null) {
+          statisticsFilters.value.lowPositionPercentRange = {
+            min: allStockAttributes.value.minLowPositionPercent,
+            max: allStockAttributes.value.maxLowPositionPercent
+          }
+        }
+      }
+      if (rapidDeclinePercents.length > 0) {
+        allStockAttributes.value.minRapidDeclinePercent = Math.min(...rapidDeclinePercents)
+        allStockAttributes.value.maxRapidDeclinePercent = Math.max(...rapidDeclinePercents)
+        // 如果 rapidDeclinePercentRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.rapidDeclinePercentRange.min === null || statisticsFilters.value.rapidDeclinePercentRange.max === null) {
+          statisticsFilters.value.rapidDeclinePercentRange = {
+            min: allStockAttributes.value.minRapidDeclinePercent,
+            max: allStockAttributes.value.maxRapidDeclinePercent
+          }
+        }
       }
       
       return {
@@ -1057,6 +1401,7 @@ const router = useRouter()
   // 检查是否有筛选条件被应用
   function hasFiltersApplied() {
     const filters = statisticsFilters.value
+    const maxBoxRange = allStockAttributes.value.maxBoxRange
     return (
       filters.platformPeriods.length > 0 ||
       filters.breakthroughMACD.include ||
@@ -1069,9 +1414,31 @@ const router = useRouter()
       filters.breakthroughBollinger.exclude ||
       filters.breakthroughNone ||
       filters.breakthroughConfirmation !== null ||
-      filters.boxQualityThreshold > 0 ||
+      (filters.boxQualityRange.min !== null && filters.boxQualityRange.max !== null && 
+       (filters.boxQualityRange.min > allStockAttributes.value.minBoxQuality || 
+        filters.boxQualityRange.max < allStockAttributes.value.maxBoxQuality)) ||
       filters.industries.length > 0 ||
-      (filters.topNPerPeriod !== null && filters.topNPerPeriod > 0)
+      (filters.boxRange.min !== null && filters.boxRange.max !== null && 
+       (filters.boxRange.min > allStockAttributes.value.minBoxRange || 
+        filters.boxRange.max < allStockAttributes.value.maxBoxRange)) ||
+      (filters.maDiffRange.min !== null && filters.maDiffRange.max !== null && 
+       (filters.maDiffRange.min > allStockAttributes.value.minMaDiff || 
+        filters.maDiffRange.max < allStockAttributes.value.maxMaDiff)) ||
+      (filters.volatilityRange.min !== null && filters.volatilityRange.max !== null && 
+       (filters.volatilityRange.min > allStockAttributes.value.minVolatility || 
+        filters.volatilityRange.max < allStockAttributes.value.maxVolatility)) ||
+      (filters.lowPositionPercentRange.min !== null && filters.lowPositionPercentRange.max !== null && 
+       (filters.lowPositionPercentRange.min > allStockAttributes.value.minLowPositionPercent || 
+        filters.lowPositionPercentRange.max < allStockAttributes.value.maxLowPositionPercent)) ||
+      (filters.rapidDeclinePercentRange.min !== null && filters.rapidDeclinePercentRange.max !== null && 
+       (filters.rapidDeclinePercentRange.min > allStockAttributes.value.minRapidDeclinePercent || 
+        filters.rapidDeclinePercentRange.max < allStockAttributes.value.maxRapidDeclinePercent)) ||
+      (filters.stockCountRange.min !== null && filters.stockCountRange.max !== null && 
+       (filters.stockCountRange.min > allStockAttributes.value.minStockCount || 
+        filters.stockCountRange.max < allStockAttributes.value.maxStockCount)) ||
+      (filters.boxQualityRange.min !== null && filters.boxQualityRange.max !== null && 
+       (filters.boxQualityRange.min > allStockAttributes.value.minBoxQuality || 
+        filters.boxQualityRange.max < allStockAttributes.value.maxBoxQuality))
     )
   }
   
@@ -1089,9 +1456,14 @@ const router = useRouter()
       breakthroughBollinger: { include: false, exclude: false },
       breakthroughNone: false,
       breakthroughConfirmation: null,
-      boxQualityThreshold: 0,
+      boxQualityRange: { min: null, max: null },
       industries: [],
-      topNPerPeriod: null
+      boxRange: { min: null, max: null },
+      maDiffRange: { min: null, max: null },
+      volatilityRange: { min: null, max: null },
+      lowPositionPercentRange: { min: null, max: null },
+      rapidDeclinePercentRange: { min: null, max: null },
+      stockCountRange: { min: null, max: null }
     }
     
     // 计算统计数据（不筛选）
@@ -1299,7 +1671,8 @@ const router = useRouter()
         }
 
         // 箱体质量筛选
-        if (statisticsFilters.value.boxQualityThreshold > 0) {
+        const boxQualityRangeFilter = statisticsFilters.value.boxQualityRange
+        if (boxQualityRangeFilter.min !== null && boxQualityRangeFilter.max !== null) {
           let stockBoxQuality = 0
           let hasBoxQualityData = false
           
@@ -1336,14 +1709,123 @@ const router = useRouter()
             })
           }
           
-          // 如果用户选择了箱体质量筛选，但股票没有箱体质量数据，应该排除该股票
+          // 如果股票没有箱体质量数据，排除该股票（因为用户明确选择了筛选条件）
           if (!hasBoxQualityData) {
+            return false
+          }
+          
+          // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+          const minBoxQuality = allStockAttributes.value.minBoxQuality
+          const maxBoxQuality = allStockAttributes.value.maxBoxQuality
+          if (boxQualityRangeFilter.min > minBoxQuality || boxQualityRangeFilter.max < maxBoxQuality) {
+            if (stockBoxQuality < boxQualityRangeFilter.min || stockBoxQuality > boxQualityRangeFilter.max) {
+              return false
+            }
+          }
+        }
+
+        // 价格区间筛选
+        const boxRangeFilter = statisticsFilters.value.boxRange
+        if (boxRangeFilter.min !== null && boxRangeFilter.max !== null) {
+          const stockBoxRange = extractBoxRange(stock.selection_reasons)
+          if (stockBoxRange === null) {
             // 没有数据，排除股票（因为用户明确选择了筛选条件）
             return false
           } else {
-            if (stockBoxQuality < statisticsFilters.value.boxQualityThreshold) {
-              return false
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minBoxRange = allStockAttributes.value.minBoxRange
+            const maxBoxRange = allStockAttributes.value.maxBoxRange
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (boxRangeFilter.min > minBoxRange || boxRangeFilter.max < maxBoxRange) {
+              if (stockBoxRange < boxRangeFilter.min || stockBoxRange > boxRangeFilter.max) {
+                return false
+              }
             }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
+        }
+
+        // 均线收敛筛选
+        const maDiffRangeFilter = statisticsFilters.value.maDiffRange
+        if (maDiffRangeFilter.min !== null && maDiffRangeFilter.max !== null) {
+          const stockMaDiff = extractMaDiff(stock.selection_reasons)
+          if (stockMaDiff === null) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minMaDiff = allStockAttributes.value.minMaDiff
+            const maxMaDiff = allStockAttributes.value.maxMaDiff
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (maDiffRangeFilter.min > minMaDiff || maDiffRangeFilter.max < maxMaDiff) {
+              if (stockMaDiff < maDiffRangeFilter.min || stockMaDiff > maDiffRangeFilter.max) {
+                return false
+              }
+            }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
+        }
+
+        // 波动率筛选
+        const volatilityRangeFilter = statisticsFilters.value.volatilityRange
+        if (volatilityRangeFilter.min !== null && volatilityRangeFilter.max !== null) {
+          const stockVolatility = extractVolatility(stock.selection_reasons)
+          if (stockVolatility === null) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minVolatility = allStockAttributes.value.minVolatility
+            const maxVolatility = allStockAttributes.value.maxVolatility
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (volatilityRangeFilter.min > minVolatility || volatilityRangeFilter.max < maxVolatility) {
+              if (stockVolatility < volatilityRangeFilter.min || stockVolatility > volatilityRangeFilter.max) {
+                return false
+              }
+            }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
+        }
+
+        // 低位判断百分比筛选
+        const lowPositionPercentRangeFilter = statisticsFilters.value.lowPositionPercentRange
+        if (lowPositionPercentRangeFilter.min !== null && lowPositionPercentRangeFilter.max !== null) {
+          const stockLowPositionPercent = extractLowPositionPercent(stock.selection_reasons)
+          if (stockLowPositionPercent === null) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minLowPositionPercent = allStockAttributes.value.minLowPositionPercent
+            const maxLowPositionPercent = allStockAttributes.value.maxLowPositionPercent
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (lowPositionPercentRangeFilter.min > minLowPositionPercent || lowPositionPercentRangeFilter.max < maxLowPositionPercent) {
+              if (stockLowPositionPercent < lowPositionPercentRangeFilter.min || stockLowPositionPercent > lowPositionPercentRangeFilter.max) {
+                return false
+              }
+            }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
+        }
+
+        // 快速下跌百分比筛选
+        const rapidDeclinePercentRangeFilter = statisticsFilters.value.rapidDeclinePercentRange
+        if (rapidDeclinePercentRangeFilter.min !== null && rapidDeclinePercentRangeFilter.max !== null) {
+          const stockRapidDeclinePercent = extractRapidDeclinePercent(stock.selection_reasons)
+          if (stockRapidDeclinePercent === null) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minRapidDeclinePercent = allStockAttributes.value.minRapidDeclinePercent
+            const maxRapidDeclinePercent = allStockAttributes.value.maxRapidDeclinePercent
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (rapidDeclinePercentRangeFilter.min > minRapidDeclinePercent || rapidDeclinePercentRangeFilter.max < maxRapidDeclinePercent) {
+              if (stockRapidDeclinePercent < rapidDeclinePercentRangeFilter.min || stockRapidDeclinePercent > rapidDeclinePercentRangeFilter.max) {
+                return false
+              }
+            }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
           }
         }
 
@@ -1546,6 +2028,13 @@ const router = useRouter()
                   }
                 })
               }
+
+              // 从 selection_reasons 中提取价格区间、均线收敛、波动率、低位、快速下跌
+              const boxRange = extractBoxRange(filteredStock.selection_reasons)
+              const maDiff = extractMaDiff(filteredStock.selection_reasons)
+              const volatility = extractVolatility(filteredStock.selection_reasons)
+              const lowPositionPercent = extractLowPositionPercent(filteredStock.selection_reasons)
+              const rapidDeclinePercent = extractRapidDeclinePercent(filteredStock.selection_reasons)
               
               stocks.push({
                 code: filteredStock.code || '',
@@ -1555,7 +2044,12 @@ const router = useRouter()
                 breakthroughSignals: breakthroughSignals,
                 hasBreakthroughConfirmation: hasBreakthroughConfirmation,
                 boxQuality: boxQuality,
-                returnRate: returnRate
+                returnRate: returnRate,
+                boxRange: boxRange,
+                maDiff: maDiff,
+                volatility: volatility,
+                lowPositionPercent: lowPositionPercent,
+                rapidDeclinePercent: rapidDeclinePercent
               })
             }
           }
@@ -1669,7 +2163,6 @@ const router = useRouter()
 
       // 按周期分组统计
       const periodGroups = groupByPeriod(recordDetails)
-      const topN = statisticsFilters.value.topNPerPeriod
       const periodStats = periodGroups.map((group, index) => {
         let periodStockCount = 0
         let periodInvestment = 0
@@ -1716,15 +2209,8 @@ const router = useRouter()
           })
         })
         
-        // 如果设置了topN，按照原始顺序只取前n个（不排序）
-        let finalStockDetails = periodStockDetails
-        if (topN !== null && topN > 0 && periodStockDetails.length > 0) {
-          // 只取前n个，保持原始顺序
-          finalStockDetails = periodStockDetails.slice(0, topN)
-        }
-        
-        // 使用筛选后的股票详情计算周期统计
-        finalStockDetails.forEach(detail => {
+        // 使用所有股票详情计算周期统计
+        periodStockDetails.forEach(detail => {
           periodInvestment += detail.buyAmount
           periodProfit += detail.profit
           periodStockCount++
@@ -1778,117 +2264,145 @@ const router = useRouter()
         }
       })
 
-      // 如果设置了topN，基于周期统计结果重新计算整体统计
-      if (topN !== null && topN > 0) {
-        // 重新计算整体统计（基于周期统计的结果）
-        let recalculatedTotalInvestment = 0
-        let recalculatedTotalProfit = 0
-        let recalculatedProfitableStocks = 0
-        let recalculatedLossStocks = 0
-        let recalculatedTotalMarketReturnRate = null
-        const recalculatedRecordReturns = []
-        
-        // 从周期统计中重新计算整体统计
-        periodStats.forEach(periodStat => {
-          // 从原始记录中获取该周期的投资金额
-          let periodInvestment = 0
-          periodStat.records.forEach(recordDetail => {
-            const record = recordDetail.record
-            if (!record) return
+      // 收集所有周期的股票数量，用于设置筛选范围
+      const stockCounts = periodStats.map(stat => stat.stockCount).filter(count => count > 0)
+      if (stockCounts.length > 0) {
+        allStockAttributes.value.minStockCount = Math.min(...stockCounts)
+        allStockAttributes.value.maxStockCount = Math.max(...stockCounts)
+        // 如果 stockCountRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.stockCountRange.min === null || statisticsFilters.value.stockCountRange.max === null) {
+          statisticsFilters.value.stockCountRange = {
+            min: allStockAttributes.value.minStockCount,
+            max: allStockAttributes.value.maxStockCount
+          }
+        }
+      }
+
+      // 根据股票数量范围筛选周期
+      const stockCountRangeFilter = statisticsFilters.value.stockCountRange
+      let filteredPeriodStats = periodStats
+      if (stockCountRangeFilter.min !== null && stockCountRangeFilter.max !== null) {
+        const minStockCount = allStockAttributes.value.minStockCount
+        const maxStockCount = allStockAttributes.value.maxStockCount
+        // 只有当范围不是默认的全范围时才筛选
+        if (stockCountRangeFilter.min > minStockCount || stockCountRangeFilter.max < maxStockCount) {
+          filteredPeriodStats = periodStats.filter(stat => {
+            return stat.stockCount >= stockCountRangeFilter.min && stat.stockCount <= stockCountRangeFilter.max
+          })
+          
+          // 如果筛选了周期，需要重新计算整体统计数据
+          if (filteredPeriodStats.length !== periodStats.length) {
+            // 重新计算整体统计（基于筛选后的周期统计）
+            let recalculatedTotalInvestment = 0
+            let recalculatedTotalProfit = 0
+            let recalculatedProfitableStocks = 0
+            let recalculatedLossStocks = 0
+            let recalculatedTotalMarketReturnRate = null
+            const recalculatedRecordReturns = []
             
-            const result = record.result || {}
-            const stockDetails = result.stockDetails || []
-            
-            // 获取该周期筛选后的股票代码
-            const periodStockCodes = new Set(periodStat.stocks.map(s => s.code))
-            
-            stockDetails.forEach(detail => {
-              if (periodStockCodes.has(detail.code)) {
-                periodInvestment += detail.buyAmount || 0
+            // 从筛选后的周期统计中重新计算整体统计
+            filteredPeriodStats.forEach(periodStat => {
+              // 从原始记录中获取该周期的投资金额
+              let periodInvestment = 0
+              periodStat.records.forEach(recordDetail => {
+                const record = recordDetail.record
+                if (!record) return
+                
+                const result = record.result || {}
+                const stockDetails = result.stockDetails || []
+                
+                // 获取该周期筛选后的股票代码
+                const periodStockCodes = new Set(periodStat.stocks.map(s => s.code))
+                
+                stockDetails.forEach(detail => {
+                  if (periodStockCodes.has(detail.code)) {
+                    periodInvestment += detail.buyAmount || 0
+                  }
+                })
+              })
+              
+              recalculatedTotalInvestment += periodInvestment
+              recalculatedTotalProfit += periodStat.totalProfit
+              
+              // 统计盈利和亏损股票数
+              periodStat.stocks.forEach(stock => {
+                if (stock.returnRate !== null && stock.returnRate !== undefined) {
+                  if (stock.returnRate > 0) {
+                    recalculatedProfitableStocks++
+                  } else if (stock.returnRate < 0) {
+                    recalculatedLossStocks++
+                  }
+                }
+              })
+              
+              // 保存周期数据用于计算大盘收益率
+              if (periodInvestment > 0) {
+                recalculatedRecordReturns.push({
+                  investment: periodInvestment,
+                  profit: periodStat.totalProfit,
+                  returnRate: periodStat.returnRate,
+                  marketReturnRate: periodStat.marketReturnRate
+                })
               }
             })
-          })
-          
-          recalculatedTotalInvestment += periodInvestment
-          recalculatedTotalProfit += periodStat.totalProfit
-          
-          // 统计盈利和亏损股票数
-          periodStat.stocks.forEach(stock => {
-            if (stock.returnRate !== null && stock.returnRate !== undefined) {
-              if (stock.returnRate > 0) {
-                recalculatedProfitableStocks++
-              } else if (stock.returnRate < 0) {
-                recalculatedLossStocks++
+            
+            // 计算整体收益率（加权平均）
+            let recalculatedTotalReturnRate = 0
+            if (recalculatedTotalInvestment > 0) {
+              recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
+            }
+            
+            // 重新计算大盘收益率（按投入资金加权平均）
+            if (recalculatedRecordReturns.length > 0 && recalculatedTotalInvestment > 0) {
+              let weightedMarketSum = 0
+              let totalWeightedInvestment = 0
+              
+              recalculatedRecordReturns.forEach(r => {
+                if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
+                  weightedMarketSum += r.marketReturnRate * r.investment
+                  totalWeightedInvestment += r.investment
+                }
+              })
+              
+              if (totalWeightedInvestment > 0) {
+                recalculatedTotalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
               }
             }
-          })
-          
-          // 保存周期数据用于计算大盘收益率
-          if (periodInvestment > 0) {
-            recalculatedRecordReturns.push({
-              investment: periodInvestment,
-              profit: periodStat.totalProfit,
-              returnRate: periodStat.returnRate,
-              marketReturnRate: periodStat.marketReturnRate
-            })
-          }
-        })
-        
-        // 计算整体收益率（加权平均）
-        let recalculatedTotalReturnRate = 0
-        if (recalculatedTotalInvestment > 0) {
-          recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
-        }
-        
-        // 重新计算大盘收益率（按投入资金加权平均）
-        if (recalculatedRecordReturns.length > 0 && recalculatedTotalInvestment > 0) {
-          let weightedMarketSum = 0
-          let totalWeightedInvestment = 0
-          
-          recalculatedRecordReturns.forEach(r => {
-            if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
-              weightedMarketSum += r.marketReturnRate * r.investment
-              totalWeightedInvestment += r.investment
+            
+            // 重新计算超额收益
+            let recalculatedTotalExcessReturn = null
+            if (recalculatedTotalMarketReturnRate !== null && recalculatedTotalMarketReturnRate !== undefined) {
+              recalculatedTotalExcessReturn = recalculatedTotalReturnRate - recalculatedTotalMarketReturnRate
             }
-          })
-          
-          if (totalWeightedInvestment > 0) {
-            recalculatedTotalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
+            
+            // 重新计算胜率
+            const recalculatedTotalStocks = recalculatedProfitableStocks + recalculatedLossStocks
+            const recalculatedWinRate = recalculatedTotalStocks > 0 ? (recalculatedProfitableStocks / recalculatedTotalStocks) * 100 : 0
+            
+            // 重新计算年化收益率（使用原有的日期范围）
+            let recalculatedAnnualizedReturnRate = null
+            if (earliestBacktestDate && latestStatDate && recalculatedTotalReturnRate !== null) {
+              const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
+              if (tradingDays > 0) {
+                const totalReturnDecimal = recalculatedTotalReturnRate / 100
+                const tradingDaysPerYear = 250
+                const annualizedMultiplier = tradingDaysPerYear / tradingDays
+                recalculatedAnnualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
+              }
+            }
+            
+            // 更新整体统计数据
+            totalInvestment = recalculatedTotalInvestment
+            totalProfit = recalculatedTotalProfit
+            totalReturnRate = recalculatedTotalReturnRate
+            totalMarketReturnRate = recalculatedTotalMarketReturnRate
+            totalExcessReturn = recalculatedTotalExcessReturn
+            annualizedReturnRate = recalculatedAnnualizedReturnRate
+            profitableStocks = recalculatedProfitableStocks
+            lossStocks = recalculatedLossStocks
+            winRate = recalculatedWinRate
           }
         }
-        
-        // 重新计算超额收益
-        let recalculatedTotalExcessReturn = null
-        if (recalculatedTotalMarketReturnRate !== null && recalculatedTotalMarketReturnRate !== undefined) {
-          recalculatedTotalExcessReturn = recalculatedTotalReturnRate - recalculatedTotalMarketReturnRate
-        }
-        
-        // 重新计算胜率
-        const recalculatedTotalStocks = recalculatedProfitableStocks + recalculatedLossStocks
-        const recalculatedWinRate = recalculatedTotalStocks > 0 ? (recalculatedProfitableStocks / recalculatedTotalStocks) * 100 : 0
-        
-        // 重新计算年化收益率（使用原有的日期范围）
-        let recalculatedAnnualizedReturnRate = null
-        if (earliestBacktestDate && latestStatDate && recalculatedTotalReturnRate !== null) {
-          const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
-          if (tradingDays > 0) {
-            const totalReturnDecimal = recalculatedTotalReturnRate / 100
-            const tradingDaysPerYear = 250
-            const annualizedMultiplier = tradingDaysPerYear / tradingDays
-            recalculatedAnnualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
-          }
-        }
-        
-        // 更新整体统计数据
-        totalInvestment = recalculatedTotalInvestment
-        totalProfit = recalculatedTotalProfit
-        totalReturnRate = recalculatedTotalReturnRate
-        totalMarketReturnRate = recalculatedTotalMarketReturnRate
-        totalExcessReturn = recalculatedTotalExcessReturn
-        annualizedReturnRate = recalculatedAnnualizedReturnRate
-        profitableStocks = recalculatedProfitableStocks
-        lossStocks = recalculatedLossStocks
-        winRate = recalculatedWinRate
       }
 
       statisticsResult.value = {
@@ -1902,7 +2416,7 @@ const router = useRouter()
         totalMarketReturnRate,  // 整体大盘收益率
         totalExcessReturn,  // 整体超额收益
         annualizedReturnRate,  // 年化收益率
-        periodStats: periodStats,
+        periodStats: filteredPeriodStats,  // 使用筛选后的周期统计
         filteredRecords: recordDetails
       }
       
@@ -1936,3 +2450,73 @@ const router = useRouter()
   
   // 注意：移除了筛选条件的自动监听，改为手动点击"筛选"按钮触发
 </script>
+
+<style scoped>
+/* Range Slider 样式 */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+  background: hsl(var(--muted));
+  background-image: linear-gradient(
+    to right,
+    hsl(var(--primary)) 0%,
+    hsl(var(--primary)) var(--slider-progress, 0%),
+    hsl(var(--muted)) var(--slider-progress, 0%),
+    hsl(var(--muted)) 100%
+  );
+  transition: background 0.2s ease;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  border: 3px solid hsl(var(--background));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 2px hsl(var(--primary) / 0.1);
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.range-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  cursor: pointer;
+  border: 3px solid hsl(var(--background));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 2px hsl(var(--primary) / 0.1);
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.range-slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.range-slider:focus {
+  outline: none;
+}
+
+.range-slider:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
+}
+
+.range-slider:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
+}
+</style>
