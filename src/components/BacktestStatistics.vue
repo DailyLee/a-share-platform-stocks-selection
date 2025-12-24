@@ -418,22 +418,19 @@
                 </div>
               </div>
               <div class="grid grid-cols-3 gap-1.5">
-                <div v-if="statisticsResult.totalMarketReturnRate !== null && statisticsResult.totalMarketReturnRate !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">大盘收益率</div>
-                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalMarketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                    {{ statisticsResult.totalMarketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalMarketReturnRate) }}%
+                <div v-if="statisticsResult.maxDrawdown !== null && statisticsResult.maxDrawdown !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">最大回撤</div>
+                  <div class="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">
+                    {{ formatPercent(statisticsResult.maxDrawdown) }}%
+                  </div>
+                  <div v-if="statisticsResult.maxDrawdownDateRange" class="text-xs text-muted-foreground mt-0.5">
+                    {{ statisticsResult.maxDrawdownDateRange.start }} ~ {{ statisticsResult.maxDrawdownDateRange.end }}
                   </div>
                 </div>
-                <div v-if="statisticsResult.totalExcessReturn !== null && statisticsResult.totalExcessReturn !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">超额收益</div>
-                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.totalExcessReturn >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                    {{ statisticsResult.totalExcessReturn >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.totalExcessReturn) }}%
-                  </div>
-                </div>
-                <div v-if="statisticsResult.annualizedReturnRate !== null && statisticsResult.annualizedReturnRate !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
-                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">年化收益率</div>
-                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.annualizedReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                    {{ statisticsResult.annualizedReturnRate >= 0 ? '+' : '' }}{{ formatPercent(statisticsResult.annualizedReturnRate) }}%
+                <div v-if="statisticsResult.sharpeRatio !== null && statisticsResult.sharpeRatio !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">夏普比</div>
+                  <div class="text-base sm:text-lg font-bold" :class="statisticsResult.sharpeRatio >= 1 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                    {{ formatPercent(statisticsResult.sharpeRatio, 2) }}
                   </div>
                 </div>
               </div>
@@ -454,7 +451,7 @@
                   <!-- 周期统计头部 -->
                   <div class="bg-muted/50 p-2 sm:p-3 border-b border-border">
                     <div class="flex items-center justify-between">
-                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">周期</div>
                           <div class="text-sm font-medium">{{ periodStat.periodLabel }}</div>
@@ -462,6 +459,16 @@
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">股票数</div>
                           <div class="text-sm font-medium">{{ periodStat.stockCount }}</div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">投入资金</div>
+                          <div class="text-sm font-medium">¥{{ formatNumber(periodStat.investment || 0) }}</div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">额外投入</div>
+                          <div class="text-sm font-medium text-orange-600 dark:text-orange-400">
+                            ¥{{ formatNumber(periodStat.additionalInvestment || 0) }}
+                          </div>
                         </div>
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">收益</div>
@@ -482,20 +489,6 @@
                       >
                         <i :class="[expandedPeriods.has(index) ? 'fas fa-chevron-up' : 'fas fa-chevron-down']"></i>
                       </button>
-                    </div>
-                    <div v-if="periodStat.marketReturnRate !== null && periodStat.marketReturnRate !== undefined" class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-                      <div>
-                        <div class="text-xs text-muted-foreground mb-0.5">大盘收益</div>
-                        <div class="text-sm font-medium" :class="periodStat.marketReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                          {{ periodStat.marketReturnRate >= 0 ? '+' : '' }}{{ formatPercent(periodStat.marketReturnRate) }}%
-                        </div>
-                      </div>
-                      <div>
-                        <div class="text-xs text-muted-foreground mb-0.5">超额收益</div>
-                        <div class="text-sm font-medium" :class="periodStat.excessReturn >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                          {{ periodStat.excessReturn >= 0 ? '+' : '' }}{{ formatPercent(periodStat.excessReturn) }}%
-                        </div>
-                      </div>
                     </div>
                   </div>
                   <!-- 股票详情（展开时显示） -->
@@ -888,9 +881,9 @@ const router = useRouter()
   }
   
   // 格式化百分比
-  function formatPercent(num) {
+  function formatPercent(num, decimals = 2) {
     if (num === null || num === undefined) return '0.00'
-    return Number(num).toFixed(2)
+    return Number(num).toFixed(decimals)
   }
 
 
@@ -1865,10 +1858,17 @@ const router = useRouter()
       let totalProfit = 0  // 所有回测的总收益（用于显示）
 
       const recordDetails = []
+      
+      // 对于累计余额策略和固定金额策略，需要跟踪结算余额
+      let hasCalculatedInitialInvestment = false
+      let firstPeriodInitialCapital = 0
+      let previousSettlementBalance = 0  // 上一个周期的结算余额
+      let previousActualBuyAmount = 0  // 上一个周期的实际买入金额（用于equal_distribution_fixed策略）
 
       filteredRecords.forEach(record => {
         const config = record.config || {}
         const result = record.result || {}
+        const buyStrategy = config.buy_strategy
         
         // 获取该记录中筛选后的股票代码列表
         const filteredStockCodes = new Set()
@@ -1888,9 +1888,8 @@ const router = useRouter()
         let recordInvestment = 0
         let recordProfit = 0
         
+        // 计算筛选后股票的实际投入和收益
         filteredStockDetails.forEach(detail => {
-          const buyAmount = detail.buyAmount || 0
-          recordInvestment += buyAmount
           recordProfit += (detail.profit || 0)
           
           // 统计盈利和亏损股票数
@@ -1900,24 +1899,101 @@ const router = useRouter()
             lossStocks++
           }
         })
+        
+        // 计算本期的实际投入金额（筛选后的股票）
+        let actualBuyAmount = 0
+        filteredStockDetails.forEach(detail => {
+          actualBuyAmount += detail.buyAmount || 0
+        })
+        
+        // 计算本期的结算余额（筛选后的股票）
+        const currentSettlementBalance = actualBuyAmount + recordProfit
+        
+        // 根据策略计算实际新投入
+        if (buyStrategy === 'equal_distribution') {
+          // 累计余额策略：只有第一个周期算作新投入
+          if (!hasCalculatedInitialInvestment) {
+            // 第一个周期：使用初始资金作为投入
+            // 对于旧记录，如果 initial_capital 不存在，默认使用10万（之前的历史数据都是10万）
+            const initialCapital = config.initial_capital !== undefined && config.initial_capital !== null 
+              ? config.initial_capital 
+              : 100000
+            recordInvestment = initialCapital
+            firstPeriodInitialCapital = initialCapital
+            hasCalculatedInitialInvestment = true
+            previousSettlementBalance = currentSettlementBalance
+          } else {
+            // 后续周期：使用余额，不算新投入（recordInvestment = 0）
+            recordInvestment = 0
+            previousSettlementBalance = currentSettlementBalance
+          }
+        } else if (buyStrategy === 'equal_distribution_fixed') {
+          // 固定金额策略：每个周期投入固定金额，但需要扣除上期余额
+          // 对于旧记录，如果 initial_capital 不存在，默认使用10万（之前的历史数据都是10万）
+          const fixedCapital = config.initial_capital !== undefined && config.initial_capital !== null 
+            ? config.initial_capital 
+            : 100000
+          
+          if (!hasCalculatedInitialInvestment) {
+            // 第一个周期：使用实际买入金额作为投入（因为可能筛选了股票）
+            // 如果筛选了股票，actualBuyAmount 可能小于 fixedCapital
+            recordInvestment = actualBuyAmount
+            firstPeriodInitialCapital = fixedCapital  // 保存固定金额用于收益率计算
+            hasCalculatedInitialInvestment = true
+            // 更新结算余额（第一个周期处理完后）
+            previousSettlementBalance = currentSettlementBalance
+            previousActualBuyAmount = actualBuyAmount  // 保存上期的实际买入金额
+          } else {
+            // 后续周期：新投入 = 实际买入金额 - (上期结算余额 - 上期实际买入金额)
+            // 或者更简单：如果本期实际买入金额 > 上期结算余额，说明有新投入
+            // 新投入 = max(0, 本期实际买入金额 - 上期结算余额)
+            if (actualBuyAmount > previousSettlementBalance) {
+              recordInvestment = actualBuyAmount - previousSettlementBalance
+            } else {
+              // 如果本期实际买入金额 <= 上期结算余额，说明使用的是上期余额，没有新投入
+              recordInvestment = 0
+            }
+            // 更新结算余额（当前周期处理完后）
+            previousSettlementBalance = currentSettlementBalance
+            previousActualBuyAmount = actualBuyAmount  // 保存上期的实际买入金额
+          }
+        } else {
+          // 其他策略（如fixed_amount）：使用实际买入金额
+          recordInvestment = actualBuyAmount
+        }
 
         // 计算本次回测的收益率
         let recordReturnRate = 0
-        if (recordInvestment > 0) {
+        if (buyStrategy === 'equal_distribution' && recordInvestment === 0) {
+          // 累计余额策略的后续周期：使用上期结算余额作为分母
+          // 从上一个周期的记录中获取结算余额
+          if (recordReturns.length > 0) {
+            const lastRecord = recordReturns[recordReturns.length - 1]
+            const lastSettlementBalance = lastRecord.settlementBalance || (lastRecord.investment + lastRecord.profit)
+            if (lastSettlementBalance > 0) {
+              recordReturnRate = (recordProfit / lastSettlementBalance) * 100
+            }
+          } else {
+            // 如果没有上一个周期记录，使用实际买入金额作为分母
+            if (actualBuyAmount > 0) {
+              recordReturnRate = (recordProfit / actualBuyAmount) * 100
+            }
+          }
+        } else if (recordInvestment > 0) {
           recordReturnRate = (recordProfit / recordInvestment) * 100
+        } else if (actualBuyAmount > 0) {
+          // 如果没有新投入但有实际买入，使用实际买入金额计算收益率
+          recordReturnRate = (recordProfit / actualBuyAmount) * 100
         }
-        
-        // 获取大盘收益率（如果有）
-        const marketReturnRate = result.summary?.marketReturnRate !== null && result.summary?.marketReturnRate !== undefined
-          ? result.summary.marketReturnRate
-          : null
         
         // 保存本次回测的数据（用于后续计算整体收益率）
         recordReturns.push({
           investment: recordInvestment,
           profit: recordProfit,
           returnRate: recordReturnRate,
-          marketReturnRate: marketReturnRate
+          actualBuyAmount: actualBuyAmount,  // 保存实际买入金额，用于计算结算余额
+          settlementBalance: currentSettlementBalance,  // 保存结算余额
+          scanDate: config.backtest_date || ''  // 保存扫描日期，用于最大回撤日期范围
         })
 
         // 累计总投入和总收益（用于显示）
@@ -2058,126 +2134,55 @@ const router = useRouter()
         recordDetails.push({
           scanDate: config.backtest_date || '',
           stocks: stocks,
-          record: record // 保存原始记录引用，用于周期分组
+          record: record, // 保存原始记录引用，用于周期分组
+          investment: recordInvestment, // 保存新投入资金
+          actualBuyAmount: actualBuyAmount, // 保存实际买入金额
+          settlementBalance: currentSettlementBalance, // 保存结算余额
+          buyStrategy: buyStrategy, // 保存策略类型
+          fixedCapital: buyStrategy === 'equal_distribution_fixed' 
+            ? (config.initial_capital !== undefined && config.initial_capital !== null ? config.initial_capital : 100000)
+            : null // 保存固定金额（仅用于equal_distribution_fixed策略）
         })
       })
-
-      // 计算整体收益率
-      // 因为每次回测都是独立的，所以整体收益率应该用复利方式计算
-      // 或者用加权平均的方式计算
-      let totalReturnRate = 0
-      if (recordReturns.length > 0) {
-        // 方法1：复利计算（更准确）
-        // 总收益率 = (1 + r1/100) * (1 + r2/100) * ... * (1 + rn/100) - 1
-        let compoundReturn = 1
-        recordReturns.forEach(r => {
-          if (r.investment > 0) {
-            compoundReturn *= (1 + r.returnRate / 100)
-          }
-        })
-        totalReturnRate = (compoundReturn - 1) * 100
-        
-        // 方法2：加权平均（按投入资金加权）
-        // 如果总投入为0，则使用简单平均
-        if (totalInvestment > 0) {
-          let weightedSum = 0
-          recordReturns.forEach(r => {
-            if (r.investment > 0) {
-              weightedSum += r.returnRate * (r.investment / totalInvestment)
-            }
-          })
-          totalReturnRate = weightedSum
-        } else {
-          // 如果总投入为0，使用简单平均
-          const avgReturn = recordReturns.reduce((sum, r) => sum + r.returnRate, 0) / recordReturns.length
-          totalReturnRate = avgReturn
-        }
-      }
 
       // 计算胜率（基于股票数量）
       const totalStocks = profitableStocks + lossStocks
       let winRate = totalStocks > 0 ? (profitableStocks / totalStocks) * 100 : 0
 
-      // 计算整体大盘收益率（按投入资金加权平均）
-      let totalMarketReturnRate = null
-      if (recordReturns.length > 0 && totalInvestment > 0) {
-        let weightedMarketSum = 0
-        let totalWeightedInvestment = 0
-        
-        recordReturns.forEach(r => {
-          if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
-            weightedMarketSum += r.marketReturnRate * r.investment
-            totalWeightedInvestment += r.investment
-          }
-        })
-        
-        if (totalWeightedInvestment > 0) {
-          totalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
-        }
-      }
-      
-      // 计算整体超额收益
-      let totalExcessReturn = null
-      if (totalMarketReturnRate !== null && totalMarketReturnRate !== undefined) {
-        totalExcessReturn = totalReturnRate - totalMarketReturnRate
-      }
-
-      // 计算年化收益率
-      // 找到最早的回测日期和最晚的统计日期
-      let earliestBacktestDate = null
-      let latestStatDate = null
-      
-      filteredRecords.forEach(record => {
-        const config = record.config || {}
-        const backtestDate = config.backtest_date
-        const statDate = config.stat_date
-        
-        if (backtestDate) {
-          if (!earliestBacktestDate || backtestDate < earliestBacktestDate) {
-            earliestBacktestDate = backtestDate
-          }
-        }
-        
-        if (statDate) {
-          if (!latestStatDate || statDate > latestStatDate) {
-            latestStatDate = statDate
-          }
-        }
-      })
-      
-      let annualizedReturnRate = null
-      if (earliestBacktestDate && latestStatDate && totalReturnRate !== null) {
-        // 计算交易日数量（排除周末和节假日）
-        const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
-        
-        // 计算年化收益率：使用复利公式 (1 + 总收益率/100)^(250/交易日数) - 1
-        // 一年大约有250个交易日（365天 - 52周*2天周末 - 约10-15个节假日）
-        if (tradingDays > 0) {
-          const totalReturnDecimal = totalReturnRate / 100
-          const tradingDaysPerYear = 250 // 一年大约250个交易日
-          // 使用复利公式计算年化收益率，基于交易日
-          const annualizedMultiplier = tradingDaysPerYear / tradingDays
-          annualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
-        }
-      }
-
       // 按周期分组统计
       const periodGroups = groupByPeriod(recordDetails)
+      let cumulativeAdditionalInvestment = 0  // 累计额外投入（用于equal_distribution_fixed策略）
+      let cumulativeProfit = 0  // 累计收益（用于equal_distribution_fixed策略）
       const periodStats = periodGroups.map((group, index) => {
         let periodStockCount = 0
         let periodInvestment = 0
+        let periodAdditionalInvestment = 0  // 本周期额外投入的资金
         let periodProfit = 0
-        let periodMarketReturnRate = null
         const periodStocks = []
         const periodStockDetails = [] // 存储股票详情，用于排序和筛选
         
+        // 获取该周期的第一个记录，用于确定策略类型和固定金额
+        let periodBuyStrategy = null
+        let periodFixedCapital = null
+        let periodSettlementBalance = 0
+        
         // 按照原始扫描顺序收集股票详情
-        group.records.forEach(recordDetail => {
+        group.records.forEach((recordDetail, recordIndex) => {
           const record = recordDetail.record
           if (!record) return
           
           const config = record.config || {}
           const result = record.result || {}
+          
+          // 获取策略类型和固定金额（从recordDetail中获取，如果recordDetail中没有则从record中获取）
+          if (recordIndex === 0) {
+            periodBuyStrategy = recordDetail.buyStrategy || config.buy_strategy
+            if (periodBuyStrategy === 'equal_distribution_fixed') {
+              periodFixedCapital = recordDetail.fixedCapital !== undefined 
+                ? recordDetail.fixedCapital
+                : (config.initial_capital !== undefined && config.initial_capital !== null ? config.initial_capital : 100000)
+            }
+          }
           
           // 获取该记录中筛选后的股票代码列表
           const recordStockCodes = new Set(recordDetail.stocks.map(s => s.code))
@@ -2202,11 +2207,15 @@ const router = useRouter()
                 returnRate: returnRate,
                 buyAmount: detail.buyAmount || 0,
                 profit: detail.profit || 0,
-                record: record,
-                marketReturnRate: result.summary?.marketReturnRate
+                record: record
               })
             }
           })
+          
+          // 更新周期结算余额（使用最后一个记录的结算余额）
+          if (recordDetail.settlementBalance !== undefined) {
+            periodSettlementBalance = recordDetail.settlementBalance
+          }
         })
         
         // 使用所有股票详情计算周期统计
@@ -2220,25 +2229,40 @@ const router = useRouter()
             name: detail.name,
             returnRate: detail.returnRate
           })
-          
-          // 获取大盘收益率（如果有）
-          if (detail.marketReturnRate !== null && detail.marketReturnRate !== undefined) {
-            if (periodMarketReturnRate === null) {
-              periodMarketReturnRate = detail.marketReturnRate
-            } else {
-              // 如果有多个记录，按投入资金加权平均
-              const recordInvestment = detail.buyAmount
-              const totalInvestmentForAvg = periodInvestment
-              if (totalInvestmentForAvg > 0 && recordInvestment > 0) {
-                const weight = recordInvestment / totalInvestmentForAvg
-                periodMarketReturnRate = periodMarketReturnRate * (1 - weight) + detail.marketReturnRate * weight
-              } else {
-                // 如果无法加权，取简单平均
-                periodMarketReturnRate = (periodMarketReturnRate + detail.marketReturnRate) / 2
-              }
-            }
-          }
         })
+        
+        // 计算本周期额外投入的资金
+        if (periodBuyStrategy === 'equal_distribution_fixed' && periodFixedCapital !== null) {
+          // 固定金额策略：额外投入需要考虑之前所有周期的累计收益
+          if (index === 0) {
+            // 第一个周期：额外投入就是实际买入金额（因为可能筛选了股票）
+            periodAdditionalInvestment = periodInvestment
+          } else {
+            // 后续周期：累计结算余额 = 累计额外投入 + 累计收益
+            // 额外投入 = max(0, 固定金额 - 累计结算余额)
+            const cumulativeSettlementBalance = cumulativeAdditionalInvestment + cumulativeProfit
+            periodAdditionalInvestment = Math.max(0, periodFixedCapital - cumulativeSettlementBalance)
+          }
+          // 更新累计额外投入和累计收益
+          cumulativeAdditionalInvestment += periodAdditionalInvestment
+          cumulativeProfit += periodProfit
+        } else if (periodBuyStrategy === 'equal_distribution') {
+          // 累计余额策略：只有第一个周期有额外投入
+          if (index === 0) {
+            periodAdditionalInvestment = periodInvestment
+            cumulativeAdditionalInvestment = periodInvestment
+            cumulativeProfit = periodProfit
+          } else {
+            periodAdditionalInvestment = 0
+            // 累计余额策略：累计收益继续累加
+            cumulativeProfit += periodProfit
+          }
+        } else {
+          // 其他策略：额外投入就是实际买入金额
+          periodAdditionalInvestment = periodInvestment
+          cumulativeAdditionalInvestment += periodInvestment
+          cumulativeProfit += periodProfit
+        }
         
         // 计算周期收益率
         let periodReturnRate = 0
@@ -2246,23 +2270,163 @@ const router = useRouter()
           periodReturnRate = (periodProfit / periodInvestment) * 100
         }
         
-        // 计算超额收益
-        let excessReturn = null
-        if (periodMarketReturnRate !== null && periodMarketReturnRate !== undefined) {
-          excessReturn = periodReturnRate - periodMarketReturnRate
-        }
-        
         return {
           periodLabel: group.periodLabel,
           stockCount: periodStockCount,
+          investment: periodInvestment,  // 周期投入资金
+          additionalInvestment: periodAdditionalInvestment,  // 本周期额外投入的资金
           totalProfit: periodProfit,
           returnRate: periodReturnRate,
-          marketReturnRate: periodMarketReturnRate,
-          excessReturn: excessReturn,
           stocks: periodStocks,
           records: group.records // 保存记录信息，用于获取回测日期
         }
       })
+
+      // 基于周期统计中的额外投入资金重新计算总投入资金
+      // 对于 equal_distribution_fixed 策略，总投入应该是所有周期的额外投入资金之和
+      const buyStrategy = filteredRecords.length > 0 ? filteredRecords[0].config?.buy_strategy : null
+      if (buyStrategy === 'equal_distribution_fixed' && periodStats.length > 0) {
+        // 重新计算总投入：所有周期的额外投入资金之和
+        totalInvestment = periodStats.reduce((sum, stat) => sum + (stat.additionalInvestment || 0), 0)
+      } else if (buyStrategy === 'equal_distribution' && periodStats.length > 0) {
+        // 累计余额策略：总投入就是第一个周期的额外投入
+        totalInvestment = periodStats.length > 0 ? (periodStats[0].additionalInvestment || 0) : totalInvestment
+      }
+      // 其他策略保持原来的计算方式（基于 recordInvestment 累加）
+
+      // 基于重新计算后的总投入资金和周期统计重新计算整体收益率、最大回撤和夏普比
+      let totalReturnRate = 0
+      let maxDrawdown = null
+      let maxDrawdownDateRange = null
+      let sharpeRatio = null
+
+      if (periodStats.length > 0) {
+        // 计算整体收益率
+        if (totalInvestment > 0) {
+          totalReturnRate = (totalProfit / totalInvestment) * 100
+        }
+
+        // 基于周期统计计算最大回撤
+        // 使用累计收益额计算，更直观且不受总投入资金计算方式影响
+        if (periodStats.length > 0) {
+          let cumulativeProfit = 0 // 累计收益额
+          let peakProfit = 0 // 最高点（累计收益额）
+          let maxDrawdownValue = 0 // 最大回撤值（收益额的差值）
+          let peakDate = '' // 最高点日期
+          let drawdownStartDate = '' // 回撤开始日期（峰值日期）
+          let drawdownEndDate = '' // 回撤结束日期（最低点日期）
+          
+          // 获取初始投入资金（用于计算净值）
+          let initialCapital = 0
+          if (buyStrategy === 'equal_distribution_fixed' && periodStats.length > 0) {
+            // 固定金额策略：使用第一个周期的额外投入作为初始资金
+            initialCapital = periodStats[0].additionalInvestment || periodStats[0].investment || 0
+          } else if (buyStrategy === 'equal_distribution' && periodStats.length > 0) {
+            // 累计余额策略：使用第一个周期的额外投入作为初始资金
+            initialCapital = periodStats[0].additionalInvestment || periodStats[0].investment || 0
+          } else {
+            // 其他策略：使用总投入资金
+            initialCapital = totalInvestment
+          }
+
+          periodStats.forEach((periodStat, index) => {
+            // 获取周期日期（与周期统计中的周期字段匹配）
+            // 优先使用统计日期（stat_date），如果没有则使用回测日期（backtest_date）
+            let periodDate = ''
+            if (periodStat.records && periodStat.records.length > 0) {
+              const firstRecord = periodStat.records[0].record
+              if (firstRecord && firstRecord.config) {
+                // 优先使用统计日期，与周期统计的周期字段保持一致
+                periodDate = firstRecord.config.stat_date || firstRecord.config.backtest_date || ''
+              }
+            }
+
+            // 累计收益额
+            cumulativeProfit += periodStat.totalProfit
+
+            // 计算净值 = 初始资金 + 累计收益
+            const netValue = initialCapital + cumulativeProfit
+
+            // 更新峰值（基于净值）
+            if (netValue > peakProfit) {
+              peakProfit = netValue
+              peakDate = periodDate
+            }
+
+            // 计算回撤 = 峰值净值 - 当前净值
+            const drawdown = peakProfit - netValue
+            
+            // 计算回撤百分比 = 回撤 / 峰值净值
+            let drawdownPercent = 0
+            if (peakProfit > 0) {
+              drawdownPercent = (drawdown / peakProfit) * 100
+            } else if (peakProfit < 0) {
+              // 如果最高点也是负数，使用绝对值
+              drawdownPercent = drawdown
+            }
+
+            if (drawdownPercent > maxDrawdownValue) {
+              maxDrawdownValue = drawdownPercent
+              drawdownStartDate = peakDate
+              drawdownEndDate = periodDate
+            }
+          })
+
+          // 最大回撤百分比
+          maxDrawdown = maxDrawdownValue
+
+          // 设置日期范围
+          if (drawdownStartDate && drawdownEndDate) {
+            maxDrawdownDateRange = {
+              start: drawdownStartDate,
+              end: drawdownEndDate
+            }
+          }
+        }
+
+        // 基于累计收益率计算夏普比
+        // 计算每个周期的累计收益率，然后基于累计收益率的变化来计算夏普比
+        if (periodStats.length > 1 && totalInvestment > 0) {
+          // 计算累计收益率序列
+          let cumulativeReturn = 0
+          let cumulativeReturns = [] // 累计收益率序列
+          
+          periodStats.forEach((periodStat, index) => {
+            // 累计收益率 = 累计收益 / 总投入资金
+            cumulativeReturn += periodStat.totalProfit
+            const cumulativeReturnRate = (cumulativeReturn / totalInvestment) * 100
+            cumulativeReturns.push(cumulativeReturnRate)
+          })
+
+          if (cumulativeReturns.length > 1) {
+            // 计算累计收益率的变化（每个周期的收益率贡献）
+            let returnChanges = []
+            for (let i = 1; i < cumulativeReturns.length; i++) {
+              // 累计收益率的变化 = 当前累计收益率 - 上期累计收益率
+              const returnChange = cumulativeReturns[i] - cumulativeReturns[i - 1]
+              returnChanges.push(returnChange)
+            }
+
+            if (returnChanges.length > 0) {
+              // 计算平均收益率变化
+              const avgReturnChange = returnChanges.reduce((sum, r) => sum + r, 0) / returnChanges.length
+
+              // 计算标准差
+              const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / returnChanges.length
+              const stdDev = Math.sqrt(variance)
+
+              // 夏普比 = 平均收益率变化 / 标准差（假设无风险利率为0）
+              // 或者使用整体收益率 / 标准差
+              if (stdDev > 0) {
+                // 使用整体收益率作为平均收益率
+                sharpeRatio = totalReturnRate / stdDev
+              } else {
+                sharpeRatio = 0
+              }
+            }
+          }
+        }
+      }
 
       // 收集所有周期的股票数量，用于设置筛选范围
       const stockCounts = periodStats.map(stat => stat.stockCount).filter(count => count > 0)
@@ -2297,18 +2461,45 @@ const router = useRouter()
             let recalculatedTotalProfit = 0
             let recalculatedProfitableStocks = 0
             let recalculatedLossStocks = 0
-            let recalculatedTotalMarketReturnRate = null
             const recalculatedRecordReturns = []
             
+            // 获取策略类型（从第一个周期统计中获取）
+            let recalculatedBuyStrategy = buyStrategy
+            if (filteredPeriodStats.length > 0 && filteredPeriodStats[0].records && filteredPeriodStats[0].records.length > 0) {
+              const firstRecord = filteredPeriodStats[0].records[0].record
+              if (firstRecord && firstRecord.config) {
+                recalculatedBuyStrategy = firstRecord.config.buy_strategy || buyStrategy
+              }
+            }
+            
+            // 基于筛选后的周期统计重新计算额外投入资金
+            let recalculatedCumulativeAdditionalInvestment = 0
+            let recalculatedCumulativeProfit = 0
+            
             // 从筛选后的周期统计中重新计算整体统计
-            filteredPeriodStats.forEach(periodStat => {
+            filteredPeriodStats.forEach((periodStat, periodIndex) => {
               // 从原始记录中获取该周期的投资金额
               let periodInvestment = 0
-              periodStat.records.forEach(recordDetail => {
+              let periodBuyStrategy = null
+              let periodFixedCapital = null
+              
+              periodStat.records.forEach((recordDetail, recordIndex) => {
                 const record = recordDetail.record
                 if (!record) return
                 
+                const config = record.config || {}
                 const result = record.result || {}
+                
+                // 获取策略类型和固定金额
+                if (recordIndex === 0) {
+                  periodBuyStrategy = recordDetail.buyStrategy || config.buy_strategy
+                  if (periodBuyStrategy === 'equal_distribution_fixed') {
+                    periodFixedCapital = recordDetail.fixedCapital !== undefined 
+                      ? recordDetail.fixedCapital
+                      : (config.initial_capital !== undefined && config.initial_capital !== null ? config.initial_capital : 100000)
+                  }
+                }
+                
                 const stockDetails = result.stockDetails || []
                 
                 // 获取该周期筛选后的股票代码
@@ -2321,7 +2512,39 @@ const router = useRouter()
                 })
               })
               
-              recalculatedTotalInvestment += periodInvestment
+              // 计算本周期额外投入资金
+              let periodAdditionalInvestment = 0
+              if (periodBuyStrategy === 'equal_distribution_fixed' && periodFixedCapital !== null) {
+                if (periodIndex === 0) {
+                  periodAdditionalInvestment = periodInvestment
+                } else {
+                  const cumulativeSettlementBalance = recalculatedCumulativeAdditionalInvestment + recalculatedCumulativeProfit
+                  periodAdditionalInvestment = Math.max(0, periodFixedCapital - cumulativeSettlementBalance)
+                }
+                recalculatedCumulativeAdditionalInvestment += periodAdditionalInvestment
+                recalculatedCumulativeProfit += periodStat.totalProfit
+              } else if (periodBuyStrategy === 'equal_distribution') {
+                if (periodIndex === 0) {
+                  periodAdditionalInvestment = periodInvestment
+                  recalculatedCumulativeAdditionalInvestment = periodInvestment
+                  recalculatedCumulativeProfit = periodStat.totalProfit
+                } else {
+                  periodAdditionalInvestment = 0
+                  recalculatedCumulativeProfit += periodStat.totalProfit
+                }
+              } else {
+                periodAdditionalInvestment = periodInvestment
+                recalculatedCumulativeAdditionalInvestment += periodInvestment
+                recalculatedCumulativeProfit += periodStat.totalProfit
+              }
+              
+              // 基于额外投入资金累加总投入
+              if (periodBuyStrategy === 'equal_distribution_fixed' || periodBuyStrategy === 'equal_distribution') {
+                recalculatedTotalInvestment += periodAdditionalInvestment
+              } else {
+                recalculatedTotalInvestment += periodInvestment
+              }
+              
               recalculatedTotalProfit += periodStat.totalProfit
               
               // 统计盈利和亏损股票数
@@ -2335,69 +2558,164 @@ const router = useRouter()
                 }
               })
               
-              // 保存周期数据用于计算大盘收益率
+              // 保存周期数据用于重新计算
+              // 获取该周期的扫描日期（使用第一个记录的日期）
+              let periodScanDate = ''
+              if (periodStat.records && periodStat.records.length > 0) {
+                const firstRecord = periodStat.records[0].record
+                if (firstRecord && firstRecord.config) {
+                  periodScanDate = firstRecord.config.backtest_date || ''
+                }
+              }
+              
               if (periodInvestment > 0) {
                 recalculatedRecordReturns.push({
                   investment: periodInvestment,
                   profit: periodStat.totalProfit,
                   returnRate: periodStat.returnRate,
-                  marketReturnRate: periodStat.marketReturnRate
+                  scanDate: periodScanDate  // 添加扫描日期
                 })
               }
             })
             
-            // 计算整体收益率（加权平均）
+            // 基于筛选后的周期统计重新计算整体收益率、最大回撤和夏普比
             let recalculatedTotalReturnRate = 0
+            let recalculatedMaxDrawdown = null
+            let recalculatedMaxDrawdownDateRange = null
+            let recalculatedSharpeRatio = null
+
+            // 计算整体收益率
             if (recalculatedTotalInvestment > 0) {
               recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
             }
-            
-            // 重新计算大盘收益率（按投入资金加权平均）
-            if (recalculatedRecordReturns.length > 0 && recalculatedTotalInvestment > 0) {
-              let weightedMarketSum = 0
-              let totalWeightedInvestment = 0
+
+            // 基于筛选后的周期统计计算最大回撤
+            // 使用累计收益额计算，更直观且不受总投入资金计算方式影响
+            if (filteredPeriodStats.length > 0) {
+              let recalculatedCumulativeProfit = 0 // 累计收益额
+              let peakProfit = 0 // 最高点（累计收益额）
+              let maxDrawdownValue = 0 // 最大回撤值（收益额的差值）
+              let peakDate = '' // 最高点日期
+              let drawdownStartDate = '' // 回撤开始日期（峰值日期）
+              let drawdownEndDate = '' // 回撤结束日期（最低点日期）
               
-              recalculatedRecordReturns.forEach(r => {
-                if (r.investment > 0 && r.marketReturnRate !== null && r.marketReturnRate !== undefined) {
-                  weightedMarketSum += r.marketReturnRate * r.investment
-                  totalWeightedInvestment += r.investment
+              // 获取初始投入资金（用于计算净值）
+              let recalculatedInitialCapital = 0
+              if (recalculatedBuyStrategy === 'equal_distribution_fixed' && filteredPeriodStats.length > 0) {
+                // 固定金额策略：使用第一个周期的额外投入作为初始资金
+                recalculatedInitialCapital = filteredPeriodStats[0].additionalInvestment || filteredPeriodStats[0].investment || 0
+              } else if (recalculatedBuyStrategy === 'equal_distribution' && filteredPeriodStats.length > 0) {
+                // 累计余额策略：使用第一个周期的额外投入作为初始资金
+                recalculatedInitialCapital = filteredPeriodStats[0].additionalInvestment || filteredPeriodStats[0].investment || 0
+              } else {
+                // 其他策略：使用总投入资金
+                recalculatedInitialCapital = recalculatedTotalInvestment
+              }
+
+              filteredPeriodStats.forEach((periodStat, index) => {
+                // 获取周期日期（与周期统计中的周期字段匹配）
+                // 优先使用统计日期（stat_date），如果没有则使用回测日期（backtest_date）
+                let periodDate = ''
+                if (periodStat.records && periodStat.records.length > 0) {
+                  const firstRecord = periodStat.records[0].record
+                  if (firstRecord && firstRecord.config) {
+                    // 优先使用统计日期，与周期统计的周期字段保持一致
+                    periodDate = firstRecord.config.stat_date || firstRecord.config.backtest_date || ''
+                  }
+                }
+
+                // 累计收益额
+                recalculatedCumulativeProfit += periodStat.totalProfit
+
+                // 计算净值 = 初始资金 + 累计收益
+                const netValue = recalculatedInitialCapital + recalculatedCumulativeProfit
+
+                // 更新峰值（基于净值）
+                if (netValue > peakProfit) {
+                  peakProfit = netValue
+                  peakDate = periodDate
+                }
+
+                // 计算回撤 = 峰值净值 - 当前净值
+                const drawdown = peakProfit - netValue
+                
+                // 计算回撤百分比 = 回撤 / 峰值净值
+                let drawdownPercent = 0
+                if (peakProfit > 0) {
+                  drawdownPercent = (drawdown / peakProfit) * 100
+                } else if (peakProfit < 0) {
+                  // 如果最高点也是负数，使用绝对值
+                  drawdownPercent = drawdown
+                }
+
+                if (drawdownPercent > maxDrawdownValue) {
+                  maxDrawdownValue = drawdownPercent
+                  drawdownStartDate = peakDate
+                  drawdownEndDate = periodDate
                 }
               })
-              
-              if (totalWeightedInvestment > 0) {
-                recalculatedTotalMarketReturnRate = weightedMarketSum / totalWeightedInvestment
+
+              // 最大回撤百分比
+              recalculatedMaxDrawdown = maxDrawdownValue
+
+              // 设置日期范围
+              if (drawdownStartDate && drawdownEndDate) {
+                recalculatedMaxDrawdownDateRange = {
+                  start: drawdownStartDate,
+                  end: drawdownEndDate
+                }
               }
             }
-            
-            // 重新计算超额收益
-            let recalculatedTotalExcessReturn = null
-            if (recalculatedTotalMarketReturnRate !== null && recalculatedTotalMarketReturnRate !== undefined) {
-              recalculatedTotalExcessReturn = recalculatedTotalReturnRate - recalculatedTotalMarketReturnRate
+
+            // 基于累计收益率计算夏普比（筛选后的周期）
+            if (filteredPeriodStats.length > 1 && recalculatedTotalInvestment > 0) {
+              // 计算累计收益率序列
+              let cumulativeReturn = 0
+              let cumulativeReturns = [] // 累计收益率序列
+              
+              filteredPeriodStats.forEach((periodStat, index) => {
+                // 累计收益率 = 累计收益 / 总投入资金
+                cumulativeReturn += periodStat.totalProfit
+                const cumulativeReturnRate = (cumulativeReturn / recalculatedTotalInvestment) * 100
+                cumulativeReturns.push(cumulativeReturnRate)
+              })
+
+              if (cumulativeReturns.length > 1) {
+                // 计算累计收益率的变化（每个周期的收益率贡献）
+                let returnChanges = []
+                for (let i = 1; i < cumulativeReturns.length; i++) {
+                  // 累计收益率的变化 = 当前累计收益率 - 上期累计收益率
+                  const returnChange = cumulativeReturns[i] - cumulativeReturns[i - 1]
+                  returnChanges.push(returnChange)
+                }
+
+                if (returnChanges.length > 0) {
+                  // 计算标准差
+                  const avgReturnChange = returnChanges.reduce((sum, r) => sum + r, 0) / returnChanges.length
+                  const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / returnChanges.length
+                  const stdDev = Math.sqrt(variance)
+
+                  // 夏普比 = 整体收益率 / 标准差（假设无风险利率为0）
+                  if (stdDev > 0) {
+                    recalculatedSharpeRatio = recalculatedTotalReturnRate / stdDev
+                  } else {
+                    recalculatedSharpeRatio = 0
+                  }
+                }
+              }
             }
             
             // 重新计算胜率
             const recalculatedTotalStocks = recalculatedProfitableStocks + recalculatedLossStocks
             const recalculatedWinRate = recalculatedTotalStocks > 0 ? (recalculatedProfitableStocks / recalculatedTotalStocks) * 100 : 0
             
-            // 重新计算年化收益率（使用原有的日期范围）
-            let recalculatedAnnualizedReturnRate = null
-            if (earliestBacktestDate && latestStatDate && recalculatedTotalReturnRate !== null) {
-              const tradingDays = countTradingDays(earliestBacktestDate, latestStatDate)
-              if (tradingDays > 0) {
-                const totalReturnDecimal = recalculatedTotalReturnRate / 100
-                const tradingDaysPerYear = 250
-                const annualizedMultiplier = tradingDaysPerYear / tradingDays
-                recalculatedAnnualizedReturnRate = (Math.pow(1 + totalReturnDecimal, annualizedMultiplier) - 1) * 100
-              }
-            }
-            
             // 更新整体统计数据
             totalInvestment = recalculatedTotalInvestment
             totalProfit = recalculatedTotalProfit
             totalReturnRate = recalculatedTotalReturnRate
-            totalMarketReturnRate = recalculatedTotalMarketReturnRate
-            totalExcessReturn = recalculatedTotalExcessReturn
-            annualizedReturnRate = recalculatedAnnualizedReturnRate
+            maxDrawdown = recalculatedMaxDrawdown
+            maxDrawdownDateRange = recalculatedMaxDrawdownDateRange
+            sharpeRatio = recalculatedSharpeRatio
             profitableStocks = recalculatedProfitableStocks
             lossStocks = recalculatedLossStocks
             winRate = recalculatedWinRate
@@ -2413,9 +2731,9 @@ const router = useRouter()
         totalInvestment,
         totalProfit,
         totalReturnRate,
-        totalMarketReturnRate,  // 整体大盘收益率
-        totalExcessReturn,  // 整体超额收益
-        annualizedReturnRate,  // 年化收益率
+        maxDrawdown,  // 最大回撤
+        maxDrawdownDateRange,  // 最大回撤日期范围
+        sharpeRatio,  // 夏普比
         periodStats: filteredPeriodStats,  // 使用筛选后的周期统计
         filteredRecords: recordDetails
       }

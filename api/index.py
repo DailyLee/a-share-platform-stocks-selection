@@ -1969,6 +1969,7 @@ async def run_backtest_stream(request: BacktestRequest):
                         'backtest_date': request.backtest_date,
                         'stat_date': request.stat_date,
                         'buy_strategy': request.buy_strategy,
+                        'initial_capital': request.initial_capital,  # 保存初始资金
                         'use_stop_loss': request.use_stop_loss,
                         'use_take_profit': request.use_take_profit,
                         'stop_loss_percent': request.stop_loss_percent,
@@ -2215,6 +2216,7 @@ async def run_batch_backtest(request: BatchBacktestRequest):
                     'stat_date': request.stat_date,
                     'backtest_name': request.backtest_name,  # 回测名称
                     'buy_strategy': request.buy_strategy,
+                    'initial_capital': request.initial_capital,  # 保存初始资金
                     'use_stop_loss': combination.get('use_stop_loss', False),
                     'use_take_profit': combination.get('use_take_profit', False),
                     'stop_loss_percent': combination.get('stop_loss_percent', -3.0),
@@ -3059,6 +3061,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     'stat_date': stat_date_str,
                     'backtest_name': request.backtest_name,  # 回测名称
                     'buy_strategy': request.buy_strategy,
+                    'initial_capital': period_initial_capital,  # 保存当前周期的初始资金
                     'use_stop_loss': request.use_stop_loss,
                     'use_take_profit': request.use_take_profit,
                     'stop_loss_percent': request.stop_loss_percent,
