@@ -567,6 +567,7 @@
 import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
 import {
   extractBoxRange,
   extractMaDiff,
@@ -2301,10 +2302,14 @@ const router = useRouter()
       let sharpeRatio = null
 
       if (periodStats.length > 0) {
-        // 计算整体收益率
-        if (totalInvestment > 0) {
-          totalReturnRate = (totalProfit / totalInvestment) * 100
-        }
+        // 计算整体收益率（使用公共函数）
+        const returnRateResult = calculateTotalReturnRate(
+          periodStats.map(stat => ({
+            config: stat.records?.[0]?.record?.config || {},
+            result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
+          }))
+        )
+        totalReturnRate = returnRateResult.totalReturnRate
 
         // 基于周期统计计算最大回撤
         // 使用累计收益额计算，更直观且不受总投入资金计算方式影响
@@ -2584,10 +2589,14 @@ const router = useRouter()
             let recalculatedMaxDrawdownDateRange = null
             let recalculatedSharpeRatio = null
 
-            // 计算整体收益率
-            if (recalculatedTotalInvestment > 0) {
-              recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
-            }
+            // 计算整体收益率（使用公共函数，基于筛选后的周期统计）
+            const recalculatedReturnRateResult = calculateTotalReturnRate(
+              filteredPeriodStats.map(stat => ({
+                config: stat.records?.[0]?.record?.config || {},
+                result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
+              }))
+            )
+            recalculatedTotalReturnRate = recalculatedReturnRateResult.totalReturnRate
 
             // 基于筛选后的周期统计计算最大回撤
             // 使用累计收益额计算，更直观且不受总投入资金计算方式影响

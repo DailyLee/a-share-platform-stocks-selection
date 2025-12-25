@@ -559,8 +559,8 @@
                     <template v-else>
                       <span class="whitespace-nowrap min-w-0">
                         收益率: 
-                        <span :class="record.summary?.totalReturnRate >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                          {{ record.summary?.totalReturnRate >= 0 ? '+' : '' }}{{ record.summary?.totalReturnRate?.toFixed(2) || '0.00' }}%
+                        <span :class="getRecordReturnRate(record) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
+                          {{ getRecordReturnRate(record) >= 0 ? '+' : '' }}{{ getRecordReturnRate(record).toFixed(2) || '0.00' }}%
                         </span>
                       </span>
                       <span class="whitespace-nowrap min-w-0">
@@ -654,6 +654,7 @@ import ParameterTutorial from './parameter-help/ParameterTutorial.vue'
 import TaskDetails from './batch-scan/TaskDetails.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
+import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
 
 const router = useRouter()
 
@@ -1342,23 +1343,32 @@ const getDateConfig = (records) => {
   }
 }
 
-// 获取日期分组的平均收益率
+// 计算单个record的收益率（使用和BacktestStatistics.vue一样的方法）
+const getRecordReturnRate = (record) => {
+  if (!record || record.status === 'failed' || !record.summary) {
+    return 0
+  }
+  
+  // 使用公共函数计算收益率
+  const result = calculateTotalReturnRate(record)
+  return result.totalReturnRate
+}
+
+// 获取日期分组的累计收益率（使用和BacktestStatistics.vue一样的方法）
 const getGroupReturnRate = (records) => {
   if (!records || records.length === 0) return null
   
   // 过滤出有收益率的记录（排除失败的记录）
   const validRecords = records.filter(record => 
     record.summary && 
-    record.summary.totalReturnRate !== null && 
-    record.summary.totalReturnRate !== undefined &&
     record.status !== 'failed'
   )
   
   if (validRecords.length === 0) return null
   
-  // 计算平均收益率
-  const sum = validRecords.reduce((acc, record) => acc + record.summary.totalReturnRate, 0)
-  return sum / validRecords.length
+  // 使用公共函数计算累计收益率
+  const result = calculateTotalReturnRate(validRecords)
+  return result.totalReturnRate
 }
 
 // 获取日期分组的胜率（基于股票数量，与数据统计保持一致）

@@ -1013,6 +1013,8 @@ class StockDatabase:
                     'stopLossPercent': config.get('stop_loss_percent', -3.0),
                     'takeProfitPercent': config.get('take_profit_percent', 10.0),
                     'summary': result.get('summary', {}),
+                    'config': config,  # 添加完整的config，用于计算收益率
+                    'result': result,  # 添加完整的result，用于计算收益率
                     'batchTaskId': row[4] if len(row) > 4 else None,
                     'status': 'failed' if is_failed else 'completed',
                     'error': result.get('error') if is_failed else None
