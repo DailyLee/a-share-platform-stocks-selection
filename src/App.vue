@@ -86,56 +86,12 @@
               </button>
             </div>
             <!-- 筛选器 -->
-            <div class="flex flex-wrap items-center gap-3">
-              <!-- 年度筛选 -->
-              <div class="flex items-center space-x-2">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  <i class="fas fa-filter mr-1"></i>
-                  年度：
-                </label>
-                <select
-                  v-model="selectedScanYear"
-                  @change="selectedScanQuarter = ''; selectedScanMonth = ''"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部年度</option>
-                  <option v-for="year in availableScanYears" :key="year" :value="year">
-                    {{ year }}年
-                  </option>
-                </select>
-              </div>
-              <!-- 季度筛选 -->
-              <div class="flex items-center space-x-2" v-if="selectedScanYear">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  季度：
-                </label>
-                <select
-                  v-model="selectedScanQuarter"
-                  @change="selectedScanMonth = ''"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部季度</option>
-                  <option v-for="quarter in availableScanQuarters" :key="quarter" :value="quarter">
-                    {{ quarter }}
-                  </option>
-                </select>
-              </div>
-              <!-- 月度筛选 -->
-              <div class="flex items-center space-x-2" v-if="selectedScanYear">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  月度：
-                </label>
-                <select
-                  v-model="selectedScanMonth"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部月度</option>
-                  <option v-for="month in availableScanMonths" :key="month" :value="month">
-                    {{ month }}月
-                  </option>
-                </select>
-              </div>
-            </div>
+            <DateRangeFilter
+              :data="scanHistory"
+              date-field="scanDate"
+              :loading="scanHistoryLoading"
+              @query="handleScanHistoryQuery"
+            />
           </div>
 
           <!-- 对话框内容 -->
@@ -1636,6 +1592,7 @@ import { ParameterHelpManager, ParameterLabel } from './components/parameter-hel
 import CaseManager from './components/case-management/CaseManager.vue'; // 案例管理组件
 import ThemeToggle from './components/ThemeToggle.vue'; // 主题切换组件
 import ConfirmDialog from './components/ConfirmDialog.vue'; // 确认对话框组件
+import DateRangeFilter from './components/DateRangeFilter.vue'; // 日期筛选组件
 import { gsap } from 'gsap';
 
 const router = useRouter();
@@ -3089,11 +3046,45 @@ function formatDateTime(isoString) {
   })
 }
 
-// 加载扫描历史记录列表
-async function loadScanHistory() {
+// 处理日期筛选组件的查询事件
+async function handleScanHistoryQuery(queryParams) {
   scanHistoryLoading.value = true
   try {
-    const response = await axios.get('/platform/api/scan/history')
+    // 如果没有选择年度，查询所有数据（用户选择了"全部年度"）
+    if (!queryParams.year) {
+      const url = '/platform/api/scan/history?use_current_quarter=false'
+      const response = await axios.get(url)
+      if (response.data.success) {
+        scanHistory.value = response.data.data || []
+        groupScanHistoryByDate()
+      } else {
+        error.value = '加载扫描历史失败'
+      }
+      return
+    }
+    
+    // 使用组件计算的日期范围
+    const { startDate, endDate, useCurrentQuarter } = queryParams
+    
+    // 构建查询URL
+    let url = '/platform/api/scan/history'
+    const params = []
+    
+    if (useCurrentQuarter) {
+      // 使用当前季度（默认）
+      params.push('use_current_quarter=true')
+    } else {
+      // 使用指定的日期范围
+      params.push(`start_date=${startDate}`)
+      params.push(`end_date=${endDate}`)
+      params.push('use_current_quarter=false')
+    }
+    
+    if (params.length > 0) {
+      url += '?' + params.join('&')
+    }
+    
+    const response = await axios.get(url)
     if (response.data.success) {
       scanHistory.value = response.data.data || []
       // 按扫描日期分组
@@ -3108,6 +3099,33 @@ async function loadScanHistory() {
   } finally {
     scanHistoryLoading.value = false
   }
+}
+
+// 获取当前季度信息
+function getCurrentQuarter() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1 // 0-11 -> 1-12
+  
+  const quarter = Math.ceil(month / 3)
+  
+  return {
+    year: year.toString(),
+    quarter: `Q${quarter}`,
+    quarterNum: quarter
+  }
+}
+
+// 加载扫描历史记录列表（初始化时调用，使用默认筛选条件）
+async function loadScanHistory() {
+  // 默认使用当前季度查询
+  const currentQuarter = getCurrentQuarter()
+  await handleScanHistoryQuery({
+    year: currentQuarter.year,
+    quarter: currentQuarter.quarter,
+    month: '',
+    useCurrentQuarter: true
+  })
 }
 
 // 按扫描日期分组扫描历史
@@ -3199,42 +3217,9 @@ const availableScanMonths = computed(() => {
   return Array.from(months).sort((a, b) => a - b)
 })
 
-// 按年度、季度、月度筛选后的分组历史记录
+// 按年度、季度、月度筛选后的分组历史记录（现在数据已在服务端过滤，直接返回分组结果）
 const filteredScanHistoryGroupedByDate = computed(() => {
-  const filtered = {}
-  Object.keys(scanHistoryGroupedByDate.value).forEach(date => {
-    if (date === '未知日期') {
-      return
-    }
-    
-    // 年度筛选
-    if (selectedScanYear.value && !date.startsWith(selectedScanYear.value)) {
-      return
-    }
-    
-    // 季度筛选
-    if (selectedScanQuarter.value) {
-      const month = parseInt(date.substring(5, 7))
-      if (month >= 1 && month <= 12) {
-        const quarter = Math.ceil(month / 3)
-        const selectedQuarter = parseInt(selectedScanQuarter.value.substring(1))
-        if (quarter !== selectedQuarter) {
-          return
-        }
-      }
-    }
-    
-    // 月度筛选
-    if (selectedScanMonth.value) {
-      const month = parseInt(date.substring(5, 7))
-      if (month !== parseInt(selectedScanMonth.value)) {
-        return
-      }
-    }
-    
-    filtered[date] = scanHistoryGroupedByDate.value[date]
-  })
-  return filtered
+  return scanHistoryGroupedByDate.value
 })
 
 // 查看扫描历史记录详情

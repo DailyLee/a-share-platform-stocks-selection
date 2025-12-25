@@ -954,7 +954,14 @@ class StockDatabase:
                 ))
                 return history_id
     
-    def get_backtest_history_list(self, limit: int = 100, batch_task_id: Optional[str] = None, backtest_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_backtest_history_list(
+        self, 
+        limit: int = 100, 
+        batch_task_id: Optional[str] = None, 
+        backtest_name: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get list of all backtest history records (metadata only).
         
@@ -962,6 +969,8 @@ class StockDatabase:
             limit: Maximum number of records to return
             batch_task_id: Optional filter by batch task ID
             backtest_name: Optional filter by backtest name
+            start_date: Optional start date filter (YYYY-MM-DD) for backtest_date (扫描日期)
+            end_date: Optional end date filter (YYYY-MM-DD) for backtest_date (扫描日期)
         
         Returns:
             List of history record metadata
@@ -971,6 +980,7 @@ class StockDatabase:
             cursor = conn.cursor()
             
             # Build query based on filters
+            # 使用 SQLite 的 JSON 函数直接在 SQL 中基于 backtest_date 过滤，避免加载过多数据到内存
             query = 'SELECT id, config, result, created_at, batch_task_id FROM backtest_history WHERE 1=1'
             params = []
             
@@ -978,16 +988,79 @@ class StockDatabase:
                 query += ' AND batch_task_id = ?'
                 params.append(batch_task_id)
             
-            query += ' ORDER BY created_at DESC LIMIT ?'
-            params.append(limit)
+            # 使用 SQLite 的 JSON 函数直接在 SQL 中基于 backtest_date（扫描日期）过滤
+            # 使用 json_valid() 先检查 JSON 是否有效，避免 malformed JSON 错误
+            # 这样可以避免加载所有数据到内存，只在数据库层面过滤
+            json_filter_enabled = False
+            try:
+                # 测试 SQLite 是否支持 JSON 函数
+                cursor.execute("SELECT json_valid('{}')")
+                json_filter_enabled = True
+            except sqlite3.OperationalError:
+                # SQLite 版本不支持 JSON 函数，将使用内存过滤
+                pass
             
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
+            if json_filter_enabled:
+                # 只处理有效的 JSON 记录
+                query += ' AND json_valid(config) = 1'
+                
+                if start_date:
+                    # json_extract(config, '$.backtest_date') 提取 JSON 中的 backtest_date 字段
+                    # 使用 COALESCE 处理 NULL 值，避免比较错误
+                    query += ' AND COALESCE(json_extract(config, \'$.backtest_date\'), \'\') >= ?'
+                    params.append(start_date)
+                
+                if end_date:
+                    query += ' AND COALESCE(json_extract(config, \'$.backtest_date\'), \'\') <= ?'
+                    params.append(end_date)
+                
+                # 如果指定了日期范围，按 backtest_date 排序；否则按 created_at 排序
+                if start_date or end_date:
+                    # 使用 COALESCE 处理 NULL 值，确保排序正常
+                    query += ' ORDER BY COALESCE(json_extract(config, \'$.backtest_date\'), \'1970-01-01\') DESC LIMIT ?'
+                else:
+                    query += ' ORDER BY created_at DESC LIMIT ?'
+                params.append(limit)
+            else:
+                # SQLite 不支持 JSON 函数，使用 created_at 排序，稍后在内存中过滤
+                query += ' ORDER BY created_at DESC LIMIT ?'
+                params.append(limit * 10 if (start_date or end_date) else limit)
+            
+            try:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError as e:
+                error_msg = str(e).lower()
+                # 如果遇到 JSON 相关错误，回退到内存过滤方案
+                if 'json' in error_msg or 'no such function' in error_msg:
+                    print(f"Warning: SQLite JSON query failed ({e}), falling back to memory filtering")
+                    # 回退方案：查询更多记录，然后在内存中过滤
+                    fallback_query = 'SELECT id, config, result, created_at, batch_task_id FROM backtest_history WHERE 1=1'
+                    fallback_params = []
+                    if batch_task_id:
+                        fallback_query += ' AND batch_task_id = ?'
+                        fallback_params.append(batch_task_id)
+                    # 如果指定了日期范围，查询更多记录以便在内存中过滤
+                    if start_date or end_date:
+                        fallback_query += ' ORDER BY created_at DESC LIMIT ?'
+                        fallback_params.append(limit * 10)
+                    else:
+                        fallback_query += ' ORDER BY created_at DESC LIMIT ?'
+                        fallback_params.append(limit)
+                    cursor.execute(fallback_query, fallback_params)
+                    rows = cursor.fetchall()
+                    json_filter_enabled = False  # 标记使用内存过滤
+                else:
+                    raise
             
             records = []
             for row in rows:
-                config = json.loads(row[1])
-                result = json.loads(row[2])
+                try:
+                    config = json.loads(row[1])
+                    result = json.loads(row[2])
+                except (json.JSONDecodeError, TypeError):
+                    # 跳过无效的JSON记录
+                    continue
                 
                 # Filter by backtest_name if provided (normalize empty string to None)
                 if backtest_name is not None:
@@ -998,6 +1071,29 @@ class StockDatabase:
                     filter_backtest_name = backtest_name.strip() if isinstance(backtest_name, str) and backtest_name.strip() else None
                     if config_backtest_name != filter_backtest_name:
                         continue  # Skip records that don't match the backtest_name filter
+                
+                # 如果 SQL 查询没有应用 JSON 过滤（json_filter_enabled = False），则在内存中基于 backtest_date 过滤
+                # 正常情况下，如果 SQL 查询成功且 json_filter_enabled = True，日期范围过滤已经在 SQL 层面完成
+                # 但如果 SQLite 不支持 JSON 函数或查询失败，这里会进行内存过滤
+                if not json_filter_enabled and (start_date or end_date):
+                    backtest_date = config.get('backtest_date', '')
+                    if not backtest_date:
+                        # 如果没有 backtest_date 但指定了日期范围，跳过这条记录
+                        continue
+                    try:
+                        # 解析 backtest_date 进行比较
+                        backtest_date_obj = datetime.strptime(backtest_date, '%Y-%m-%d').date()
+                        if start_date:
+                            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                            if backtest_date_obj < start_date_obj:
+                                continue
+                        if end_date:
+                            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+                            if backtest_date_obj > end_date_obj:
+                                continue
+                    except (ValueError, TypeError):
+                        # 如果日期格式无效，跳过这条记录
+                        continue
                 
                 # 检查是否是失败记录
                 is_failed = result.get('status') == 'failed' or config.get('status') == 'failed'
@@ -1018,6 +1114,10 @@ class StockDatabase:
                     'error': result.get('error') if is_failed else None
                 }
                 records.append(record)
+                
+                # 如果已经达到 limit，提前退出
+                if len(records) >= limit:
+                    break
             
             return records
     
@@ -1302,12 +1402,19 @@ class StockDatabase:
                     return count
                 return cursor.rowcount
     
-    def get_scan_history_list(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_scan_history_list(
+        self, 
+        limit: int = 100,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get list of all scan history records (metadata only).
         
         Args:
             limit: Maximum number of records to return
+            start_date: Optional start date filter (YYYY-MM-DD) for backtest_date
+            end_date: Optional end date filter (YYYY-MM-DD) for backtest_date
         
         Returns:
             List of history record metadata
@@ -1315,12 +1422,28 @@ class StockDatabase:
         with self._lock:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
+            
+            # Build query based on filters
+            query = '''
                 SELECT cache_key, scan_config, backtest_date, scanned_stocks, total_scanned, success_count, created_at, updated_at
                 FROM scan_cache
-                ORDER BY created_at DESC
-                LIMIT ?
-            ''', (limit,))
+                WHERE 1=1
+            '''
+            params = []
+            
+            # 添加日期范围过滤（基于 backtest_date）
+            if start_date:
+                query += ' AND backtest_date >= ?'
+                params.append(start_date)
+            
+            if end_date:
+                query += ' AND backtest_date <= ?'
+                params.append(end_date)
+            
+            query += ' ORDER BY created_at DESC LIMIT ?'
+            params.append(limit)
+            
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             
             records = []

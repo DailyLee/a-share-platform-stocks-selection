@@ -394,56 +394,14 @@
               </button>
             </div>
             <!-- 筛选器 -->
-            <div class="flex flex-wrap items-center gap-3">
-              <!-- 年度筛选 -->
-              <div class="flex items-center space-x-2">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  <i class="fas fa-filter mr-1"></i>
-                  年度：
-                </label>
-                <select
-                  v-model="selectedBacktestYear"
-                  @change="selectedBacktestQuarter = ''; selectedBacktestMonth = ''"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部年度</option>
-                  <option v-for="year in availableBacktestYears" :key="year" :value="year">
-                    {{ year }}年
-                  </option>
-                </select>
-              </div>
-              <!-- 季度筛选 -->
-              <div class="flex items-center space-x-2" v-if="selectedBacktestYear">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  季度：
-                </label>
-                <select
-                  v-model="selectedBacktestQuarter"
-                  @change="selectedBacktestMonth = ''"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部季度</option>
-                  <option v-for="quarter in availableBacktestQuarters" :key="quarter" :value="quarter">
-                    {{ quarter }}
-                  </option>
-                </select>
-              </div>
-              <!-- 月度筛选 -->
-              <div class="flex items-center space-x-2" v-if="selectedBacktestYear">
-                <label class="text-sm text-muted-foreground whitespace-nowrap">
-                  月度：
-                </label>
-                <select
-                  v-model="selectedBacktestMonth"
-                  class="input text-sm px-3 py-1.5 min-w-[120px]"
-                >
-                  <option value="">全部月度</option>
-                  <option v-for="month in availableBacktestMonths" :key="month" :value="month">
-                    {{ month }}月
-                  </option>
-                </select>
-              </div>
-            </div>
+            <DateRangeFilter
+              :data="backtestHistory"
+              date-field="backtestDate"
+              :loading="backtestHistoryLoading"
+              :default-year="selectedBacktestYear"
+              :default-quarter="selectedBacktestQuarter"
+              @query="handleBacktestHistoryQuery"
+            />
           </div>
 
           <!-- 历史记录列表 -->
@@ -1143,6 +1101,7 @@ import ThemeToggle from './ThemeToggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
+import DateRangeFilter from './DateRangeFilter.vue'
 
 // 注册 ECharts 组件
 echarts.use([
@@ -1185,13 +1144,94 @@ const scanConfig = ref(null)
 const availablePlatformPeriods = ref([]) // 可用的平台期列表（从股票中统计）
 const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
 
+// 获取当前季度信息（需要在初始化时使用）
+function getCurrentQuarter() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1 // 0-11 -> 1-12
+  
+  let quarterStartMonth = 1
+  if (month >= 1 && month <= 3) quarterStartMonth = 1
+  else if (month >= 4 && month <= 6) quarterStartMonth = 4
+  else if (month >= 7 && month <= 9) quarterStartMonth = 7
+  else quarterStartMonth = 10
+  
+  const quarter = Math.ceil(month / 3)
+  
+  return {
+    year: year.toString(),
+    quarter: `Q${quarter}`,
+    quarterNum: quarter
+  }
+}
+
 // 回测历史相关
 const showHistoryDialog = ref(false)
 const backtestHistory = ref([])
 const backtestHistoryLoading = ref(false)
-const selectedBacktestYear = ref('')
-const selectedBacktestQuarter = ref('')
+// 默认设置为当前季度
+const currentQuarter = getCurrentQuarter()
+const selectedBacktestYear = ref(currentQuarter.year)
+const selectedBacktestQuarter = ref(currentQuarter.quarter)
 const selectedBacktestMonth = ref('')
+
+// 处理日期筛选组件的查询事件（需要在模板中使用，提前定义）
+async function handleBacktestHistoryQuery(queryParams) {
+  backtestHistoryLoading.value = true
+  try {
+    // 如果没有选择年度，查询所有数据（用户选择了"全部年度"）
+    if (!queryParams.year) {
+      const url = '/platform/api/backtest/history?use_current_quarter=false'
+      const response = await axios.get(url)
+      if (response.data.success) {
+        backtestHistory.value = response.data.data || []
+        clearBacktestRecordsCache()
+        groupBacktestHistoryByDate()
+      } else {
+        error.value = '加载回测历史失败'
+      }
+      return
+    }
+    
+    // 使用组件计算的日期范围
+    const { startDate, endDate, useCurrentQuarter } = queryParams
+    
+    // 构建查询URL
+    let url = '/platform/api/backtest/history'
+    const params = []
+    
+    if (useCurrentQuarter) {
+      // 使用当前季度（默认）
+      params.push('use_current_quarter=true')
+    } else {
+      // 使用指定的日期范围
+      params.push(`start_date=${startDate}`)
+      params.push(`end_date=${endDate}`)
+      params.push('use_current_quarter=false')
+    }
+    
+    if (params.length > 0) {
+      url += '?' + params.join('&')
+    }
+    
+    const response = await axios.get(url)
+    if (response.data.success) {
+      backtestHistory.value = response.data.data || []
+      // 清除回测记录缓存（因为历史记录已更新）
+      clearBacktestRecordsCache()
+      // 按扫描日期分组
+      groupBacktestHistoryByDate()
+    } else {
+      error.value = '加载回测历史失败'
+    }
+  } catch (e) {
+    console.error('加载回测历史失败:', e)
+    error.value = '加载回测历史失败: ' + (e.response?.data?.detail || e.message)
+    backtestHistory.value = []
+  } finally {
+    backtestHistoryLoading.value = false
+  }
+}
 
 // 批量回测相关
 const showBatchBacktestDialog = ref(false)
@@ -1702,27 +1742,71 @@ function toggleReasonExpand(code) {
   expandedReasons.value[code] = !expandedReasons.value[code]
 }
 
-// 加载回测历史记录列表
-async function loadBacktestHistory() {
-  backtestHistoryLoading.value = true
-  try {
-    const response = await axios.get('/platform/api/backtest/history')
-    if (response.data.success) {
-      backtestHistory.value = response.data.data || []
-      // 清除回测记录缓存（因为历史记录已更新）
-      clearBacktestRecordsCache()
-      // 按扫描日期分组
-      groupBacktestHistoryByDate()
-    } else {
-      error.value = '加载回测历史失败'
-    }
-  } catch (e) {
-    console.error('加载回测历史失败:', e)
-    error.value = '加载回测历史失败: ' + (e.response?.data?.detail || e.message)
-    backtestHistory.value = []
-  } finally {
-    backtestHistoryLoading.value = false
+// 根据筛选条件计算日期范围
+function calculateDateRange() {
+  // 如果没有选择年度，使用当前季度（默认）
+  if (!selectedBacktestYear.value) {
+    const currentQuarter = getCurrentQuarter()
+    const year = parseInt(currentQuarter.year)
+    const quarterNum = currentQuarter.quarterNum
+    
+    let startMonth = (quarterNum - 1) * 3 + 1
+    let endMonth = quarterNum * 3
+    
+    const startDate = `${year}-${String(startMonth).padStart(2, '0')}-01`
+    // 计算结束日期（季度最后一天）
+    const endDateObj = new Date(year, endMonth, 0) // 月份的第0天是上个月的最后一天
+    const endDate = `${year}-${String(endMonth).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`
+    
+    return { startDate, endDate, useCurrentQuarter: true, queryAll: false }
   }
+  
+  const year = parseInt(selectedBacktestYear.value)
+  let startMonth = 1
+  let endMonth = 12
+  
+  // 如果选择了季度
+  if (selectedBacktestQuarter.value) {
+    const quarterNum = parseInt(selectedBacktestQuarter.value.substring(1))
+    startMonth = (quarterNum - 1) * 3 + 1
+    endMonth = quarterNum * 3
+  }
+  
+  // 如果选择了月份
+  if (selectedBacktestMonth.value) {
+    startMonth = parseInt(selectedBacktestMonth.value)
+    endMonth = parseInt(selectedBacktestMonth.value)
+  }
+  
+  const startDate = `${year}-${String(startMonth).padStart(2, '0')}-01`
+  // 计算结束日期（月份最后一天）
+  const endDateObj = new Date(year, endMonth, 0)
+  const endDate = `${year}-${String(endMonth).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`
+  
+  return { startDate, endDate, useCurrentQuarter: false, queryAll: false }
+}
+
+// 查询回测历史记录（保留用于初始化）
+async function queryBacktestHistory() {
+  // 使用默认的当前季度查询
+  await handleBacktestHistoryQuery({
+    year: selectedBacktestYear.value,
+    quarter: selectedBacktestQuarter.value,
+    month: selectedBacktestMonth.value,
+    ...calculateDateRange()
+  })
+}
+
+// 加载回测历史记录列表（初始化时调用，使用默认筛选条件）
+async function loadBacktestHistory() {
+  // 默认使用当前季度查询
+  const currentQuarter = getCurrentQuarter()
+  await handleBacktestHistoryQuery({
+    year: currentQuarter.year,
+    quarter: currentQuarter.quarter,
+    month: '',
+    useCurrentQuarter: true
+  })
 }
 
 // 按扫描日期分组回测历史
@@ -1815,81 +1899,14 @@ const availableBacktestMonths = computed(() => {
   return Array.from(months).sort((a, b) => a - b)
 })
 
-// 按年度、季度、月度筛选后的分组历史记录
+// 按年度、季度、月度筛选后的分组历史记录（现在数据已在服务端过滤，直接返回分组结果）
 const filteredBacktestHistoryGroupedByDate = computed(() => {
-  const filtered = {}
-  Object.keys(backtestHistoryGroupedByDate.value).forEach(date => {
-    if (date === '未知日期') {
-      return
-    }
-    
-    // 年度筛选
-    if (selectedBacktestYear.value && !date.startsWith(selectedBacktestYear.value)) {
-      return
-    }
-    
-    // 季度筛选
-    if (selectedBacktestQuarter.value) {
-      const month = parseInt(date.substring(5, 7))
-      if (month >= 1 && month <= 12) {
-        const quarter = Math.ceil(month / 3)
-        const selectedQuarter = parseInt(selectedBacktestQuarter.value.substring(1))
-        if (quarter !== selectedQuarter) {
-          return
-        }
-      }
-    }
-    
-    // 月度筛选
-    if (selectedBacktestMonth.value) {
-      const month = parseInt(date.substring(5, 7))
-      if (month !== parseInt(selectedBacktestMonth.value)) {
-        return
-      }
-    }
-    
-    filtered[date] = backtestHistoryGroupedByDate.value[date]
-  })
-  return filtered
+  return backtestHistoryGroupedByDate.value
 })
 
-// 按年度、季度、月度筛选后的历史记录列表（用于生成折线图）
+// 按年度、季度、月度筛选后的历史记录列表（用于生成折线图，现在数据已在服务端过滤）
 const filteredBacktestHistory = computed(() => {
-  return backtestHistory.value.filter(record => {
-    const scanDate = record.backtestDate || ''
-    if (!scanDate || scanDate === '未知日期') {
-      return false
-    }
-    
-    // 年度筛选
-    if (selectedBacktestYear.value && !scanDate.startsWith(selectedBacktestYear.value)) {
-      return false
-    }
-    
-    // 季度筛选
-    if (selectedBacktestQuarter.value) {
-      const month = parseInt(scanDate.substring(5, 7))
-      if (month >= 1 && month <= 12) {
-        const quarter = Math.ceil(month / 3)
-        const selectedQuarter = parseInt(selectedBacktestQuarter.value.substring(1))
-        if (quarter !== selectedQuarter) {
-          return false
-        }
-      } else {
-        return false
-      }
-    }
-    
-    // 月度筛选
-    if (selectedBacktestMonth.value) {
-      const month = parseInt(scanDate.substring(5, 7))
-      if (month !== parseInt(selectedBacktestMonth.value)) {
-        return false
-      }
-    }
-    
-    return true
-  })
+  return backtestHistory.value
 })
 
 // 查看历史记录详情
