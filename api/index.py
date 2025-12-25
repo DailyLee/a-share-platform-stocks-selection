@@ -2014,16 +2014,31 @@ async def run_backtest_stream(request: BacktestRequest):
 # =================================
 
 @app.get("/api/backtest/history")
-async def get_backtest_history_list_endpoint(batch_task_id: Optional[str] = None, backtest_name: Optional[str] = None):
+async def get_backtest_history_list_endpoint(
+    batch_task_id: Optional[str] = None, 
+    backtest_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    use_current_quarter: bool = True
+):
     """
     获取回测历史记录列表
     
     Args:
         batch_task_id: 可选的批量任务ID，用于过滤批量回测数据
         backtest_name: 可选的回测名称，用于过滤特定名称的回测数据
+        start_date: 可选的开始日期（YYYY-MM-DD），用于过滤回测日期范围
+        end_date: 可选的结束日期（YYYY-MM-DD），用于过滤回测日期范围
+        use_current_quarter: 是否默认只查询当前季度的数据（默认：True）
     """
     try:
-        records = get_backtest_history_list(batch_task_id=batch_task_id, backtest_name=backtest_name)
+        records = get_backtest_history_list(
+            batch_task_id=batch_task_id, 
+            backtest_name=backtest_name,
+            start_date=start_date,
+            end_date=end_date,
+            use_current_quarter=use_current_quarter
+        )
         # 清理无效的浮点值（inf, -inf, nan）以避免 JSON 序列化错误
         sanitized_records = sanitize_float_for_json(records)
         return {
@@ -2312,12 +2327,25 @@ async def run_batch_backtest(request: BatchBacktestRequest):
 # =================================
 
 @app.get("/api/scan/history")
-async def get_scan_history_list_endpoint():
+async def get_scan_history_list_endpoint(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    use_current_quarter: bool = True
+):
     """
     获取扫描历史记录列表
+    
+    Args:
+        start_date: 可选的开始日期（YYYY-MM-DD），用于过滤扫描日期范围
+        end_date: 可选的结束日期（YYYY-MM-DD），用于过滤扫描日期范围
+        use_current_quarter: 是否默认只查询当前季度的数据（默认：True）
     """
     try:
-        records = get_scan_history_list()
+        records = get_scan_history_list(
+            start_date=start_date,
+            end_date=end_date,
+            use_current_quarter=use_current_quarter
+        )
         return {
             "success": True,
             "data": records,
