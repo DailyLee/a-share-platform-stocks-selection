@@ -5,18 +5,32 @@
 # 系统: Alibaba Cloud Linux 3.2104 LTS 64位
 #
 # 使用方法:
-#   1. 在 MSYS2 终端中运行此脚本
-#   2. 确保已安装必要工具:
+#   方法1 (最简单): 双击或运行批处理文件
+#     deploy-windows.bat
+#     或
+#     .\deploy-windows.bat
+#     这会自动调用 PowerShell 执行部署脚本
+#
+#   方法2: 在 PowerShell 中运行
+#     .\deploy-windows.ps1
+#     这会自动检测 MSYS2 并使用其 bash 执行此脚本
+#
+#   方法3: 在 MSYS2 bash 终端中直接运行
+#     ./deploy-windows.sh
+#
+# 要求:
+#   1. 已安装 MSYS2
+#   2. 在 MSYS2 中已安装必要工具:
 #      pacman -S openssh rsync sshpass
 #      或
 #      pacman -S openssh rsync expect
-#   3. 配置 .deploy.env 文件（参考 .deploy.env.example）
-#   4. 运行: ./deploy-windows.sh
+#   3. 已配置 .deploy.env 文件（参考 .deploy.env.example）
 #
 # 注意:
 #   - 此脚本需要在 MSYS2 bash 环境中运行
 #   - Windows 路径会自动转换为 MSYS2 路径格式
 #   - SSH 密钥路径支持 Windows 和 Unix 两种格式
+#   - 如果从 PowerShell 运行，请使用 deploy-windows.ps1 包装脚本
 
 set -e  # 遇到错误立即退出
 
@@ -41,8 +55,10 @@ print_error() {
 
 # 检查是否在 MSYS2 环境中
 if [ -z "$MSYSTEM" ] && [ -z "$MSYS2_PATH" ]; then
-    print_warn "未检测到 MSYS2 环境，但继续执行..."
-    print_info "建议在 MSYS2 终端中运行此脚本"
+    print_warn "未检测到 MSYS2 环境变量"
+    print_info "提示: 此脚本设计用于 MSYS2 bash 环境"
+    print_info "如果工具已安装但仍检测不到，请确保在 MSYS2 bash 终端中运行"
+    print_info "（不是 PowerShell 或 CMD，而是 MSYS2 MinGW 64-bit 等终端）"
 fi
 
 # 检查配置文件是否存在
@@ -93,23 +109,65 @@ fi
 # 确定认证方式
 USE_PASSWORD=false
 USE_EXPECT=false
+SSH_OPTIONS=""
+
 if [ -n "$SERVER_PASSWORD" ]; then
     USE_PASSWORD=true
     # 检查是否安装了sshpass或expect
-    if command -v sshpass &> /dev/null; then
+    # 首先尝试标准 command -v 检测
+    SSHPASS_PATH=$(command -v sshpass 2>/dev/null)
+    EXPECT_PATH=$(command -v expect 2>/dev/null)
+    
+    # 如果标准检测失败，尝试在 MSYS2 常见路径中查找
+    if [ -z "$SSHPASS_PATH" ]; then
+        for path in /usr/bin /mingw64/bin /mingw32/bin /clang64/bin /clang32/bin; do
+            if [ -f "$path/sshpass.exe" ] || [ -f "$path/sshpass" ]; then
+                SSHPASS_PATH="$path/sshpass"
+                # 将工具路径添加到 PATH（如果不在 PATH 中）
+                if [[ ":$PATH:" != *":$path:"* ]]; then
+                    export PATH="$path:$PATH"
+                fi
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$EXPECT_PATH" ]; then
+        for path in /usr/bin /mingw64/bin /mingw32/bin /clang64/bin /clang32/bin; do
+            if [ -f "$path/expect.exe" ] || [ -f "$path/expect" ]; then
+                EXPECT_PATH="$path/expect"
+                # 将工具路径添加到 PATH（如果不在 PATH 中）
+                if [[ ":$PATH:" != *":$path:"* ]]; then
+                    export PATH="$path:$PATH"
+                fi
+                break
+            fi
+        done
+    fi
+    
+    # 根据检测结果选择认证方式
+    if [ -n "$SSHPASS_PATH" ]; then
         USE_EXPECT=false
+        print_info "检测到 sshpass: $SSHPASS_PATH"
         print_info "使用 sshpass 进行密码认证"
-    elif command -v expect &> /dev/null; then
+    elif [ -n "$EXPECT_PATH" ]; then
         USE_EXPECT=true
+        print_info "检测到 expect: $EXPECT_PATH"
         print_info "使用 expect 进行密码认证"
     else
         print_error "使用密码认证需要安装 sshpass 或 expect 工具"
+        print_info "当前 PATH: $PATH"
+        print_info ""
         print_info "在 MSYS2 中安装:"
         print_info "  pacman -S openssh rsync sshpass"
         print_info "  或"
         print_info "  pacman -S openssh rsync expect"
+        print_info ""
+        print_info "安装后，请确保在 MSYS2 bash 终端中运行此脚本"
         exit 1
     fi
+    # 密码认证时不使用密钥，确保使用密码认证
+    SSH_OPTIONS="-o PreferredAuthentications=password -o PubkeyAuthentication=no"
 elif [ -n "$SSH_KEY_PATH" ]; then
     USE_PASSWORD=false
     # 转换 Windows 路径到 MSYS2 路径（如果需要）
@@ -136,7 +194,7 @@ else
     SSH_OPTIONS=""
 fi
 
-# 设置SSH端口
+# 设置SSH端口和基本选项
 SSH_PORT=${SSH_PORT:-22}
 SSH_OPTIONS="$SSH_OPTIONS -p $SSH_PORT -o StrictHostKeyChecking=no"
 # SCP使用-P（大写）指定端口，SSH使用-p（小写）
@@ -206,10 +264,13 @@ eval "$SSH_CMD $SERVER_USER@$SERVER_HOST 'mkdir -p $DEPLOY_PATH && (command -v r
 print_info "上传项目文件..."
 if [ "$USE_PASSWORD" = true ] && [ "$USE_EXPECT" = false ]; then
     # 使用sshpass时，rsync需要特殊处理
-    # 转义密码中的特殊字符
-    ESCAPED_PASSWORD=$(printf '%q' "$SERVER_PASSWORD")
+    # 使用环境变量传递密码更安全（避免命令行参数暴露）
+    export SSHPASS="$SERVER_PASSWORD"
+    # 构建完整的 rsync SSH 命令
+    # sshpass -e 从 SSHPASS 环境变量读取密码
+    # 确保使用密码认证，禁用密钥认证
     rsync -avz --progress \
-        -e "sshpass -p $ESCAPED_PASSWORD ssh $SSH_OPTIONS" \
+        -e "sshpass -e ssh -p $SSH_PORT -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o PasswordAuthentication=yes" \
         --exclude='/data/' \
         --exclude='node_modules' \
         --exclude='.git' \
@@ -222,6 +283,17 @@ if [ "$USE_PASSWORD" = true ] && [ "$USE_EXPECT" = false ]; then
         --exclude='.vscode' \
         --exclude='.idea' \
         ./ "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
+    RSYNC_EXIT_CODE=$?
+    # 清除环境变量中的密码
+    unset SSHPASS
+    if [ $RSYNC_EXIT_CODE -ne 0 ]; then
+        print_error "rsync上传失败，退出码: $RSYNC_EXIT_CODE"
+        print_error "请检查:"
+        print_error "1. 服务器密码是否正确"
+        print_error "2. 服务器用户是否有写入权限: $DEPLOY_PATH"
+        print_error "3. 服务器是否允许密码认证"
+        exit 1
+    fi
 elif [ "$USE_PASSWORD" = true ] && [ "$USE_EXPECT" = true ]; then
     # 使用expect时，需要创建一个expect包装脚本用于rsync
     # 在 bash 中构建完整的 SSH 命令字符串，确保引号正确
@@ -310,7 +382,15 @@ eval "$SCP_CMD server_deploy.sh $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
 if [ -f "stock-scanner.service" ]; then
     print_info "上传systemd服务文件..."
     eval "$SCP_CMD stock-scanner.service $SERVER_USER@$SERVER_HOST:/tmp/"
+    # 转换服务文件的行尾符（Windows CRLF -> Unix LF）
+    print_info "转换服务文件行尾符..."
+    eval "$SSH_CMD $SERVER_USER@$SERVER_HOST 'sed -i \"s/\r$//\" /tmp/stock-scanner.service'"
 fi
+
+# 转换部署脚本的行尾符（Windows CRLF -> Unix LF）
+# 这是必要的，因为 Windows 文件使用 CRLF，而 Linux 需要 LF
+print_info "转换部署脚本行尾符..."
+eval "$SSH_CMD $SERVER_USER@$SERVER_HOST 'sed -i \"s/\r$//\" $DEPLOY_PATH/server_deploy.sh'"
 
 # 在服务器上执行部署脚本
 print_info "在服务器上执行部署..."

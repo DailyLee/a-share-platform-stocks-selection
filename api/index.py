@@ -2030,8 +2030,13 @@ async def get_backtest_history_list_endpoint(
         start_date: 可选的开始日期（YYYY-MM-DD），用于过滤回测日期范围
         end_date: 可选的结束日期（YYYY-MM-DD），用于过滤回测日期范围
         use_current_quarter: 是否默认只查询当前季度的数据（默认：True）
+        注意：如果指定了 batch_task_id，会自动禁用日期范围过滤，因为批量回测可能跨多个季度
     """
     try:
+        # 如果指定了 batch_task_id，禁用日期范围过滤，因为批量回测可能跨多个季度
+        if batch_task_id:
+            use_current_quarter = False
+        
         records = get_backtest_history_list(
             batch_task_id=batch_task_id, 
             backtest_name=backtest_name,

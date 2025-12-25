@@ -89,7 +89,8 @@ def get_backtest_history_list(
     db = get_stock_database()
     
     # 如果没有指定日期范围，且 use_current_quarter=True，则使用当前季度
-    if use_current_quarter and start_date is None and end_date is None:
+    # 但是，如果指定了 batch_task_id，不应该应用日期范围过滤，因为批量回测可能跨多个季度
+    if use_current_quarter and start_date is None and end_date is None and batch_task_id is None:
         start_date, end_date = get_current_quarter_range()
     
     return db.get_backtest_history_list(
