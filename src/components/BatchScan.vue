@@ -215,6 +215,14 @@
                   {{ loadingBacktestTaskId === task.id ? '加载中...' : '一键回测' }}
                 </button>
                 <button
+                  v-if="task.status === 'completed'"
+                  @click="openTaskBacktestHistory(task)"
+                  class="btn btn-secondary px-3 py-1 text-sm"
+                >
+                  <i class="fas fa-history mr-1"></i>
+                  回测历史
+                </button>
+                <button
                   @click="viewTaskDetails(task.id)"
                   class="btn btn-secondary px-3 py-1 text-sm"
                 >
@@ -1286,6 +1294,15 @@ const runBatchBacktest = async () => {
   } finally {
     backtestLoading.value = false
   }
+}
+
+// 打开任务的回测历史（从任务列表快捷入口）
+const openTaskBacktestHistory = async (task) => {
+  selectedTaskForBacktest.value = task
+  showBacktestHistoryDialog.value = true
+  // 默认折叠所有回测名称分组
+  expandedDates.value.clear()
+  await loadBacktestHistory()
 }
 
 const openBacktestHistoryDialog = async () => {
