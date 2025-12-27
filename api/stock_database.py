@@ -1001,12 +1001,17 @@ class StockDatabase:
                 pass
             
             if json_filter_enabled:
-                # 只处理有效的 JSON 记录
-                query += ' AND json_valid(config) = 1'
+                # 对于批量回测查询，不使用 json_valid() 过滤，因为 SQLite 的 json_valid() 可能过于严格
+                # 导致有效的 JSON 被误判为无效。我们会在内存中处理无效的 JSON。
+                # 对于普通查询（非批量回测），可以使用 json_valid() 来提高查询效率
+                if not batch_task_id:
+                    # 只处理有效的 JSON 记录（仅对非批量回测查询）
+                    query += ' AND json_valid(config) = 1'
                 
                 if start_date:
                     # json_extract(config, '$.backtest_date') 提取 JSON 中的 backtest_date 字段
                     # 使用 COALESCE 处理 NULL 值，避免比较错误
+                    # 对于批量回测，如果 json_extract 失败，会在内存中过滤
                     query += ' AND COALESCE(json_extract(config, \'$.backtest_date\'), \'\') >= ?'
                     params.append(start_date)
                 
@@ -1072,10 +1077,10 @@ class StockDatabase:
                     if config_backtest_name != filter_backtest_name:
                         continue  # Skip records that don't match the backtest_name filter
                 
-                # 如果 SQL 查询没有应用 JSON 过滤（json_filter_enabled = False），则在内存中基于 backtest_date 过滤
-                # 正常情况下，如果 SQL 查询成功且 json_filter_enabled = True，日期范围过滤已经在 SQL 层面完成
-                # 但如果 SQLite 不支持 JSON 函数或查询失败，这里会进行内存过滤
-                if not json_filter_enabled and (start_date or end_date):
+                # 对于批量回测查询，即使 SQL 查询使用了 json_extract，也可能因为某些记录的 JSON 格式问题
+                # 导致 json_extract 返回 NULL 或空字符串，所以需要在内存中再次验证日期范围
+                # 对于非批量回测查询，如果 json_filter_enabled = False（SQLite 不支持 JSON 函数），也需要内存过滤
+                if (not json_filter_enabled or batch_task_id) and (start_date or end_date):
                     backtest_date = config.get('backtest_date', '')
                     if not backtest_date:
                         # 如果没有 backtest_date 但指定了日期范围，跳过这条记录
