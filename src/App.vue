@@ -1090,6 +1090,67 @@
                   已选择 {{ selectedPlatformPeriods.length }} / {{ availablePlatformPeriods.length }} 个平台期
                 </p>
               </div>
+              
+              <!-- 板块筛选 -->
+              <div class="mb-3">
+                <h3 class="text-sm font-semibold mb-2 flex items-center">
+                  <i class="fas fa-building mr-1 text-primary"></i>
+                  板块筛选
+                </h3>
+                <div class="flex flex-wrap gap-2">
+                  <label 
+                    class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                    :class="selectedBoards.includes('创业板') ? 'bg-primary/20 border-primary' : ''"
+                  >
+                    <input
+                      type="checkbox"
+                      value="创业板"
+                      v-model="selectedBoards"
+                      class="checkbox mr-1.5"
+                    />
+                    <span class="text-xs">创业板</span>
+                  </label>
+                  <label 
+                    class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                    :class="selectedBoards.includes('科创板') ? 'bg-primary/20 border-primary' : ''"
+                  >
+                    <input
+                      type="checkbox"
+                      value="科创板"
+                      v-model="selectedBoards"
+                      class="checkbox mr-1.5"
+                    />
+                    <span class="text-xs">科创板</span>
+                  </label>
+                  <label 
+                    class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+                    :class="selectedBoards.includes('主板') ? 'bg-primary/20 border-primary' : ''"
+                  >
+                    <input
+                      type="checkbox"
+                      value="主板"
+                      v-model="selectedBoards"
+                      class="checkbox mr-1.5"
+                    />
+                    <span class="text-xs">主板</span>
+                  </label>
+                  <button
+                    @click="selectedBoards = ['创业板', '科创板', '主板']"
+                    class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+                  >
+                    全选
+                  </button>
+                  <button
+                    @click="selectedBoards = []"
+                    class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+                  >
+                    清空
+                  </button>
+                </div>
+                <p class="text-xs text-muted-foreground mt-2">
+                  已选择 {{ selectedBoards.length }} / 3 个板块
+                </p>
+              </div>
             </div>
             
             <!-- 桌面端表格视图 -->
@@ -1593,6 +1654,7 @@ import CaseManager from './components/case-management/CaseManager.vue'; // 案�
 import ThemeToggle from './components/ThemeToggle.vue'; // 主题切换组件
 import ConfirmDialog from './components/ConfirmDialog.vue'; // 确认对话框组件
 import DateRangeFilter from './components/DateRangeFilter.vue'; // 日期筛选组件
+import { getStockBoard } from './utils/stockBoardUtils.js'; // 板块工具函数
 import { gsap } from 'gsap';
 
 const router = useRouter();
@@ -1678,41 +1740,51 @@ const selectedStocks = ref([]); // 选中的股票列表（用于回测）
 const showFilterPanel = ref(false); // 筛选面板显示状态
 const selectedPlatformPeriods = ref([]); // 选中的平台期列表
 const availablePlatformPeriods = ref([]); // 可用的平台期列表（从结果中统计）
+const selectedBoards = ref(['创业板', '科创板', '主板']); // 选中的板块列表（默认选中所有板块）
 
 // 筛选后的股票列表
 const filteredStocks = computed(() => {
-  if (selectedPlatformPeriods.value.length === 0 || selectedPlatformPeriods.value.length === availablePlatformPeriods.value.length) {
-    // 如果没有选择或全选，返回所有股票
-    return platformStocks.value;
+  let filtered = platformStocks.value
+  
+  // 应用板块筛选
+  if (selectedBoards.value.length > 0 && selectedBoards.value.length < 3) {
+    filtered = filtered.filter(stock => {
+      const stockBoard = getStockBoard(stock.code)
+      return stockBoard && selectedBoards.value.includes(stockBoard)
+    })
   }
   
-  // 根据选中的平台期筛选股票
-  return platformStocks.value.filter(stock => {
-    // 获取股票的所有平台期
-    const stockPeriods = []
-    
-    // 从 selection_reasons 中获取平台期
-    if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
-      Object.keys(stock.selection_reasons).forEach(key => {
-        const period = parseInt(key)
-        if (!isNaN(period)) {
-          stockPeriods.push(period)
-        }
-      })
-    }
-    
-    // 从 platform_windows 中获取平台期
-    if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
-      stock.platform_windows.forEach(period => {
-        if (!stockPeriods.includes(period)) {
-          stockPeriods.push(period)
-        }
-      })
-    }
-    
-    // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
-    return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
-  })
+  // 应用平台期筛选
+  if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
+    filtered = filtered.filter(stock => {
+      // 获取股票的所有平台期
+      const stockPeriods = []
+      
+      // 从 selection_reasons 中获取平台期
+      if (stock.selection_reasons && typeof stock.selection_reasons === 'object') {
+        Object.keys(stock.selection_reasons).forEach(key => {
+          const period = parseInt(key)
+          if (!isNaN(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 从 platform_windows 中获取平台期
+      if (stock.platform_windows && Array.isArray(stock.platform_windows)) {
+        stock.platform_windows.forEach(period => {
+          if (!stockPeriods.includes(period)) {
+            stockPeriods.push(period)
+          }
+        })
+      }
+      
+      // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
+      return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+    })
+  }
+  
+  return filtered
 })
 
 // 分页相关状态

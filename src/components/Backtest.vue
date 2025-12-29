@@ -88,6 +88,8 @@
             :available-platform-periods="availablePlatformPeriods"
             :selected-platform-periods="selectedPlatformPeriods"
             @update:selected-platform-periods="selectedPlatformPeriods = $event"
+            :selected-boards="selectedBoards"
+            @update:selected-boards="selectedBoards = $event"
           />
 
           <!-- 回测股票预览 -->
@@ -97,7 +99,7 @@
                 <i class="fas fa-list mr-2 text-primary"></i>
                 回测股票预览（已选 {{ stocksForBacktest.length }} / 共 {{ stocksForPreview.length }} 只）
                 <span v-if="stocksForPreview.length < selectedStocks.length" class="text-xs text-muted-foreground ml-2">
-                  (已应用平台期筛选)
+                  (已应用筛选)
                 </span>
               </h3>
               <div class="flex items-center space-x-2">
@@ -152,7 +154,7 @@
                 <p class="text-sm" :class="selectedStocks.length > 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'">
                   <strong v-if="selectedStocks.length > 0">已加载回测股票：</strong>
                   <strong v-else>提示：</strong>
-                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，当前选中 {{ stocksForBacktest.length }} 只（已应用平台期筛选），可以开始回测。</span>
+                  <span v-if="selectedStocks.length > 0">已从扫描工具页面选择 {{ selectedStocks.length }} 只股票，当前选中 {{ stocksForBacktest.length }} 只（已应用筛选），可以开始回测。</span>
                   <span v-else>请先在扫描工具页面选择股票，然后点击"数据回测"按钮进入此页面。</span>
                 </p>
               </div>
@@ -1102,6 +1104,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
 import DateRangeFilter from './DateRangeFilter.vue'
+import { getStockBoard } from '../utils/stockBoardUtils.js'
 
 // 注册 ECharts 组件
 echarts.use([
@@ -1143,6 +1146,7 @@ const scanConfig = ref(null)
 // 买入条件配置 - 平台期筛选
 const availablePlatformPeriods = ref([]) // 可用的平台期列表（从股票中统计）
 const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
+const selectedBoards = ref(['创业板', '科创板', '主板']) // 选中的板块列表（默认选中所有板块）
 
 // 获取当前季度信息（需要在初始化时使用）
 function getCurrentQuarter() {
@@ -1305,9 +1309,19 @@ const maxDate = computed(() => {
 
 // 根据平台期筛选获取符合条件的股票列表（用于预览）
 const stocksForPreview = computed(() => {
+  let filtered = selectedStocks.value
+  
+  // 应用板块筛选
+  if (selectedBoards.value.length > 0 && selectedBoards.value.length < 3) {
+    filtered = filtered.filter(stock => {
+      const stockBoard = getStockBoard(stock.code)
+      return stockBoard && selectedBoards.value.includes(stockBoard)
+    })
+  }
+  
   // 如果设置了平台期筛选，只显示符合选中平台期的股票
   if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
-    return selectedStocks.value.filter(stock => {
+    filtered = filtered.filter(stock => {
       // 获取股票的所有平台期
       const stockPeriods = []
       
@@ -1335,14 +1349,21 @@ const stocksForPreview = computed(() => {
     })
   }
   
-  // 如果没有设置平台期筛选或全选，显示所有股票
-  return selectedStocks.value
+  return filtered
 })
 
 // 获取实际选中的股票列表（用于回测，应用平台期筛选）
 const stocksForBacktest = computed(() => {
   // 先过滤出用户手动选中的股票
   let filtered = selectedStocks.value.filter(stock => selectedStockCodes.value.has(stock.code))
+  
+  // 应用板块筛选
+  if (selectedBoards.value.length > 0 && selectedBoards.value.length < 3) {
+    filtered = filtered.filter(stock => {
+      const stockBoard = getStockBoard(stock.code)
+      return stockBoard && selectedBoards.value.includes(stockBoard)
+    })
+  }
   
   // 如果设置了平台期筛选，进一步过滤
   if (selectedPlatformPeriods.value.length > 0 && selectedPlatformPeriods.value.length < availablePlatformPeriods.value.length) {
@@ -3206,13 +3227,16 @@ async function runBatchBacktest() {
   batchBacktestResult.value = null
 
   try {
+    // 应用板块和平台期筛选，获取实际用于回测的股票列表
+    const stocksForBatchBacktest = stocksForBacktest.value
+    
     const response = await axios.post('/platform/api/backtest/batch', {
       backtest_date: batchBacktestConfig.value.backtestDate,
       stat_date: batchBacktestConfig.value.statDate,
       backtest_name: batchBacktestConfig.value.backtestName?.trim() || null,
       buy_strategy: backtestConfig.value.buyStrategy,
       initial_capital: backtestConfig.value.initialCapital,
-      selected_stocks: selectedStocks.value,
+      selected_stocks: stocksForBatchBacktest,
       profit_loss_combinations: batchBacktestConfig.value.profitLossCombinations.map(combo => ({
         use_stop_loss: combo.useStopLoss,
         use_take_profit: combo.useTakeProfit,

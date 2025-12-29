@@ -129,6 +129,73 @@
             已选择 {{ selectedPlatformPeriods.length }} / {{ availablePlatformPeriods.length }} 个平台期
           </p>
         </div>
+
+        <!-- 板块筛选 -->
+        <div class="mt-4">
+          <label class="block text-sm font-medium mb-2">
+            <i class="fas fa-building mr-1 text-primary"></i>
+            板块筛选
+          </label>
+          <p class="text-xs text-muted-foreground mb-2">
+            只买入选中板块的股票，不选中的板块中的股票不参与买入
+          </p>
+          <div class="flex flex-wrap gap-2 mb-2">
+            <label 
+              class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+              :class="selectedBoards.includes('创业板') ? 'bg-primary/20 border-primary' : ''"
+            >
+              <input
+                type="checkbox"
+                value="创业板"
+                :checked="selectedBoards.includes('创业板')"
+                @change="handleBoardChange('创业板', $event.target.checked)"
+                class="checkbox mr-1.5"
+              />
+              <span class="text-xs">创业板</span>
+            </label>
+            <label 
+              class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+              :class="selectedBoards.includes('科创板') ? 'bg-primary/20 border-primary' : ''"
+            >
+              <input
+                type="checkbox"
+                value="科创板"
+                :checked="selectedBoards.includes('科创板')"
+                @change="handleBoardChange('科创板', $event.target.checked)"
+                class="checkbox mr-1.5"
+              />
+              <span class="text-xs">科创板</span>
+            </label>
+            <label 
+              class="flex items-center cursor-pointer px-2 py-1 rounded border border-border hover:bg-muted/50 transition-colors"
+              :class="selectedBoards.includes('主板') ? 'bg-primary/20 border-primary' : ''"
+            >
+              <input
+                type="checkbox"
+                value="主板"
+                :checked="selectedBoards.includes('主板')"
+                @change="handleBoardChange('主板', $event.target.checked)"
+                class="checkbox mr-1.5"
+              />
+              <span class="text-xs">主板</span>
+            </label>
+            <button
+              @click="selectAllBoards"
+              class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+            >
+              全选
+            </button>
+            <button
+              @click="clearBoardFilter"
+              class="px-2 py-1 text-xs rounded border border-border hover:bg-muted/50 transition-colors"
+            >
+              清空
+            </button>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            已选择 {{ selectedBoards.length }} / 3 个板块
+          </p>
+        </div>
       </div>
     </div>
 
@@ -262,10 +329,15 @@ const props = defineProps({
   selectedPlatformPeriods: {
     type: Array,
     default: () => []
+  },
+  // 选中的板块列表（默认选中所有板块）
+  selectedBoards: {
+    type: Array,
+    default: () => ['创业板', '科创板', '主板']
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'update:selectedPlatformPeriods'])
+const emit = defineEmits(['update:modelValue', 'update:selectedPlatformPeriods', 'update:selectedBoards'])
 
 const updateBuyStrategy = (value) => {
   emit('update:modelValue', {
@@ -331,6 +403,32 @@ const selectAllPlatformPeriods = () => {
 // 清空平台期筛选
 const clearPlatformPeriodFilter = () => {
   emit('update:selectedPlatformPeriods', [])
+}
+
+// 处理板块选择变化
+const handleBoardChange = (board, checked) => {
+  const newSelected = [...props.selectedBoards]
+  if (checked) {
+    if (!newSelected.includes(board)) {
+      newSelected.push(board)
+    }
+  } else {
+    const index = newSelected.indexOf(board)
+    if (index > -1) {
+      newSelected.splice(index, 1)
+    }
+  }
+  emit('update:selectedBoards', newSelected)
+}
+
+// 全选板块
+const selectAllBoards = () => {
+  emit('update:selectedBoards', ['创业板', '科创板', '主板'])
+}
+
+// 清空板块筛选
+const clearBoardFilter = () => {
+  emit('update:selectedBoards', [])
 }
 </script>
 

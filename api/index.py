@@ -2763,6 +2763,7 @@ class BatchTaskBacktestRequest(BaseModel):
     stop_loss_percent: float = -2.0  # 止损百分比
     take_profit_percent: float = 18.0  # 止盈百分比
     platform_periods: Optional[List[int]] = None  # 平台期筛选（可选），如果提供则只买入选中平台期的股票
+    boards: Optional[List[str]] = None  # 板块筛选（可选），如果提供则只买入选中板块的股票，如 ['创业板', '科创板', '主板']
 
 
 class BatchTaskBacktestResult(BaseModel):
@@ -3002,8 +3003,40 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     if len(scanned_stocks) > 0:
                         print(f"{Fore.CYAN}[{idx + 1}/{total}] 平台期筛选: 原始股票数={len(scan_result.get('scannedStocks', []))}, 筛选后={len(scanned_stocks)}, 选中平台期={request.platform_periods}{Style.RESET_ALL}")
                 
+                # 如果设置了板块筛选，过滤股票
+                if request.boards and len(request.boards) > 0 and len(request.boards) < 3:
+                    def get_stock_board(code):
+                        """判断股票所属板块"""
+                        if not code or not isinstance(code, str):
+                            return None
+                        # 提取数字部分（去掉交易所前缀）
+                        code_num = code.split('.')[-1] if '.' in code else code
+                        # 创业板：300开头
+                        if code_num.startswith('300'):
+                            return '创业板'
+                        # 科创板：688开头
+                        if code_num.startswith('688'):
+                            return '科创板'
+                        # 其他为主板
+                        return '主板'
+                    
+                    filtered_stocks_by_board = []
+                    for stock in scanned_stocks:
+                        stock_code = stock.get('code', '')
+                        stock_board = get_stock_board(stock_code)
+                        if stock_board and stock_board in request.boards:
+                            filtered_stocks_by_board.append(stock)
+                    
+                    original_count = len(scanned_stocks)
+                    scanned_stocks = filtered_stocks_by_board
+                    if len(scanned_stocks) > 0:
+                        print(f"{Fore.CYAN}[{idx + 1}/{total}] 板块筛选: 原始股票数={original_count}, 筛选后={len(scanned_stocks)}, 选中板块={request.boards}{Style.RESET_ALL}")
+                
                 if not scanned_stocks or len(scanned_stocks) == 0:
-                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有符合条件的股票（平台期筛选后）{Style.RESET_ALL}")
+                    filter_reason = '平台期筛选后'
+                    if request.boards and len(request.boards) > 0 and len(request.boards) < 3:
+                        filter_reason = '平台期和板块筛选后'
+                    print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有符合条件的股票（{filter_reason}）{Style.RESET_ALL}")
                     failed += 1
                     
                     # 保存失败记录到数据库
@@ -3023,14 +3056,14 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         }
                         result_dict = {
                             'status': 'failed',
-                            'error': '该扫描日期没有符合条件的股票（平台期筛选后）',
+                            'error': '该扫描日期没有符合条件的股票（筛选后）',
                             'summary': {}
                         }
                         history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
                         results.append({
                             'index': idx + 1,
                             'status': 'failed',
-                            'message': '该扫描日期没有符合条件的股票（平台期筛选后）',
+                            'message': '该扫描日期没有符合条件的股票（筛选后）',
                             'scanDate': scan_date,
                             'historyId': history_id
                         })
@@ -3039,7 +3072,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         results.append({
                             'index': idx + 1,
                             'status': 'failed',
-                            'message': '该扫描日期没有符合条件的股票（平台期筛选后）',
+                            'message': '该扫描日期没有符合条件的股票（筛选后）',
                             'scanDate': scan_date
                         })
                     continue

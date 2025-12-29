@@ -85,6 +85,49 @@
               </div>
             </div>
 
+            <!-- 板块筛选 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">板块</label>
+              <div class="flex flex-wrap gap-1">
+                <label 
+                  class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors"
+                  :class="statisticsFilters.boards.includes('创业板') ? 'bg-primary/20 border-primary' : ''"
+                >
+                  <input
+                    type="checkbox"
+                    value="创业板"
+                    v-model="statisticsFilters.boards"
+                    class="checkbox mr-1"
+                  />
+                  <span class="text-xs">创业板</span>
+                </label>
+                <label 
+                  class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors"
+                  :class="statisticsFilters.boards.includes('科创板') ? 'bg-primary/20 border-primary' : ''"
+                >
+                  <input
+                    type="checkbox"
+                    value="科创板"
+                    v-model="statisticsFilters.boards"
+                    class="checkbox mr-1"
+                  />
+                  <span class="text-xs">科创板</span>
+                </label>
+                <label 
+                  class="flex items-center cursor-pointer px-1.5 py-0.5 rounded border border-border hover:bg-muted/30 transition-colors"
+                  :class="statisticsFilters.boards.includes('主板') ? 'bg-primary/20 border-primary' : ''"
+                >
+                  <input
+                    type="checkbox"
+                    value="主板"
+                    v-model="statisticsFilters.boards"
+                    class="checkbox mr-1"
+                  />
+                  <span class="text-xs">主板</span>
+                </label>
+              </div>
+            </div>
+
             <!-- ========== 第二组：突破相关 ========== -->
             <!-- 突破前兆 -->
             <div class="sm:col-span-2 lg:col-span-1">
@@ -575,6 +618,7 @@ import {
   extractLowPositionPercent,
   extractRapidDeclinePercent
 } from '../utils/selectionReasonsParser.js'
+import { getStockBoard } from '../utils/stockBoardUtils.js'
 import Slider from './ui/slider.vue'
   
 const router = useRouter()
@@ -605,6 +649,7 @@ const router = useRouter()
     breakthroughConfirmation: null, // true/false/null (null表示不筛选)
     boxQualityRange: { min: null, max: null }, // 箱体质量范围
     industries: [], // 选中的行业列表
+    boards: ['创业板', '科创板', '主板'], // 选中的板块列表，默认选中所有板块
     boxRange: { min: null, max: null }, // 价格区间范围（min/max为null表示不限制）
     maDiffRange: { min: null, max: null }, // 均线收敛范围（min/max为null表示不限制）
     volatilityRange: { min: null, max: null }, // 波动率范围（min/max为null表示不限制）
@@ -1412,6 +1457,7 @@ const router = useRouter()
        (filters.boxQualityRange.min > allStockAttributes.value.minBoxQuality || 
         filters.boxQualityRange.max < allStockAttributes.value.maxBoxQuality)) ||
       filters.industries.length > 0 ||
+      filters.boards.length > 0 ||
       (filters.boxRange.min !== null && filters.boxRange.max !== null && 
        (filters.boxRange.min > allStockAttributes.value.minBoxRange || 
         filters.boxRange.max < allStockAttributes.value.maxBoxRange)) ||
@@ -1661,6 +1707,18 @@ const router = useRouter()
             if (!statisticsFilters.value.industries.includes(stockIndustry)) {
               return false
             }
+          }
+        }
+
+        // 板块筛选
+        if (statisticsFilters.value.boards.length > 0) {
+          const stockBoard = getStockBoard(stock.code)
+          if (!stockBoard) {
+            // 无法识别板块，排除股票
+            return false
+          }
+          if (!statisticsFilters.value.boards.includes(stockBoard)) {
+            return false
           }
         }
 
@@ -2292,6 +2350,11 @@ const router = useRouter()
       } else if (buyStrategy === 'equal_distribution' && periodStats.length > 0) {
         // 累计余额策略：总投入就是第一个周期的额外投入
         totalInvestment = periodStats.length > 0 ? (periodStats[0].additionalInvestment || 0) : totalInvestment
+      } else if (buyStrategy === 'fixed_amount' && periodStats.length > 0) {
+        // fixed_amount 策略：总投入 = 所有周期的实际买入金额之和
+        totalInvestment = periodStats.reduce((sum, stat) => sum + (stat.investment || 0), 0)
+        // 总收益 = 所有周期的收益之和
+        totalProfit = periodStats.reduce((sum, stat) => sum + (stat.totalProfit || 0), 0)
       }
       // 其他策略保持原来的计算方式（基于 recordInvestment 累加）
 
@@ -2302,14 +2365,25 @@ const router = useRouter()
       let sharpeRatio = null
 
       if (periodStats.length > 0) {
-        // 计算整体收益率（使用公共函数）
-        const returnRateResult = calculateTotalReturnRate(
-          periodStats.map(stat => ({
-            config: stat.records?.[0]?.record?.config || {},
-            result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
-          }))
-        )
-        totalReturnRate = returnRateResult.totalReturnRate
+        // 计算整体收益率
+        if (buyStrategy === 'fixed_amount') {
+          // fixed_amount 策略：简单的根据结算余额和投入总资金计算收益率
+          // 总投入已经在上面计算了（所有周期的实际买入金额之和）
+          // 总收益已经在上面计算了（所有周期的收益之和）
+          // 收益率 = 总收益 / 总投入 * 100
+          if (totalInvestment > 0) {
+            totalReturnRate = (totalProfit / totalInvestment) * 100
+          }
+        } else {
+          // 其他策略：使用公共函数计算整体收益率
+          const returnRateResult = calculateTotalReturnRate(
+            periodStats.map(stat => ({
+              config: stat.records?.[0]?.record?.config || {},
+              result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
+            }))
+          )
+          totalReturnRate = returnRateResult.totalReturnRate
+        }
 
         // 基于周期统计计算最大回撤
         // 使用累计收益额计算，更直观且不受总投入资金计算方式影响
@@ -2546,6 +2620,9 @@ const router = useRouter()
               // 基于额外投入资金累加总投入
               if (periodBuyStrategy === 'equal_distribution_fixed' || periodBuyStrategy === 'equal_distribution') {
                 recalculatedTotalInvestment += periodAdditionalInvestment
+              } else if (periodBuyStrategy === 'fixed_amount') {
+                // fixed_amount 策略：累加实际买入金额
+                recalculatedTotalInvestment += periodInvestment
               } else {
                 recalculatedTotalInvestment += periodInvestment
               }
@@ -2589,14 +2666,23 @@ const router = useRouter()
             let recalculatedMaxDrawdownDateRange = null
             let recalculatedSharpeRatio = null
 
-            // 计算整体收益率（使用公共函数，基于筛选后的周期统计）
-            const recalculatedReturnRateResult = calculateTotalReturnRate(
-              filteredPeriodStats.map(stat => ({
-                config: stat.records?.[0]?.record?.config || {},
-                result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
-              }))
-            )
-            recalculatedTotalReturnRate = recalculatedReturnRateResult.totalReturnRate
+            // 计算整体收益率
+            if (recalculatedBuyStrategy === 'fixed_amount') {
+              // fixed_amount 策略：简单的根据结算余额和投入总资金计算收益率
+              // 总投入和总收益已经在上面计算了
+              if (recalculatedTotalInvestment > 0) {
+                recalculatedTotalReturnRate = (recalculatedTotalProfit / recalculatedTotalInvestment) * 100
+              }
+            } else {
+              // 其他策略：使用公共函数计算整体收益率
+              const recalculatedReturnRateResult = calculateTotalReturnRate(
+                filteredPeriodStats.map(stat => ({
+                  config: stat.records?.[0]?.record?.config || {},
+                  result: { summary: { totalInvestment: stat.investment, totalProfit: stat.totalProfit } }
+                }))
+              )
+              recalculatedTotalReturnRate = recalculatedReturnRateResult.totalReturnRate
+            }
 
             // 基于筛选后的周期统计计算最大回撤
             // 使用累计收益额计算，更直观且不受总投入资金计算方式影响

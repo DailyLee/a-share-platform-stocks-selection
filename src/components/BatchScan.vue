@@ -437,6 +437,8 @@
                 :available-platform-periods="availablePlatformPeriods"
                 :selected-platform-periods="selectedPlatformPeriods"
                 @update:selected-platform-periods="selectedPlatformPeriods = $event"
+                :selected-boards="selectedBoards"
+                @update:selected-boards="selectedBoards = $event"
               />
 
               <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
@@ -515,6 +517,10 @@
                     ({{ group.length }}条记录)
                   </span>
                   <span v-if="getDateConfig(group)" class="text-xs text-muted-foreground font-normal flex items-center gap-2 ml-2">
+                    <span v-if="getDateConfig(group).buyStrategy" class="flex items-center">
+                      <i class="fas fa-shopping-cart mr-1 text-primary"></i>
+                      买入策略: {{ getBuyStrategyLabel(getDateConfig(group).buyStrategy) }}
+                    </span>
                     <span v-if="getDateConfig(group).useStopLoss" class="flex items-center">
                       <i class="fas fa-arrow-down mr-1 text-blue-600 dark:text-blue-400"></i>
                       止损: {{ getDateConfig(group).stopLossPercent }}%
@@ -663,6 +669,7 @@ import TaskDetails from './batch-scan/TaskDetails.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
 import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
+import { getStockBoard } from '../utils/stockBoardUtils.js'
 
 const router = useRouter()
 
@@ -741,6 +748,7 @@ const backtestConfig = ref({
 // 买入条件配置 - 平台期筛选
 const availablePlatformPeriods = ref([]) // 可用的平台期列表（从所有扫描结果的股票中统计）
 const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
+const selectedBoards = ref(['创业板', '科创板', '主板']) // 选中的板块列表（默认选中所有板块）
 
 // 批量回测历史相关
 const showBacktestHistoryDialog = ref(false)
@@ -1274,6 +1282,11 @@ const runBatchBacktest = async () => {
       requestData.platform_periods = selectedPlatformPeriods.value
     }
     
+    // 如果设置了板块筛选，添加板块筛选参数
+    if (selectedBoards.value.length > 0 && selectedBoards.value.length < 3) {
+      requestData.boards = selectedBoards.value
+    }
+    
     const response = await axios.post(
       `/platform/api/batch-scan/tasks/${selectedTaskForBacktest.value.id}/backtest`,
       requestData
@@ -1356,7 +1369,23 @@ const getDateConfig = (records) => {
     useStopLoss: firstRecord.useStopLoss !== undefined ? firstRecord.useStopLoss : false,
     useTakeProfit: firstRecord.useTakeProfit !== undefined ? firstRecord.useTakeProfit : false,
     stopLossPercent: firstRecord.stopLossPercent !== undefined ? firstRecord.stopLossPercent : -1.6,
-    takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 16.0
+    takeProfitPercent: firstRecord.takeProfitPercent !== undefined ? firstRecord.takeProfitPercent : 16.0,
+    buyStrategy: firstRecord.config?.buy_strategy || null
+  }
+}
+
+// 获取买入策略的中文显示名称
+const getBuyStrategyLabel = (buyStrategy) => {
+  if (!buyStrategy) return ''
+  switch (buyStrategy) {
+    case 'fixed_amount':
+      return '每只1万'
+    case 'equal_distribution':
+      return '累计余额'
+    case 'equal_distribution_fixed':
+      return '固定金额'
+    default:
+      return buyStrategy
   }
 }
 
