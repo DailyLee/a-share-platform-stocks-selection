@@ -1751,26 +1751,26 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             # 记录卖出
             sell_records.append({
                 'code': code,
-            'name': name,
-            'buyDate': buy_date,
-            'sellDate': sell_date,
-            'buyPrice': buy_price,
-            'sellPrice': sell_price,
-            'returnRate': final_return_rate,
-            'profit': profit,
-            'sellReason': sell_reason
-        })
-        
-        # 记录股票详情
-        stock_details.append({
-            'code': code,
-            'name': name,
-            'buyAmount': actual_buy_amount,
-            'sellAmount': sell_amount,
-            'profit': profit,
-            'returnRate': final_return_rate,
-            'status': '已卖出' if sell_reason != '未卖出' else '未卖出'
-        })
+                'name': name,
+                'buyDate': buy_date,
+                'sellDate': sell_date,
+                'buyPrice': buy_price,
+                'sellPrice': sell_price,
+                'returnRate': final_return_rate,
+                'profit': profit,
+                'sellReason': sell_reason
+            })
+            
+            # 记录股票详情
+            stock_details.append({
+                'code': code,
+                'name': name,
+                'buyAmount': actual_buy_amount,
+                'sellAmount': sell_amount,
+                'profit': profit,
+                'returnRate': final_return_rate,
+                'status': '已卖出' if sell_reason != '未卖出' else '未卖出'
+            })
     
     if progress_callback:
         progress_callback(98, "正在计算回测结果...")
