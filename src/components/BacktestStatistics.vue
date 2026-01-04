@@ -473,7 +473,7 @@
                 <div v-if="statisticsResult.sharpeRatio !== null && statisticsResult.sharpeRatio !== undefined" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
                   <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">夏普比</div>
                   <div class="text-base sm:text-lg font-bold" :class="statisticsResult.sharpeRatio >= 1 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
-                    {{ formatPercent(statisticsResult.sharpeRatio, 2) }}
+                    {{ statisticsResult.sharpeRatio.toFixed(2) }}
                   </div>
                 </div>
               </div>
@@ -2463,18 +2463,31 @@ const router = useRouter()
           }
         }
 
-        // 基于累计收益率计算夏普比
+        // 基于累计收益率计算夏普比（年化）
         // 计算每个周期的累计收益率，然后基于累计收益率的变化来计算夏普比
         if (periodStats.length > 1 && totalInvestment > 0) {
           // 计算累计收益率序列
           let cumulativeReturn = 0
           let cumulativeReturns = [] // 累计收益率序列
+          let periodDates = [] // 周期日期序列，用于计算年化因子
           
           periodStats.forEach((periodStat, index) => {
             // 累计收益率 = 累计收益 / 总投入资金
             cumulativeReturn += periodStat.totalProfit
             const cumulativeReturnRate = (cumulativeReturn / totalInvestment) * 100
             cumulativeReturns.push(cumulativeReturnRate)
+            
+            // 获取周期日期
+            let periodDate = ''
+            if (periodStat.records && periodStat.records.length > 0) {
+              const firstRecord = periodStat.records[0].record
+              if (firstRecord && firstRecord.config) {
+                periodDate = firstRecord.config.stat_date || firstRecord.config.backtest_date || ''
+              }
+            }
+            if (periodDate) {
+              periodDates.push(periodDate)
+            }
           })
 
           if (cumulativeReturns.length > 1) {
@@ -2490,17 +2503,39 @@ const router = useRouter()
               // 计算平均收益率变化
               const avgReturnChange = returnChanges.reduce((sum, r) => sum + r, 0) / returnChanges.length
 
-              // 计算标准差
-              const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / returnChanges.length
+              // 计算样本标准差（除以n-1，而不是n）
+              const n = returnChanges.length
+              const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / (n > 1 ? n - 1 : 1)
               const stdDev = Math.sqrt(variance)
 
-              // 夏普比 = 平均收益率变化 / 标准差（假设无风险利率为0）
-              // 或者使用整体收益率 / 标准差
+              // 周期夏普比 = 平均收益率变化 / 标准差（假设无风险利率为0）
+              let periodSharpeRatio = 0
               if (stdDev > 0) {
-                // 使用整体收益率作为平均收益率
-                sharpeRatio = totalReturnRate / stdDev
+                periodSharpeRatio = avgReturnChange / stdDev
+              }
+
+              // 年化夏普比：需要根据周期之间的时间间隔进行年化
+              // 年化因子 = sqrt(252 / 平均周期交易日数)
+              if (periodDates.length >= 2 && periodSharpeRatio > 0) {
+                // 计算第一个周期和最后一个周期之间的交易日数
+                const firstDate = periodDates[0]
+                const lastDate = periodDates[periodDates.length - 1]
+                const totalTradingDays = countTradingDays(firstDate, lastDate)
+                
+                if (totalTradingDays > 0 && n > 0) {
+                  // 平均周期交易日数 = 总交易日数 / 周期数
+                  const avgPeriodTradingDays = totalTradingDays / n
+                  
+                  // 年化因子：一年约252个交易日
+                  const annualizationFactor = Math.sqrt(252 / avgPeriodTradingDays)
+                  
+                  // 年化夏普比 = 周期夏普比 * 年化因子
+                  sharpeRatio = periodSharpeRatio * annualizationFactor
+                } else {
+                  sharpeRatio = periodSharpeRatio
+                }
               } else {
-                sharpeRatio = 0
+                sharpeRatio = periodSharpeRatio
               }
             }
           }
@@ -2762,17 +2797,30 @@ const router = useRouter()
               }
             }
 
-            // 基于累计收益率计算夏普比（筛选后的周期）
+            // 基于累计收益率计算夏普比（筛选后的周期，年化）
             if (filteredPeriodStats.length > 1 && recalculatedTotalInvestment > 0) {
               // 计算累计收益率序列
               let cumulativeReturn = 0
               let cumulativeReturns = [] // 累计收益率序列
+              let periodDates = [] // 周期日期序列，用于计算年化因子
               
               filteredPeriodStats.forEach((periodStat, index) => {
                 // 累计收益率 = 累计收益 / 总投入资金
                 cumulativeReturn += periodStat.totalProfit
                 const cumulativeReturnRate = (cumulativeReturn / recalculatedTotalInvestment) * 100
                 cumulativeReturns.push(cumulativeReturnRate)
+                
+                // 获取周期日期
+                let periodDate = ''
+                if (periodStat.records && periodStat.records.length > 0) {
+                  const firstRecord = periodStat.records[0].record
+                  if (firstRecord && firstRecord.config) {
+                    periodDate = firstRecord.config.stat_date || firstRecord.config.backtest_date || ''
+                  }
+                }
+                if (periodDate) {
+                  periodDates.push(periodDate)
+                }
               })
 
               if (cumulativeReturns.length > 1) {
@@ -2785,16 +2833,40 @@ const router = useRouter()
                 }
 
                 if (returnChanges.length > 0) {
-                  // 计算标准差
+                  // 计算平均收益率变化
                   const avgReturnChange = returnChanges.reduce((sum, r) => sum + r, 0) / returnChanges.length
-                  const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / returnChanges.length
+                  // 计算样本标准差（除以n-1，而不是n）
+                  const n = returnChanges.length
+                  const variance = returnChanges.reduce((sum, r) => sum + Math.pow(r - avgReturnChange, 2), 0) / (n > 1 ? n - 1 : 1)
                   const stdDev = Math.sqrt(variance)
 
-                  // 夏普比 = 整体收益率 / 标准差（假设无风险利率为0）
+                  // 周期夏普比 = 平均收益率变化 / 标准差（假设无风险利率为0）
+                  let periodSharpeRatio = 0
                   if (stdDev > 0) {
-                    recalculatedSharpeRatio = recalculatedTotalReturnRate / stdDev
+                    periodSharpeRatio = avgReturnChange / stdDev
+                  }
+
+                  // 年化夏普比：需要根据周期之间的时间间隔进行年化
+                  if (periodDates.length >= 2 && periodSharpeRatio > 0) {
+                    // 计算第一个周期和最后一个周期之间的交易日数
+                    const firstDate = periodDates[0]
+                    const lastDate = periodDates[periodDates.length - 1]
+                    const totalTradingDays = countTradingDays(firstDate, lastDate)
+                    
+                    if (totalTradingDays > 0 && n > 0) {
+                      // 平均周期交易日数 = 总交易日数 / 周期数
+                      const avgPeriodTradingDays = totalTradingDays / n
+                      
+                      // 年化因子：一年约252个交易日
+                      const annualizationFactor = Math.sqrt(252 / avgPeriodTradingDays)
+                      
+                      // 年化夏普比 = 周期夏普比 * 年化因子
+                      recalculatedSharpeRatio = periodSharpeRatio * annualizationFactor
+                    } else {
+                      recalculatedSharpeRatio = periodSharpeRatio
+                    }
                   } else {
-                    recalculatedSharpeRatio = 0
+                    recalculatedSharpeRatio = periodSharpeRatio
                   }
                 }
               }
