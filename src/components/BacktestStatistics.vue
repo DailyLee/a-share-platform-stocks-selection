@@ -476,6 +476,12 @@
                     {{ statisticsResult.sharpeRatio.toFixed(2) }}
                   </div>
                 </div>
+                <div v-if="statisticsResult.totalRepeatCount !== undefined && statisticsResult.totalRepeatCount !== null" class="p-1.5 sm:p-2 bg-muted/30 rounded-md">
+                  <div class="text-xs text-muted-foreground mb-0.5 whitespace-nowrap">重复数总额</div>
+                  <div class="text-base sm:text-lg font-bold text-blue-600 dark:text-blue-400">
+                    {{ statisticsResult.totalRepeatCount }}
+                  </div>
+                </div>
               </div>
             </div>
   
@@ -494,7 +500,7 @@
                   <!-- 周期统计头部 -->
                   <div class="bg-muted/50 p-2 sm:p-3 border-b border-border">
                     <div class="flex items-center justify-between">
-                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
+                      <div class="flex-1 grid grid-cols-2 sm:grid-cols-7 gap-2 sm:gap-4">
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">周期</div>
                           <div class="text-sm font-medium">{{ periodStat.periodLabel }}</div>
@@ -502,6 +508,12 @@
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">股票数</div>
                           <div class="text-sm font-medium">{{ periodStat.stockCount }}</div>
+                        </div>
+                        <div>
+                          <div class="text-xs text-muted-foreground mb-0.5">重复数</div>
+                          <div class="text-sm font-medium text-blue-600 dark:text-blue-400">
+                            {{ index === 0 ? '-' : periodStat.repeatCount || 0 }}
+                          </div>
                         </div>
                         <div>
                           <div class="text-xs text-muted-foreground mb-0.5">投入资金</div>
@@ -2340,6 +2352,32 @@ const router = useRouter()
           records: group.records // 保存记录信息，用于获取回测日期
         }
       })
+      
+      // 计算每个周期与上一个周期的重复股票数量
+      periodStats.forEach((periodStat, index) => {
+        if (index > 0) {
+          // 获取当前周期的股票代码集合
+          const currentStockCodes = new Set(periodStat.stocks.map(s => s.code))
+          // 获取上一个周期的股票代码集合
+          const previousPeriodStat = periodStats[index - 1]
+          if (previousPeriodStat && previousPeriodStat.stocks) {
+            const previousStockCodes = new Set(previousPeriodStat.stocks.map(s => s.code))
+            // 计算交集（重复的股票）
+            let repeatCount = 0
+            for (const code of currentStockCodes) {
+              if (previousStockCodes.has(code)) {
+                repeatCount++
+              }
+            }
+            periodStat.repeatCount = repeatCount
+          } else {
+            periodStat.repeatCount = 0
+          }
+        } else {
+          // 第一个周期没有上一个周期，重复数为0
+          periodStat.repeatCount = 0
+        }
+      })
 
       // 基于周期统计中的额外投入资金重新计算总投入资金
       // 对于 equal_distribution_fixed 策略，总投入应该是所有周期的额外投入资金之和
@@ -2695,6 +2733,32 @@ const router = useRouter()
               }
             })
             
+            // 重新计算筛选后的周期统计中每个周期与上一个周期的重复股票数量
+            filteredPeriodStats.forEach((periodStat, index) => {
+              if (index > 0) {
+                // 获取当前周期的股票代码集合
+                const currentStockCodes = new Set(periodStat.stocks.map(s => s.code))
+                // 获取上一个周期的股票代码集合
+                const previousPeriodStat = filteredPeriodStats[index - 1]
+                if (previousPeriodStat && previousPeriodStat.stocks) {
+                  const previousStockCodes = new Set(previousPeriodStat.stocks.map(s => s.code))
+                  // 计算交集（重复的股票）
+                  let repeatCount = 0
+                  for (const code of currentStockCodes) {
+                    if (previousStockCodes.has(code)) {
+                      repeatCount++
+                    }
+                  }
+                  periodStat.repeatCount = repeatCount
+                } else {
+                  periodStat.repeatCount = 0
+                }
+              } else {
+                // 第一个周期没有上一个周期，重复数为0
+                periodStat.repeatCount = 0
+              }
+            })
+            
             // 基于筛选后的周期统计重新计算整体收益率、最大回撤和夏普比
             let recalculatedTotalReturnRate = 0
             let recalculatedMaxDrawdown = null
@@ -2890,6 +2954,14 @@ const router = useRouter()
         }
       }
 
+      // 计算所有周期的重复数总和
+      const totalRepeatCount = filteredPeriodStats.reduce((sum, stat, index) => {
+        if (index > 0 && stat.repeatCount !== undefined) {
+          return sum + stat.repeatCount
+        }
+        return sum
+      }, 0)
+      
       statisticsResult.value = {
         totalRecords,
         profitableRecords: profitableStocks,  // 使用盈利股票数
@@ -2901,6 +2973,7 @@ const router = useRouter()
         maxDrawdown,  // 最大回撤
         maxDrawdownDateRange,  // 最大回撤日期范围
         sharpeRatio,  // 夏普比
+        totalRepeatCount,  // 所有周期的重复数总和
         periodStats: filteredPeriodStats,  // 使用筛选后的周期统计
         filteredRecords: recordDetails
       }
