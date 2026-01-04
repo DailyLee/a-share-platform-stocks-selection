@@ -385,6 +385,27 @@
                   <i class="fas fa-calendar-check mr-2 text-primary"></i>
                   各周期统计日配置
                 </h3>
+                <!-- 周期统计日天数偏移设置 -->
+                <div class="mb-4 p-3 bg-muted/30 rounded-lg">
+                  <label class="block text-sm font-medium mb-2">
+                    <i class="fas fa-calendar-day mr-1 text-primary"></i>
+                    周期统计日天数偏移设置
+                  </label>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model.number="backtestConfig.periodStatDaysOffset"
+                      @input="updatePeriodStatDates"
+                      type="number"
+                      min="1"
+                      class="input w-24 text-sm"
+                      placeholder="5"
+                    />
+                    <span class="text-sm text-muted-foreground">天</span>
+                  </div>
+                  <p class="text-xs text-muted-foreground mt-1">
+                    设置后，所有周期的统计日将自动更新为回测日之后的指定天数（默认5天）
+                  </p>
+                </div>
                 <div v-if="backtestLoading" class="text-center py-4 text-muted-foreground">
                   <i class="fas fa-spinner fa-spin mr-2"></i>
                   加载扫描结果中...
@@ -419,7 +440,7 @@
                         required
                       />
                       <p class="text-xs text-muted-foreground mt-1">
-                        默认值：回测日后的第一个周五
+                        默认值：回测日之后{{ backtestConfig.periodStatDaysOffset }}天
                       </p>
                     </div>
                   </div>
@@ -444,7 +465,7 @@
               <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <p class="text-sm text-blue-700 dark:text-blue-400">
                   <i class="fas fa-info-circle mr-1"></i>
-                  回测将使用每个周期的开始日（扫描日期）作为回测日，每个周期可以单独设置统计日（默认为回测日后的第一个周五）。
+                  回测将使用每个周期的开始日（扫描日期）作为回测日，每个周期可以单独设置统计日（默认为回测日之后{{ backtestConfig.periodStatDaysOffset }}天）。
                 </p>
               </div>
             </div>
@@ -742,7 +763,9 @@ const backtestConfig = ref({
   useTakeProfit: true,
   stopLossPercent: -1.6,
   takeProfitPercent: 16.0,
-  periodStatDates: {} // 每个周期对应的统计日 { scanDate: statDate }
+  periodStatDates: {}, // 每个周期对应的统计日 { scanDate: statDate }
+  periodStatDaysOffset: 5, // 周期统计日天数偏移，回测日之后多少天，默认5天
+  sellPriceType: 'close' // 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
 })
 
 // 买入条件配置 - 平台期筛选
@@ -1112,7 +1135,20 @@ const handleSubmitClick = () => {
   showConfirmDialog.value = true
 }
 
-// 计算指定日期后的第一个周五
+// 计算指定日期之后指定天数的日期
+// daysOffset: 天数偏移，回测日之后多少天
+const getDateAfterDays = (dateStr, daysOffset = 5) => {
+  const date = new Date(dateStr)
+  const targetDate = new Date(date)
+  targetDate.setDate(date.getDate() + daysOffset)
+  // 格式化为 YYYY-MM-DD
+  const year = targetDate.getFullYear()
+  const month = String(targetDate.getMonth() + 1).padStart(2, '0')
+  const day = String(targetDate.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// 计算指定日期后的第一个周五（保持向后兼容，用于其他地方）
 const getNextFriday = (dateStr) => {
   const date = new Date(dateStr)
   const dayOfWeek = date.getDay() // 0=周日, 1=周一, ..., 5=周五, 6=周六
@@ -1135,6 +1171,7 @@ const openBacktestDialog = async (task) => {
   scanResultsForBacktest.value = []
   backtestConfig.value.periodStatDates = {}
   backtestConfig.value.backtestName = '' // 重置回测名称
+  backtestConfig.value.periodStatDaysOffset = 5 // 重置为默认5天
   availablePlatformPeriods.value = [] // 清空可用平台期
   selectedPlatformPeriods.value = [] // 清空选中的平台期
   loadingBacktestTaskId.value = task.id
@@ -1149,15 +1186,8 @@ const openBacktestDialog = async (task) => {
       // 统计可用平台期并设置默认全选
       await updateAvailablePlatformPeriods()
       
-      // 为每个周期设置默认统计日（回测日后的第一个周五）
-      const periodStatDates = {}
-      scanResultsForBacktest.value.forEach(result => {
-        const scanDate = result.scanDate
-        if (scanDate) {
-          periodStatDates[scanDate] = getNextFriday(scanDate)
-        }
-      })
-      backtestConfig.value.periodStatDates = periodStatDates
+      // 为每个周期设置默认统计日（回测日之后指定天数）
+      updatePeriodStatDates()
     } else {
       alert('加载扫描结果失败: ' + (response.data.message || '未知错误'))
     }
@@ -1170,6 +1200,19 @@ const openBacktestDialog = async (task) => {
   }
   
   showBacktestDialog.value = true
+}
+
+// 根据配置的天数偏移更新所有周期的统计日
+const updatePeriodStatDates = () => {
+  const periodStatDates = {}
+  const daysOffset = backtestConfig.value.periodStatDaysOffset ?? 5
+  scanResultsForBacktest.value.forEach(result => {
+    const scanDate = result.scanDate
+    if (scanDate) {
+      periodStatDates[scanDate] = getDateAfterDays(scanDate, daysOffset)
+    }
+  })
+  backtestConfig.value.periodStatDates = periodStatDates
 }
 
 // 统计可用平台期（从所有扫描结果的股票中提取）
@@ -1274,7 +1317,8 @@ const runBatchBacktest = async () => {
       use_stop_loss: backtestConfig.value.useStopLoss,
       use_take_profit: backtestConfig.value.useTakeProfit,
       stop_loss_percent: backtestConfig.value.stopLossPercent,
-      take_profit_percent: backtestConfig.value.takeProfitPercent
+      take_profit_percent: backtestConfig.value.takeProfitPercent,
+      sell_price_type: backtestConfig.value.sellPriceType || 'close'
     }
     
     // 如果设置了平台期筛选，添加平台期筛选参数

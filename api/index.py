@@ -1195,6 +1195,7 @@ class BacktestRequest(BaseModel):
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -3.0  # 止损百分比
     take_profit_percent: float = 10.0  # 止盈百分比
+    sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
     selected_stocks: List[Dict[str, Any]]  # 选中的股票列表（从扫描结果传递）
 
 
@@ -1539,7 +1540,13 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             sell_date = None
             sell_reason = None
             
+            # 获取卖出价格类型（默认收盘价）
+            sell_price_type = getattr(request, 'sell_price_type', 'close')
+            use_open_price = (sell_price_type == 'open')
+            
             # 检查从买入日到统计日的数据
+            # 优先级：止损 > 止盈 > 统计日卖出
+            # 如果提前触发止损或止盈，会break跳出循环，统计日卖出就不会执行
             for i in range(buy_day_index + 1, len(kline_df)):
                 day_data = kline_df.iloc[i]
                 date_obj = day_data['date']
@@ -1548,47 +1555,58 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 else:
                     current_date = str(date_obj).split()[0]
                 current_close = float(day_data['close'])
+                current_open = float(day_data['open'])
                 current_low = float(day_data['low'])
                 current_high = float(day_data['high'])
                 
+                # 根据卖出价格类型选择价格
+                current_sell_price = current_open if use_open_price else current_close
+                
                 return_rate = ((current_close - buy_price) / buy_price) * 100
                 
-                # 检查止损
+                # 优先级1：检查止损（最高优先级）
+                # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_stop_loss:
                     low_return_rate = ((current_low - buy_price) / buy_price) * 100
                     if low_return_rate <= request.stop_loss_percent:
+                        # 止损时使用止损目标价格卖出
                         sell_price = buy_price * (1 + request.stop_loss_percent / 100)
                         sell_date = f"{current_date}（止损）"
                         sell_reason = '止损'
                         break
                 
-                # 检查止盈
+                # 优先级2：检查止盈
+                # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_take_profit:
                     high_return_rate = ((current_high - buy_price) / buy_price) * 100
                     if high_return_rate >= request.take_profit_percent:
+                        # 止盈时使用止盈目标价格卖出
                         sell_price = buy_price * (1 + request.take_profit_percent / 100)
                         sell_date = f"{current_date}（止盈）"
                         sell_reason = '止盈'
                         break
                 
-                # 统计日卖出
+                # 优先级3：统计日卖出（最低优先级）
+                # 只有在没有触发止损和止盈的情况下，才会执行统计日卖出
                 if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
-                    sell_price = current_close
-                    sell_date = f"{current_date}（收盘）"
+                    sell_price = current_sell_price
+                    price_type_label = '开盘' if use_open_price else '收盘'
+                    sell_date = f"{current_date}（{price_type_label}）"
                     sell_reason = '统计日卖出'
                     break
             
-            # 如果没有卖出，使用最后一天的收盘价
+            # 如果没有卖出，使用最后一天的卖出价格
             if sell_price is None:
                 if len(kline_df) > 0:
                     last_day = kline_df.iloc[-1]
-                    sell_price = float(last_day['close'])
+                    sell_price = float(last_day['open']) if use_open_price else float(last_day['close'])
                     last_date_obj = last_day['date']
                     if isinstance(last_date_obj, pd.Timestamp):
                         last_date = last_date_obj.strftime('%Y-%m-%d')
                     else:
                         last_date = str(last_date_obj).split()[0]
-                    sell_date = f"{last_date}（收盘）"
+                    price_type_label = '开盘' if use_open_price else '收盘'
+                    sell_date = f"{last_date}（{price_type_label}）"
                     sell_reason = '统计日卖出'
                 else:
                     sell_price = buy_price
@@ -1687,7 +1705,13 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
             sell_date = None
             sell_reason = None
             
+            # 获取卖出价格类型（默认收盘价）
+            sell_price_type = getattr(request, 'sell_price_type', 'close')
+            use_open_price = (sell_price_type == 'open')
+            
             # 检查从买入日到统计日的数据
+            # 优先级：止损 > 止盈 > 统计日卖出
+            # 如果提前触发止损或止盈，会break跳出循环，统计日卖出就不会执行
             for i in range(buy_day_index + 1, len(kline_df)):
                 day_data = kline_df.iloc[i]
                 date_obj = day_data['date']
@@ -1696,47 +1720,58 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 else:
                     current_date = str(date_obj).split()[0]
                 current_close = float(day_data['close'])
+                current_open = float(day_data['open'])
                 current_low = float(day_data['low'])
                 current_high = float(day_data['high'])
                 
+                # 根据卖出价格类型选择价格
+                current_sell_price = current_open if use_open_price else current_close
+                
                 return_rate = ((current_close - buy_price) / buy_price) * 100
                 
-                # 检查止损
+                # 优先级1：检查止损（最高优先级）
+                # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_stop_loss:
                     low_return_rate = ((current_low - buy_price) / buy_price) * 100
                     if low_return_rate <= request.stop_loss_percent:
+                        # 止损时使用止损目标价格卖出
                         sell_price = buy_price * (1 + request.stop_loss_percent / 100)
                         sell_date = f"{current_date}（止损）"
                         sell_reason = '止损'
                         break
                 
-                # 检查止盈
+                # 优先级2：检查止盈
+                # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_take_profit:
                     high_return_rate = ((current_high - buy_price) / buy_price) * 100
                     if high_return_rate >= request.take_profit_percent:
+                        # 止盈时使用止盈目标价格卖出
                         sell_price = buy_price * (1 + request.take_profit_percent / 100)
                         sell_date = f"{current_date}（止盈）"
                         sell_reason = '止盈'
                         break
                 
-                # 统计日卖出
+                # 优先级3：统计日卖出（最低优先级）
+                # 只有在没有触发止损和止盈的情况下，才会执行统计日卖出
                 if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
-                    sell_price = current_close
-                    sell_date = f"{current_date}（收盘）"
+                    sell_price = current_sell_price
+                    price_type_label = '开盘' if use_open_price else '收盘'
+                    sell_date = f"{current_date}（{price_type_label}）"
                     sell_reason = '统计日卖出'
                     break
             
-            # 如果没有卖出
+            # 如果没有卖出，使用最后一天的卖出价格
             if sell_price is None:
                 if len(kline_df) > 0:
                     last_day = kline_df.iloc[-1]
-                    sell_price = float(last_day['close'])
+                    sell_price = float(last_day['open']) if use_open_price else float(last_day['close'])
                     last_date_obj = last_day['date']
                     if isinstance(last_date_obj, pd.Timestamp):
                         last_date = last_date_obj.strftime('%Y-%m-%d')
                     else:
                         last_date = str(last_date_obj).split()[0]
-                    sell_date = f"{last_date}（收盘）"
+                    price_type_label = '开盘' if use_open_price else '收盘'
+                    sell_date = f"{last_date}（{price_type_label}）"
                     sell_reason = '统计日卖出'
                 else:
                     sell_price = buy_price
@@ -2182,6 +2217,7 @@ class BatchBacktestRequest(BaseModel):
     profit_loss_combinations: List[Dict[str, Any]]  # 止盈止损组合列表
     # 每个组合包含: use_stop_loss, use_take_profit, stop_loss_percent, take_profit_percent
     backtest_name: Optional[str] = None  # 回测名称（用于归类历史记录）
+    sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
 
 
 class BatchBacktestResult(BaseModel):
@@ -2268,6 +2304,7 @@ async def run_batch_backtest(request: BatchBacktestRequest):
                     use_take_profit=combination.get('use_take_profit', False),
                     stop_loss_percent=combination.get('stop_loss_percent', -3.0),
                     take_profit_percent=combination.get('take_profit_percent', 10.0),
+                    sell_price_type=getattr(request, 'sell_price_type', 'close'),
                     selected_stocks=request.selected_stocks
                 )
                 
@@ -2762,6 +2799,7 @@ class BatchTaskBacktestRequest(BaseModel):
     use_take_profit: bool = True  # 使用止盈
     stop_loss_percent: float = -2.0  # 止损百分比
     take_profit_percent: float = 18.0  # 止盈百分比
+    sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
     platform_periods: Optional[List[int]] = None  # 平台期筛选（可选），如果提供则只买入选中平台期的股票
     boards: Optional[List[str]] = None  # 板块筛选（可选），如果提供则只买入选中板块的股票，如 ['创业板', '科创板', '主板']
 
@@ -3100,6 +3138,7 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     use_take_profit=request.use_take_profit,
                     stop_loss_percent=request.stop_loss_percent,
                     take_profit_percent=request.take_profit_percent,
+                    sell_price_type=getattr(request, 'sell_price_type', 'close'),
                     selected_stocks=scanned_stocks
                 )
                 
@@ -3302,6 +3341,7 @@ async def retry_failed_backtest(task_id: str, history_id: str):
             use_take_profit=config.get('use_take_profit', False),
             stop_loss_percent=config.get('stop_loss_percent', -3.0),
             take_profit_percent=config.get('take_profit_percent', 10.0),
+            sell_price_type=config.get('sell_price_type', 'close'),
             selected_stocks=scanned_stocks
         )
         

@@ -1671,6 +1671,7 @@ async function runBacktest() {
         use_take_profit: backtestConfig.value.useTakeProfit,
         stop_loss_percent: backtestConfig.value.stopLossPercent,
         take_profit_percent: backtestConfig.value.takeProfitPercent,
+        sell_price_type: backtestConfig.value.sellPriceType || 'close',
         selected_stocks: stocksForBacktest.value
       })
     })
@@ -2052,6 +2053,7 @@ async function loadHistoryRecordToCurrent(record) {
     backtestConfig.value.useTakeProfit = record.config.use_take_profit || false
     backtestConfig.value.stopLossPercent = record.config.stop_loss_percent || -3
     backtestConfig.value.takeProfitPercent = record.config.take_profit_percent || 10
+    backtestConfig.value.sellPriceType = record.config.sell_price_type || 'close'
     
     // 加载选中的股票
     // 优先从 config.selected_stocks 加载（新格式）

@@ -276,6 +276,39 @@
             </p>
           </div>
         </div>
+
+        <!-- 卖出价格类型设置 -->
+        <div class="space-y-2">
+          <label class="block text-sm font-medium mb-2">
+            <i class="fas fa-dollar-sign mr-1 text-primary"></i>
+            卖出价格类型
+          </label>
+          <div class="ml-6 flex items-center space-x-4">
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                :id="`sellPriceTypeOpen-${uniqueId}`"
+                :checked="modelValue.sellPriceType === 'open'"
+                @change="updateField('sellPriceType', 'open')"
+                class="radio"
+              />
+              <span class="text-sm">开盘价卖出</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                :id="`sellPriceTypeClose-${uniqueId}`"
+                :checked="modelValue.sellPriceType === 'close' || !modelValue.sellPriceType"
+                @change="updateField('sellPriceType', 'close')"
+                class="radio"
+              />
+              <span class="text-sm">收盘价卖出（默认）</span>
+            </label>
+          </div>
+          <p v-if="showHelpText" class="text-xs text-muted-foreground ml-6 mt-1">
+            选择卖出时使用的价格类型：开盘价或收盘价
+          </p>
+        </div>
       </div>
     </div>
   </div>
@@ -292,7 +325,8 @@ const props = defineProps({
       useStopLoss: true,
       useTakeProfit: true,
       stopLossPercent: -1.6,
-      takeProfitPercent: 16.0
+      takeProfitPercent: 16.0,
+      sellPriceType: 'close' // 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
     })
   },
   // 用于生成唯一的ID，避免多个实例冲突
