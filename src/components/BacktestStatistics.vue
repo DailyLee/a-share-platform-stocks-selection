@@ -334,6 +334,48 @@
               <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
 
+            <!-- 成交量变化 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">成交量变化</label>
+              <div v-if="allStockAttributes.maxVolumeChange > allStockAttributes.minVolumeChange && allStockAttributes.maxVolumeChange > 0" class="space-y-1.5">
+                <Slider
+                  v-model="volumeChangeRangeArray"
+                  :min="allStockAttributes.minVolumeChange"
+                  :max="allStockAttributes.maxVolumeChange"
+                  :step="Math.max(0.01, (allStockAttributes.maxVolumeChange - allStockAttributes.minVolumeChange) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minVolumeChange.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ volumeChangeRangeArray[0].toFixed(2) }} - {{ volumeChangeRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxVolumeChange.toFixed(2) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
+            <!-- 成交量稳定性 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">成交量稳定性</label>
+              <div v-if="allStockAttributes.maxVolumeStability > allStockAttributes.minVolumeStability && allStockAttributes.maxVolumeStability > 0" class="space-y-1.5">
+                <Slider
+                  v-model="volumeStabilityRangeArray"
+                  :min="allStockAttributes.minVolumeStability"
+                  :max="allStockAttributes.maxVolumeStability"
+                  :step="Math.max(0.01, (allStockAttributes.maxVolumeStability - allStockAttributes.minVolumeStability) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minVolumeStability.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ volumeStabilityRangeArray[0].toFixed(2) }} - {{ volumeStabilityRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxVolumeStability.toFixed(2) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
             <!-- ========== 第四组：位置和下跌（百分比 Range Slider） ========== -->
             <!-- 低位判断百分比 -->
             <div>
@@ -665,6 +707,8 @@ const router = useRouter()
     boxRange: { min: null, max: null }, // 价格区间范围（min/max为null表示不限制）
     maDiffRange: { min: null, max: null }, // 均线收敛范围（min/max为null表示不限制）
     volatilityRange: { min: null, max: null }, // 波动率范围（min/max为null表示不限制）
+    volumeChangeRange: { min: null, max: null }, // 成交量变化范围（min/max为null表示不限制）
+    volumeStabilityRange: { min: null, max: null }, // 成交量稳定性范围（min/max为null表示不限制）
     lowPositionPercentRange: { min: null, max: null }, // 低位判断百分比范围（从高点下跌的百分比）
     rapidDeclinePercentRange: { min: null, max: null }, // 快速下跌百分比范围
     stockCountRange: { min: null, max: null } // 周期内购买的股票数量范围
@@ -682,6 +726,10 @@ const router = useRouter()
     maxMaDiff: 0, // 最大均线收敛
     minVolatility: 0, // 最小波动率
     maxVolatility: 0, // 最大波动率
+    minVolumeChange: 0, // 最小成交量变化
+    maxVolumeChange: 0, // 最大成交量变化
+    minVolumeStability: 0, // 最小成交量稳定性
+    maxVolumeStability: 0, // 最大成交量稳定性
     minLowPositionPercent: 0, // 最小低位判断百分比
     maxLowPositionPercent: 0, // 最大低位判断百分比
     minRapidDeclinePercent: 0, // 最小快速下跌百分比
@@ -734,6 +782,40 @@ const router = useRouter()
     set: (value) => {
       if (Array.isArray(value) && value.length === 2) {
         statisticsFilters.value.volatilityRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 成交量变化数组（用于 shadcn-vue Slider 组件）
+  const volumeChangeRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.volumeChangeRange.min ?? allStockAttributes.value.minVolumeChange
+      const max = statisticsFilters.value.volumeChangeRange.max ?? allStockAttributes.value.maxVolumeChange
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.volumeChangeRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 成交量稳定性数组（用于 shadcn-vue Slider 组件）
+  const volumeStabilityRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.volumeStabilityRange.min ?? allStockAttributes.value.minVolumeStability
+      const max = statisticsFilters.value.volumeStabilityRange.max ?? allStockAttributes.value.maxVolumeStability
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.volumeStabilityRange = {
           min: value[0],
           max: value[1]
         }
@@ -1294,6 +1376,8 @@ const router = useRouter()
       const boxRanges = []
       const maDiffs = []
       const volatilities = []
+      const volumeChanges = []
+      const volumeStabilities = []
       const lowPositionPercents = []
       const rapidDeclinePercents = []
 
@@ -1371,6 +1455,88 @@ const router = useRouter()
             rapidDeclinePercents.push(rapidDeclinePercent)
           }
         }
+
+        // 收集成交量变化和成交量稳定性（从 volume_analysis 中提取）
+        if (stock.volume_analysis && typeof stock.volume_analysis === 'object') {
+          // 使用 Object.entries 来获取窗口期信息
+          Object.entries(stock.volume_analysis).forEach(([window, windowAnalysis]) => {
+            if (windowAnalysis && typeof windowAnalysis === 'object') {
+              // 从 consolidation_details 中提取（新格式）
+              if (windowAnalysis.consolidation_details && typeof windowAnalysis.consolidation_details === 'object') {
+                const volumeChangeRatio = windowAnalysis.consolidation_details.volume_change_ratio
+                const volumeStability = windowAnalysis.consolidation_details.volume_stability
+                
+                // 打印日志（显示窗口期信息）
+                const stockInfo = `${stock.code || 'N/A'} ${stock.name || 'N/A'}`
+                const windowInfo = `[${window}天]`
+                if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number') {
+                  if (volumeChangeRatio > 0.5) {
+                    console.log(`%c[成交量变化] ${stockInfo} ${windowInfo}: ${volumeChangeRatio.toFixed(4)}`, 'color: red; font-weight: bold')
+                  } else {
+                    console.log(`[成交量变化] ${stockInfo} ${windowInfo}: ${volumeChangeRatio.toFixed(4)}`)
+                  }
+                }
+                if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number') {
+                  if (volumeStability > 0.5) {
+                    console.log(`%c[成交量稳定性] ${stockInfo} ${windowInfo}: ${volumeStability.toFixed(4)}`, 'color: red; font-weight: bold')
+                  } else {
+                    console.log(`[成交量稳定性] ${stockInfo} ${windowInfo}: ${volumeStability.toFixed(4)}`)
+                  }
+                }
+                
+                // 检查 volume_change_ratio：必须是正数、有限值，且合理范围（0.01 到 100）
+                if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number' && !isNaN(volumeChangeRatio) && isFinite(volumeChangeRatio) && volumeChangeRatio > 0 && volumeChangeRatio <= 100) {
+                  volumeChanges.push(volumeChangeRatio)
+                }
+                // 检查 volume_stability：必须是非负数、有限值，且合理范围（0 到 10）
+                if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number' && !isNaN(volumeStability) && isFinite(volumeStability) && volumeStability >= 0 && volumeStability <= 10) {
+                  volumeStabilities.push(volumeStability)
+                }
+              }
+            }
+          })
+        }
+        // 从 details 中提取（兼容旧数据格式）
+        // details[window].volume_analysis 可能直接就是 consolidation_details 的内容
+        // 注意：如果 volume_analysis 中已有数据，则不再从 details 中提取，避免重复
+        if ((!stock.volume_analysis || Object.keys(stock.volume_analysis).length === 0) && stock.details && typeof stock.details === 'object') {
+          Object.entries(stock.details).forEach(([window, windowDetail]) => {
+            if (windowDetail && typeof windowDetail === 'object') {
+              // 方式1：details[window].volume_analysis 直接包含 volume_change_ratio 和 volume_stability
+              if (windowDetail.volume_analysis && typeof windowDetail.volume_analysis === 'object') {
+                const volumeChangeRatio = windowDetail.volume_analysis.volume_change_ratio
+                const volumeStability = windowDetail.volume_analysis.volume_stability
+                
+                // 打印日志（旧格式，显示窗口期信息）
+                const stockInfo = `${stock.code || 'N/A'} ${stock.name || 'N/A'}`
+                const windowInfo = `[${window}天]`
+                if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number') {
+                  if (volumeChangeRatio > 0.5) {
+                    console.log(`%c[成交量变化-旧格式] ${stockInfo} ${windowInfo}: ${volumeChangeRatio.toFixed(4)}`, 'color: red; font-weight: bold')
+                  } else {
+                    console.log(`[成交量变化-旧格式] ${stockInfo} ${windowInfo}: ${volumeChangeRatio.toFixed(4)}`)
+                  }
+                }
+                if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number') {
+                  if (volumeStability > 0.5) {
+                    console.log(`%c[成交量稳定性-旧格式] ${stockInfo} ${windowInfo}: ${volumeStability.toFixed(4)}`, 'color: red; font-weight: bold')
+                  } else {
+                    console.log(`[成交量稳定性-旧格式] ${stockInfo} ${windowInfo}: ${volumeStability.toFixed(4)}`)
+                  }
+                }
+                
+                // 检查 volume_change_ratio：必须是正数、有限值，且合理范围（0.01 到 100）
+                if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number' && !isNaN(volumeChangeRatio) && isFinite(volumeChangeRatio) && volumeChangeRatio > 0 && volumeChangeRatio <= 100) {
+                  volumeChanges.push(volumeChangeRatio)
+                }
+                // 检查 volume_stability：必须是非负数、有限值，且合理范围（0 到 10）
+                if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number' && !isNaN(volumeStability) && isFinite(volumeStability) && volumeStability >= 0 && volumeStability <= 10) {
+                  volumeStabilities.push(volumeStability)
+                }
+              }
+            }
+          })
+        }
       })
 
       // 更新属性集合
@@ -1417,6 +1583,80 @@ const router = useRouter()
           statisticsFilters.value.volatilityRange = {
             min: allStockAttributes.value.minVolatility,
             max: allStockAttributes.value.maxVolatility
+          }
+        }
+      }
+      if (volumeChanges.length > 0) {
+        // 过滤掉异常值：volume_change_ratio 通常在 0.01 到 100 之间
+        const validVolumeChanges = volumeChanges.filter(v => v > 0 && v <= 100)
+        if (validVolumeChanges.length > 0) {
+          allStockAttributes.value.minVolumeChange = Math.min(...validVolumeChanges)
+          allStockAttributes.value.maxVolumeChange = Math.max(...validVolumeChanges)
+          // 打印汇总信息
+          console.log(`%c[成交量变化汇总] 总数: ${validVolumeChanges.length}, 最小值: ${allStockAttributes.value.minVolumeChange.toFixed(4)}, 最大值: ${allStockAttributes.value.maxVolumeChange.toFixed(4)}`, 'color: blue; font-weight: bold')
+          // 如果 volumeChangeRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+          if (statisticsFilters.value.volumeChangeRange.min === null || statisticsFilters.value.volumeChangeRange.max === null) {
+            statisticsFilters.value.volumeChangeRange = {
+              min: allStockAttributes.value.minVolumeChange,
+              max: allStockAttributes.value.maxVolumeChange
+            }
+          }
+        } else {
+          // 如果过滤后没有有效数据，设置为默认值
+          allStockAttributes.value.minVolumeChange = 0
+          allStockAttributes.value.maxVolumeChange = 1
+          if (statisticsFilters.value.volumeChangeRange.min === null || statisticsFilters.value.volumeChangeRange.max === null) {
+            statisticsFilters.value.volumeChangeRange = {
+              min: 0,
+              max: 1
+            }
+          }
+        }
+      } else {
+        // 如果没有数据，设置为默认值，避免筛选逻辑出错
+        allStockAttributes.value.minVolumeChange = 0
+        allStockAttributes.value.maxVolumeChange = 1
+        if (statisticsFilters.value.volumeChangeRange.min === null || statisticsFilters.value.volumeChangeRange.max === null) {
+          statisticsFilters.value.volumeChangeRange = {
+            min: 0,
+            max: 1
+          }
+        }
+      }
+      if (volumeStabilities.length > 0) {
+        // 过滤掉异常值：volume_stability 通常在 0 到 10 之间（变异系数）
+        const validVolumeStabilities = volumeStabilities.filter(v => v >= 0 && v <= 10)
+        if (validVolumeStabilities.length > 0) {
+          allStockAttributes.value.minVolumeStability = Math.min(...validVolumeStabilities)
+          allStockAttributes.value.maxVolumeStability = Math.max(...validVolumeStabilities)
+          // 打印汇总信息
+          console.log(`%c[成交量稳定性汇总] 总数: ${validVolumeStabilities.length}, 最小值: ${allStockAttributes.value.minVolumeStability.toFixed(4)}, 最大值: ${allStockAttributes.value.maxVolumeStability.toFixed(4)}`, 'color: blue; font-weight: bold')
+          // 如果 volumeStabilityRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+          if (statisticsFilters.value.volumeStabilityRange.min === null || statisticsFilters.value.volumeStabilityRange.max === null) {
+            statisticsFilters.value.volumeStabilityRange = {
+              min: allStockAttributes.value.minVolumeStability,
+              max: allStockAttributes.value.maxVolumeStability
+            }
+          }
+        } else {
+          // 如果过滤后没有有效数据，设置为默认值
+          allStockAttributes.value.minVolumeStability = 0
+          allStockAttributes.value.maxVolumeStability = 1
+          if (statisticsFilters.value.volumeStabilityRange.min === null || statisticsFilters.value.volumeStabilityRange.max === null) {
+            statisticsFilters.value.volumeStabilityRange = {
+              min: 0,
+              max: 1
+            }
+          }
+        }
+      } else {
+        // 如果没有数据，设置为默认值，避免筛选逻辑出错
+        allStockAttributes.value.minVolumeStability = 0
+        allStockAttributes.value.maxVolumeStability = 1
+        if (statisticsFilters.value.volumeStabilityRange.min === null || statisticsFilters.value.volumeStabilityRange.max === null) {
+          statisticsFilters.value.volumeStabilityRange = {
+            min: 0,
+            max: 1
           }
         }
       }
@@ -1479,6 +1719,12 @@ const router = useRouter()
       (filters.volatilityRange.min !== null && filters.volatilityRange.max !== null && 
        (filters.volatilityRange.min > allStockAttributes.value.minVolatility || 
         filters.volatilityRange.max < allStockAttributes.value.maxVolatility)) ||
+      (filters.volumeChangeRange.min !== null && filters.volumeChangeRange.max !== null && 
+       (filters.volumeChangeRange.min > allStockAttributes.value.minVolumeChange || 
+        filters.volumeChangeRange.max < allStockAttributes.value.maxVolumeChange)) ||
+      (filters.volumeStabilityRange.min !== null && filters.volumeStabilityRange.max !== null && 
+       (filters.volumeStabilityRange.min > allStockAttributes.value.minVolumeStability || 
+        filters.volumeStabilityRange.max < allStockAttributes.value.maxVolumeStability)) ||
       (filters.lowPositionPercentRange.min !== null && filters.lowPositionPercentRange.max !== null && 
        (filters.lowPositionPercentRange.min > allStockAttributes.value.minLowPositionPercent || 
         filters.lowPositionPercentRange.max < allStockAttributes.value.maxLowPositionPercent)) ||
@@ -1513,6 +1759,8 @@ const router = useRouter()
       boxRange: { min: null, max: null },
       maDiffRange: { min: null, max: null },
       volatilityRange: { min: null, max: null },
+      volumeChangeRange: { min: null, max: null },
+      volumeStabilityRange: { min: null, max: null },
       lowPositionPercentRange: { min: null, max: null },
       rapidDeclinePercentRange: { min: null, max: null },
       stockCountRange: { min: null, max: null }
@@ -1848,6 +2096,118 @@ const router = useRouter()
               }
             }
             // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
+        }
+
+        // 成交量变化筛选
+        const volumeChangeRangeFilter = statisticsFilters.value.volumeChangeRange
+        if (volumeChangeRangeFilter.min !== null && volumeChangeRangeFilter.max !== null) {
+          let stockVolumeChange = null
+          let hasVolumeChangeData = false
+          
+          // 从 volume_analysis 中提取（新格式）
+          if (stock.volume_analysis && typeof stock.volume_analysis === 'object') {
+            Object.values(stock.volume_analysis).forEach(windowAnalysis => {
+              if (windowAnalysis && typeof windowAnalysis === 'object') {
+                if (windowAnalysis.consolidation_details && typeof windowAnalysis.consolidation_details === 'object') {
+                  const volumeChangeRatio = windowAnalysis.consolidation_details.volume_change_ratio
+                  if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number' && !isNaN(volumeChangeRatio) && isFinite(volumeChangeRatio) && volumeChangeRatio > 0 && volumeChangeRatio <= 100) {
+                    if (stockVolumeChange === null || volumeChangeRatio < stockVolumeChange) {
+                      stockVolumeChange = volumeChangeRatio
+                    }
+                    hasVolumeChangeData = true
+                  }
+                }
+              }
+            })
+          }
+          // 从 details 中提取（兼容旧数据格式）
+          if (!hasVolumeChangeData && stock.details && typeof stock.details === 'object') {
+            Object.values(stock.details).forEach(windowDetail => {
+              if (windowDetail && typeof windowDetail === 'object') {
+                if (windowDetail.volume_analysis && typeof windowDetail.volume_analysis === 'object') {
+                  const volumeChangeRatio = windowDetail.volume_analysis.volume_change_ratio
+                  if (volumeChangeRatio !== null && volumeChangeRatio !== undefined && typeof volumeChangeRatio === 'number' && !isNaN(volumeChangeRatio) && isFinite(volumeChangeRatio) && volumeChangeRatio > 0 && volumeChangeRatio <= 100) {
+                    if (stockVolumeChange === null || volumeChangeRatio < stockVolumeChange) {
+                      stockVolumeChange = volumeChangeRatio
+                    }
+                    hasVolumeChangeData = true
+                  }
+                }
+              }
+            })
+          }
+          
+          if (!hasVolumeChangeData) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          }
+          
+          // 检查是否在范围内
+          const minVolumeChange = allStockAttributes.value.minVolumeChange
+          const maxVolumeChange = allStockAttributes.value.maxVolumeChange
+          // 只有当用户设置的范围比全范围更窄时才进行筛选
+          const isNarrowerThanFullRange = volumeChangeRangeFilter.min > minVolumeChange || volumeChangeRangeFilter.max < maxVolumeChange
+          if (isNarrowerThanFullRange) {
+            if (stockVolumeChange < volumeChangeRangeFilter.min || stockVolumeChange > volumeChangeRangeFilter.max) {
+              return false
+            }
+          }
+        }
+
+        // 成交量稳定性筛选
+        const volumeStabilityRangeFilter = statisticsFilters.value.volumeStabilityRange
+        if (volumeStabilityRangeFilter.min !== null && volumeStabilityRangeFilter.max !== null) {
+          let stockVolumeStability = null
+          let hasVolumeStabilityData = false
+          
+          // 从 volume_analysis 中提取（新格式）
+          if (stock.volume_analysis && typeof stock.volume_analysis === 'object') {
+            Object.values(stock.volume_analysis).forEach(windowAnalysis => {
+              if (windowAnalysis && typeof windowAnalysis === 'object') {
+                if (windowAnalysis.consolidation_details && typeof windowAnalysis.consolidation_details === 'object') {
+                  const volumeStability = windowAnalysis.consolidation_details.volume_stability
+                  if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number' && !isNaN(volumeStability) && isFinite(volumeStability) && volumeStability >= 0 && volumeStability <= 10) {
+                    if (stockVolumeStability === null || volumeStability < stockVolumeStability) {
+                      stockVolumeStability = volumeStability
+                    }
+                    hasVolumeStabilityData = true
+                  }
+                }
+              }
+            })
+          }
+          // 从 details 中提取（兼容旧数据格式）
+          if (!hasVolumeStabilityData && stock.details && typeof stock.details === 'object') {
+            Object.values(stock.details).forEach(windowDetail => {
+              if (windowDetail && typeof windowDetail === 'object') {
+                if (windowDetail.volume_analysis && typeof windowDetail.volume_analysis === 'object') {
+                  const volumeStability = windowDetail.volume_analysis.volume_stability
+                  if (volumeStability !== null && volumeStability !== undefined && typeof volumeStability === 'number' && !isNaN(volumeStability) && isFinite(volumeStability) && volumeStability >= 0 && volumeStability <= 10) {
+                    if (stockVolumeStability === null || volumeStability < stockVolumeStability) {
+                      stockVolumeStability = volumeStability
+                    }
+                    hasVolumeStabilityData = true
+                  }
+                }
+              }
+            })
+          }
+          
+          if (!hasVolumeStabilityData) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          }
+          
+          // 检查是否在范围内
+          const minVolumeStability = allStockAttributes.value.minVolumeStability
+          const maxVolumeStability = allStockAttributes.value.maxVolumeStability
+          // 只有当用户设置的范围比全范围更窄时才进行筛选
+          const isNarrowerThanFullRange = volumeStabilityRangeFilter.min > minVolumeStability || volumeStabilityRangeFilter.max < maxVolumeStability
+          if (isNarrowerThanFullRange) {
+            if (stockVolumeStability < volumeStabilityRangeFilter.min || stockVolumeStability > volumeStabilityRangeFilter.max) {
+              return false
+            }
           }
         }
 

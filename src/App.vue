@@ -1675,8 +1675,8 @@ const config = ref({
 
   // 价格参数
   box_threshold: 0.3, // 箱体阈值
-  ma_diff_threshold: 0.25, // 均线粘合度阈值
-  volatility_threshold: 0.4, // 波动率阈值
+  ma_diff_threshold: 0.03, // 均线粘合度阈值
+  volatility_threshold: 0.03, // 波动率阈值
 
   // 成交量参数
   use_volume_analysis: true, // 是否启用成交量分析
