@@ -21,7 +21,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4">
       <!-- 窗口期设置 -->
       <div>
-        <ParameterLabel for-id="windows" parameter-id="windows" @show-tutorial="$emit('show-tutorial', 'windows')">
+        <ParameterLabel for-id="windows" parameter-id="windows">
           窗口期设置
         </ParameterLabel>
         <div class="flex flex-col space-y-2">
@@ -65,7 +65,7 @@
       </div>
       <div>
         <ParameterLabel for-id="expectedCount" parameter-id="expected_count"
-          @show-tutorial="$emit('show-tutorial', 'expected_count')">
+>
           期望股票数量
         </ParameterLabel>
         <input v-model.number="localConfig.expected_count" class="input" id="expectedCount" type="number" min="1"
@@ -76,7 +76,7 @@
           class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
           <input type="checkbox" v-model="localConfig.use_volume_analysis" id="useVolumeAnalysis" class="checkbox">
           <ParameterLabel for-id="useVolumeAnalysis" parameter-id="use_volume_analysis"
-            @show-tutorial="$emit('show-tutorial', 'use_volume_analysis')">
+>
             <span class="text-sm font-medium">启用成交量分析</span>
           </ParameterLabel>
         </label>
@@ -85,7 +85,7 @@
           <input type="checkbox" v-model="localConfig.use_breakthrough_prediction" id="useBreakthroughPrediction"
             class="checkbox">
           <ParameterLabel for-id="useBreakthroughPrediction" parameter-id="use_breakthrough_prediction"
-            @show-tutorial="$emit('show-tutorial', 'use_breakthrough_prediction')">
+>
             <span class="text-sm font-medium">启用突破前兆识别</span>
           </ParameterLabel>
         </label>
@@ -94,7 +94,7 @@
           <input type="checkbox" v-model="localConfig.use_breakthrough_confirmation" id="useBreakthroughConfirmation"
             class="checkbox">
           <ParameterLabel for-id="useBreakthroughConfirmation" parameter-id="use_breakthrough_confirmation"
-            @show-tutorial="$emit('show-tutorial', 'use_breakthrough_confirmation')">
+>
             <span class="text-sm font-medium">启用突破确认</span>
           </ParameterLabel>
         </label>
@@ -102,7 +102,7 @@
           class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
           <input type="checkbox" v-model="localConfig.use_low_position" id="useLowPosition" class="checkbox">
           <ParameterLabel for-id="useLowPosition" parameter-id="use_low_position"
-            @show-tutorial="$emit('show-tutorial', 'use_low_position')">
+>
             <span class="text-sm font-medium">启用低位判断</span>
           </ParameterLabel>
         </label>
@@ -110,7 +110,7 @@
           class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
           <input type="checkbox" v-model="localConfig.use_window_weights" id="useWindowWeights" class="checkbox">
           <ParameterLabel for-id="useWindowWeights" parameter-id="use_window_weights"
-            @show-tutorial="$emit('show-tutorial', 'use_window_weights')">
+>
             <span class="text-sm font-medium">启用窗口权重</span>
           </ParameterLabel>
         </label>
@@ -126,7 +126,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         <div>
           <ParameterLabel for-id="boxThreshold" parameter-id="box_threshold"
-            @show-tutorial="$emit('show-tutorial', 'box_threshold')">
+>
             振幅阈值 (%)
           </ParameterLabel>
           <input v-model.number="localConfig.box_threshold" class="input" id="boxThreshold" type="number" step="0.01"
@@ -134,7 +134,7 @@
         </div>
         <div>
           <ParameterLabel for-id="maDiffThreshold" parameter-id="ma_diff_threshold"
-            @show-tutorial="$emit('show-tutorial', 'ma_diff_threshold')">
+>
             均线粘合度 (%)
           </ParameterLabel>
           <input v-model.number="localConfig.ma_diff_threshold" class="input" id="maDiffThreshold" type="number"
@@ -142,7 +142,7 @@
         </div>
         <div>
           <ParameterLabel for-id="volatilityThreshold" parameter-id="volatility_threshold"
-            @show-tutorial="$emit('show-tutorial', 'volatility_threshold')">
+>
             波动率阈值 (%)
           </ParameterLabel>
           <input v-model.number="localConfig.volatility_threshold" class="input" id="volatilityThreshold" type="number"
@@ -160,7 +160,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         <div>
           <ParameterLabel for-id="volumeChangeThreshold" parameter-id="volume_change_threshold"
-            @show-tutorial="$emit('show-tutorial', 'volume_change_threshold')">
+>
             成交量变化阈值
           </ParameterLabel>
           <input v-model.number="localConfig.volume_change_threshold" class="input" id="volumeChangeThreshold"
@@ -169,7 +169,7 @@
         </div>
         <div>
           <ParameterLabel for-id="volumeStabilityThreshold" parameter-id="volume_stability_threshold"
-            @show-tutorial="$emit('show-tutorial', 'volume_stability_threshold')">
+>
             成交量稳定性阈值
           </ParameterLabel>
           <input v-model.number="localConfig.volume_stability_threshold" class="input" id="volumeStabilityThreshold"
@@ -178,7 +178,7 @@
         </div>
         <div>
           <ParameterLabel for-id="volumeIncreaseThreshold" parameter-id="volume_increase_threshold"
-            @show-tutorial="$emit('show-tutorial', 'volume_increase_threshold')">
+>
             成交量突破阈值
           </ParameterLabel>
           <input v-model.number="localConfig.volume_increase_threshold" class="input" id="volumeIncreaseThreshold"
@@ -197,7 +197,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         <div>
           <ParameterLabel for-id="maxTurnoverRate" parameter-id="max_turnover_rate"
-            @show-tutorial="$emit('show-tutorial', 'max_turnover_rate')">
+>
             最大换手率 (%)
           </ParameterLabel>
           <input v-model.number="localConfig.max_turnover_rate" class="input" id="maxTurnoverRate" type="number"
@@ -209,7 +209,7 @@
         <div>
           <div class="flex items-center justify-between">
             <ParameterLabel for-id="allowTurnoverSpikes" parameter-id="allow_turnover_spikes"
-              @show-tutorial="$emit('show-tutorial', 'allow_turnover_spikes')">
+>
               允许异常放量
             </ParameterLabel>
             <label for="allowTurnoverSpikes" class="relative inline-flex items-center cursor-pointer">
@@ -237,7 +237,7 @@
         <div>
           <div class="flex items-center justify-between">
             <ParameterLabel for-id="checkRelativeStrength" parameter-id="check_relative_strength"
-              @show-tutorial="$emit('show-tutorial', 'check_relative_strength')">
+>
               启用相对大盘强度检查
             </ParameterLabel>
             <label for="checkRelativeStrength" class="relative inline-flex items-center cursor-pointer">
@@ -254,7 +254,7 @@
         </div>
         <div v-if="localConfig.check_relative_strength">
           <ParameterLabel for-id="outperformIndexThreshold" parameter-id="outperform_index_threshold"
-            @show-tutorial="$emit('show-tutorial', 'outperform_index_threshold')">
+>
             相对强度阈值
           </ParameterLabel>
           <input 
@@ -281,7 +281,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         <div>
           <ParameterLabel for-id="highPointLookbackDays" parameter-id="high_point_lookback_days"
-            @show-tutorial="$emit('show-tutorial', 'high_point_lookback_days')">
+>
             高点查找时间范围 (天)
           </ParameterLabel>
           <input v-model.number="localConfig.high_point_lookback_days" class="input" id="highPointLookbackDays"
@@ -289,7 +289,7 @@
         </div>
         <div>
           <ParameterLabel for-id="declinePeriodDays" parameter-id="decline_period_days"
-            @show-tutorial="$emit('show-tutorial', 'decline_period_days')">
+>
             下跌时间范围 (天)
           </ParameterLabel>
           <input v-model.number="localConfig.decline_period_days" class="input" id="declinePeriodDays" type="number"
@@ -297,7 +297,7 @@
         </div>
         <div>
           <ParameterLabel for-id="declineThreshold" parameter-id="decline_threshold"
-            @show-tutorial="$emit('show-tutorial', 'decline_threshold')">
+>
             下跌幅度阈值
           </ParameterLabel>
           <input v-model.number="localConfig.decline_threshold" class="input" id="declineThreshold" type="number"
@@ -317,7 +317,7 @@
         <div>
           <div class="flex items-center justify-between">
             <ParameterLabel for-id="useRapidDeclineDetection" parameter-id="use_rapid_decline_detection"
-              @show-tutorial="$emit('show-tutorial', 'use_rapid_decline_detection')">
+>
               启用快速下跌判断
             </ParameterLabel>
             <label for="useRapidDeclineDetection" class="relative inline-flex items-center cursor-pointer">
@@ -333,7 +333,7 @@
         <!-- 只有在启用快速下跌判断时才显示这些参数 -->
         <div v-if="localConfig.use_rapid_decline_detection">
           <ParameterLabel for-id="rapidDeclineDays" parameter-id="rapid_decline_days"
-            @show-tutorial="$emit('show-tutorial', 'rapid_decline_days')">
+>
             快速下跌时间窗口 (天)
           </ParameterLabel>
           <input v-model.number="localConfig.rapid_decline_days" class="input" id="rapidDeclineDays" type="number"
@@ -342,7 +342,7 @@
         </div>
         <div v-if="localConfig.use_rapid_decline_detection">
           <ParameterLabel for-id="rapidDeclineThreshold" parameter-id="rapid_decline_threshold"
-            @show-tutorial="$emit('show-tutorial', 'rapid_decline_threshold')">
+>
             快速下跌幅度阈值
           </ParameterLabel>
           <input v-model.number="localConfig.rapid_decline_threshold" class="input" id="rapidDeclineThreshold"
@@ -361,7 +361,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         <div>
           <ParameterLabel for-id="breakthroughConfirmationDays" parameter-id="breakthrough_confirmation_days"
-            @show-tutorial="$emit('show-tutorial', 'breakthrough_confirmation_days')">
+>
             确认天数
           </ParameterLabel>
           <input v-model.number="localConfig.breakthrough_confirmation_days" class="input"
@@ -381,7 +381,7 @@
         <div>
           <div class="flex items-center justify-between">
             <ParameterLabel for-id="useBoxDetection" parameter-id="use_box_detection"
-              @show-tutorial="$emit('show-tutorial', 'use_box_detection')">
+>
               启用箱体检测
             </ParameterLabel>
             <label for="useBoxDetection" class="relative inline-flex items-center cursor-pointer">
@@ -395,7 +395,7 @@
         </div>
         <div v-if="localConfig.use_box_detection">
           <ParameterLabel for-id="boxQualityThreshold" parameter-id="box_quality_threshold"
-            @show-tutorial="$emit('show-tutorial', 'box_quality_threshold')">
+>
             箱体质量阈值
           </ParameterLabel>
           <input v-model.number="localConfig.box_quality_threshold" class="input" id="boxQualityThreshold"
@@ -415,7 +415,7 @@
         <div>
           <div class="flex items-center justify-between">
             <ParameterLabel for-id="useFundamentalFilter" parameter-id="use_fundamental_filter"
-              @show-tutorial="$emit('show-tutorial', 'use_fundamental_filter')">
+>
               启用基本面筛选
             </ParameterLabel>
             <label for="useFundamentalFilter" class="relative inline-flex items-center cursor-pointer">
@@ -431,7 +431,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="revenueGrowthPercentile" parameter-id="revenue_growth_percentile"
-            @show-tutorial="$emit('show-tutorial', 'revenue_growth_percentile')">
+>
             营收增长率百分位
           </ParameterLabel>
           <input v-model.number="localConfig.revenue_growth_percentile" class="input" id="revenueGrowthPercentile"
@@ -441,7 +441,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="profitGrowthPercentile" parameter-id="profit_growth_percentile"
-            @show-tutorial="$emit('show-tutorial', 'profit_growth_percentile')">
+>
             净利润增长率百分位
           </ParameterLabel>
           <input v-model.number="localConfig.profit_growth_percentile" class="input" id="profitGrowthPercentile"
@@ -451,7 +451,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="roePercentile" parameter-id="roe_percentile"
-            @show-tutorial="$emit('show-tutorial', 'roe_percentile')">
+>
             ROE百分位
           </ParameterLabel>
           <input v-model.number="localConfig.roe_percentile" class="input" id="roePercentile" type="number" step="0.05"
@@ -461,7 +461,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="liabilityPercentile" parameter-id="liability_percentile"
-            @show-tutorial="$emit('show-tutorial', 'liability_percentile')">
+>
             资产负债率百分位
           </ParameterLabel>
           <input v-model.number="localConfig.liability_percentile" class="input" id="liabilityPercentile" type="number"
@@ -471,7 +471,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="pePercentile" parameter-id="pe_percentile"
-            @show-tutorial="$emit('show-tutorial', 'pe_percentile')">
+>
             PE百分位
           </ParameterLabel>
           <input v-model.number="localConfig.pe_percentile" class="input" id="pePercentile" type="number" step="0.05"
@@ -481,7 +481,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="pbPercentile" parameter-id="pb_percentile"
-            @show-tutorial="$emit('show-tutorial', 'pb_percentile')">
+>
             PB百分位
           </ParameterLabel>
           <input v-model.number="localConfig.pb_percentile" class="input" id="pbPercentile" type="number" step="0.05"
@@ -491,7 +491,7 @@
 
         <div v-if="localConfig.use_fundamental_filter">
           <ParameterLabel for-id="fundamentalYearsToCheck" parameter-id="fundamental_years_to_check"
-            @show-tutorial="$emit('show-tutorial', 'fundamental_years_to_check')">
+>
             检查年数
           </ParameterLabel>
           <input v-model.number="localConfig.fundamental_years_to_check" class="input" id="fundamentalYearsToCheck"
@@ -514,9 +514,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <div v-for="window in parsedWindows" :key="window" class="flex items-center space-x-2">
             <label class="text-sm font-medium whitespace-nowrap">{{ window }}天:</label>
-            <input v-model.number="localWindowWeights[window]" type="range" min="0" max="10" step="1" class="flex-grow"
+            <input 
+              :value="localWindowWeights[window] || 5" 
+              type="range" 
+              min="0" 
+              max="10" 
+              step="1" 
+              class="flex-grow"
               @input="handleWindowWeightChange(window, $event.target.value)">
-            <span class="text-sm">{{ localWindowWeights[window] || 0 }}</span>
+            <span class="text-sm">{{ localWindowWeights[window] || 5 }}</span>
           </div>
         </div>
       </div>
@@ -582,101 +588,16 @@
   </div>
 </template>
 
-<script>
-// 默认配置对象（内部使用，需要在模块作用域中定义以便 defineProps 引用）
-function getDefaultScanConfig() {
-  return  {
-    // 扫描日期
-    scan_date: new Date().toISOString().split('T')[0], // 扫描日期，默认为今天
-    
-    // 基本参数
-    windowsInput: '30,60,90', // 中期窗口期设置（默认）
-    expected_count: 30, // 期望返回的股票数量，默认为30
-
-    // 价格参数
-    box_threshold: 0.3, // 箱体阈值
-    ma_diff_threshold: 0.03, // 均线粘合度阈值
-    volatility_threshold: 0.03, // 波动率阈值
-
-    // 成交量参数
-    use_volume_analysis: true, // 是否启用成交量分析
-    volume_change_threshold: 0.5, // 成交量变化阈值
-    volume_stability_threshold: 0.5, // 成交量稳定性阈值
-    volume_increase_threshold: 1.5, // 成交量突破阈值
-
-    // 技术指标参数
-    use_technical_indicators: false, // 是否启用技术指标
-    use_breakthrough_prediction: true, // 是否启用突破前兆识别
-
-    // 位置参数
-    use_low_position: true, // 是否启用低位判断
-    high_point_lookback_days: 365, // 高点查找时间范围
-    decline_period_days: 180, // 下跌时间范围
-    decline_threshold: 0.3, // 下跌阈值
-
-    // 快速下跌判断参数
-    use_rapid_decline_detection: true, // 是否启用快速下跌判断
-    rapid_decline_days: 30, // 快速下跌窗口
-    rapid_decline_threshold: 0.15, // 快速下跌阈值
-
-    // 突破确认参数
-    use_breakthrough_confirmation: true, // 是否启用突破确认
-    breakthrough_confirmation_days: 1, // 确认天数，默认为1天，这样启用时不需要手动修改
-
-    // 箱体检测参数
-    use_box_detection: true, // 是否启用箱体检测
-    box_quality_threshold: 0.94, // 箱体质量阈值
-
-    // todo: 新增的因子
-    // 进入平台期后的筹码与分布参数 (新增)
-    // use_chip_distribution: true,
-    // cost_concentration_threshold: 0.15, // 90%筹码集中度小于15%
-    // avg_cost_divergence: 0.05, // 当前价格偏离平均成本不超过5%
-
-    // // 进入平台期后的布林带特征参数 (新增)
-    // use_boll_analysis: true,
-    // boll_bandwidth_threshold: 0.10, // 布林带开口收窄至10%以内
-
-    // 进入平台期后的换手率参数 (新增)
-    max_turnover_rate: 5.0, // 平台期平均换手率不超过
-    allow_turnover_spikes: true, // 是否允许偶尔的异常放量
-
-    // 进入平台期后的相对强度参数 (新增)
-    check_relative_strength: true, // 启用相对大盘强度检查（计算并保存相对强度值）
-    outperform_index_threshold: null, // 相对强度阈值，null表示不过滤（计算并保存但不作为筛选条件）
-    // todo end
-
-    // 基本面筛选参数
-    use_fundamental_filter: false, // 是否启用基本面筛选
-    revenue_growth_percentile: 0.3, // 营收增长率行业百分位
-    profit_growth_percentile: 0.3, // 净利润增长率行业百分位
-    roe_percentile: 0.3, // ROE行业百分位
-    liability_percentile: 0.3, // 资产负债率行业百分位
-    pe_percentile: 0.7, // PE行业百分位
-    pb_percentile: 0.7, // PB行业百分位
-    fundamental_years_to_check: 3, // 检查连续增长的年数
-
-    // 窗口权重参数
-    use_window_weights: true, // 是否使用窗口权重
-    window_weights: {}, // 窗口权重
-    
-    // 系统设置
-    use_scan_cache: false, // 是否使用扫描结果缓存，默认为关闭
-    max_stock_count: null, // 扫描股票数量限制，null或0表示全量扫描
-    use_local_database_first: true // 优先使用本地数据库数据，默认为开启
-  }
-}
-</script>
-
 <script setup>
-import { ref, watch, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, watch, computed, nextTick, onMounted } from 'vue'
 import ParameterLabel from './parameter-help/ParameterLabel.vue'
+import { getDefaultScanConfig } from '../config/scanConfig.js'
 
-// 默认配置对象（内部使用）
+// 默认配置对象（从配置文件导入）
 const defaultScanConfig = getDefaultScanConfig()
 
 const props = defineProps({
-  config: {
+  modelValue: {
     type: Object,
     required: false,
     default: () => getDefaultScanConfig()
@@ -684,14 +605,17 @@ const props = defineProps({
   showScanDate: {
     type: Boolean,
     default: true
-  },
-  windowWeights: {
-    type: Object,
-    default: () => ({})
   }
 })
 
-const emit = defineEmits(['update:config', 'show-tutorial', 'update-window-weights'])
+const emit = defineEmits(['update:modelValue'])
+
+// 合并默认配置和传入的配置
+// 必须先定义 localConfig，因为后面的计算属性会依赖它
+const localConfig = ref({ ...defaultScanConfig, ...props.modelValue })
+const isUpdatingFromProps = ref(false)
+const isInitialized = ref(false)
+const isEmittingInitialConfig = ref(false)
 
 // 窗口期预设
 const windowPresets = [
@@ -722,43 +646,85 @@ const parsedWindows = computed(() => {
     return [30, 60, 90]
   }
 
-  // Initialize window weights if needed
-  windows.forEach(window => {
-    if (localWindowWeights.value[window] === undefined) {
-      localWindowWeights.value[window] = 5 // Default weight
-    }
-  })
-
   return windows
 })
 
-const localWindowWeights = ref({ ...props.windowWeights })
+// 本地窗口权重（原始值，0-10），用于滑块显示
+// 直接存储原始权重值，后端会自动归一化
+// 使用 reactive 确保响应式更新
+const localWindowWeights = reactive({})
 
-watch(() => props.windowWeights, (newWeights) => {
-  // 同步父组件的 windowWeights 到本地
-  localWindowWeights.value = { ...newWeights }
-  // 确保所有窗口期都有权重
-  parsedWindows.value.forEach(window => {
-    if (localWindowWeights.value[window] === undefined) {
-      localWindowWeights.value[window] = 5 // Default weight
+// 初始化本地权重值
+function initLocalWindowWeights() {
+  const windows = parsedWindows.value
+  windows.forEach(window => {
+    // 从 config 中读取权重，如果没有则使用默认值5
+    const weight = localConfig.value.window_weights?.[window]
+    if (weight !== undefined && weight !== null && weight >= 0) {
+      // 直接使用原始权重值（后端会自动归一化）
+      localWindowWeights[window] = weight
+    } else {
+      // 使用默认值5
+      localWindowWeights[window] = 5
     }
   })
+  // 移除不在窗口列表中的权重
+  Object.keys(localWindowWeights).forEach(key => {
+    if (!windows.includes(parseInt(key, 10))) {
+      delete localWindowWeights[key]
+    }
+  })
+}
+
+// 监听窗口期变化，初始化权重
+watch(() => parsedWindows.value, () => {
+  // 确保 config 中有权重值
+  ensureWindowWeights()
+  // 初始化本地权重显示值
+  initLocalWindowWeights()
+}, { immediate: true })
+
+// 监听 config 变化，同步权重（但避免循环更新）
+let isUpdatingFromLocal = false
+watch(() => localConfig.value.window_weights, () => {
+  if (!isUpdatingFromLocal) {
+    initLocalWindowWeights()
+  }
 }, { deep: true })
+
+// 确保窗口权重已初始化（使用原始值，不归一化）
+function ensureWindowWeights() {
+  const windows = parsedWindows.value
+  if (!localConfig.value.window_weights) {
+    localConfig.value.window_weights = {}
+  }
+  
+  // 检查是否需要初始化
+  let needsInit = false
+  windows.forEach(window => {
+    if (localConfig.value.window_weights[window] === undefined || localConfig.value.window_weights[window] === null) {
+      needsInit = true
+      // 设置默认权重为5（原始值，后端会自动归一化）
+      localConfig.value.window_weights[window] = 5
+      localWindowWeights[window] = 5
+    }
+  })
+  
+  // 确保所有窗口期都有权重值
+  if (needsInit) {
+    windows.forEach(window => {
+      if (localWindowWeights[window] === undefined) {
+        localWindowWeights[window] = 5
+      }
+    })
+  }
+}
 
 // 选择窗口期预设
 function selectWindowPreset(presetValue) {
   localConfig.value.windowsInput = presetValue
   showCustomWindowInput.value = false
-
-  // 重新初始化窗口权重
-  parsedWindows.value.forEach(window => {
-    if (localWindowWeights.value[window] === undefined) {
-      localWindowWeights.value[window] = 5 // Default weight
-    }
-  })
-
-  // 更新窗口权重
-  updateWindowWeights()
+  // 窗口权重会通过 watch 自动初始化
 }
 
 // 验证自定义窗口期
@@ -776,51 +742,30 @@ function validateCustomWindows() {
     // 格式化输入
     localConfig.value.windowsInput = windows.join(',')
     showCustomWindowInput.value = false
-
-    // 重新初始化窗口权重
-    windows.forEach(window => {
-      if (localWindowWeights.value[window] === undefined) {
-        localWindowWeights.value[window] = 5 // Default weight
-      }
-    })
-
-    // 更新窗口权重
-    updateWindowWeights()
+    // 窗口权重会通过 watch 自动初始化
   }
 }
 
 // Update window weights and config
+// 直接更新原始权重值（0-10），后端会自动归一化
 function updateWindowWeights(window, value) {
-  // 如果提供了特定窗口的值，更新它
+  // 更新本地权重值
   if (window !== undefined && value !== undefined) {
-    localWindowWeights.value[window] = parseInt(value, 10)
+    localWindowWeights[window] = parseInt(value, 10)
   }
 
-  // Update config.window_weights with normalized values
+  // 同步所有窗口期的权重值到 config（使用原始值，不归一化）
   const weights = {}
-  let total = 0
+  parsedWindows.value.forEach(w => {
+    weights[w] = localWindowWeights[w] || 5
+  })
 
-  // Calculate total
-  for (const [key, val] of Object.entries(localWindowWeights.value)) {
-    if (parsedWindows.value.includes(parseInt(key, 10))) {
-      total += val
-    }
-  }
-
-  // Normalize weights
-  if (total > 0) {
-    for (const [key, val] of Object.entries(localWindowWeights.value)) {
-      if (parsedWindows.value.includes(parseInt(key, 10))) {
-        weights[key] = val / total
-      }
-    }
-  }
-
-  // Update config
+  // Update config (设置标志避免循环更新)
+  isUpdatingFromLocal = true
   localConfig.value.window_weights = weights
-  
-  // Emit update event
-  emit('update-window-weights', window, value)
+  nextTick(() => {
+    isUpdatingFromLocal = false
+  })
 }
 
 const handleWindowWeightChange = (window, value) => {
@@ -845,13 +790,7 @@ const maxDate = computed(() => {
   return today.toISOString().split('T')[0]
 })
 
-// 合并默认配置和传入的配置
-const localConfig = ref({ ...defaultScanConfig, ...props.config })
-const isUpdatingFromProps = ref(false)
-const isInitialized = ref(false)
-const isEmittingInitialConfig = ref(false)
-
-watch(() => props.config, (newConfig) => {
+watch(() => props.modelValue, (newConfig) => {
   // 如果正在 emit 初始配置，忽略这次更新（避免循环）
   if (isEmittingInitialConfig.value) {
     return
@@ -870,7 +809,7 @@ watch(localConfig, (newConfig) => {
   // Only emit if the change didn't come from props and component is initialized
   // This prevents recursive updates during initialization
   if (!isUpdatingFromProps.value && isInitialized.value && !isEmittingInitialConfig.value) {
-    emit('update:config', newConfig)
+    emit('update:modelValue', newConfig)
   }
 }, { deep: true })
 
@@ -878,14 +817,14 @@ watch(localConfig, (newConfig) => {
 onMounted(() => {
   isInitialized.value = true
   // 检查父组件是否传入了有效的配置
-  const hasValidConfig = props.config && Object.keys(props.config).length > 0
+  const hasValidConfig = props.modelValue && Object.keys(props.modelValue).length > 0
   // 如果父组件没有传入配置，emit 默认配置
   if (!hasValidConfig) {
     // 使用 nextTick 确保在下一个 tick 中执行，避免与 watch 冲突
     nextTick(() => {
       if (!isUpdatingFromProps.value) {
         isEmittingInitialConfig.value = true
-        emit('update:config', { ...localConfig.value })
+        emit('update:modelValue', { ...localConfig.value })
         // 在下一个 tick 重置标志
         nextTick(() => {
           isEmittingInitialConfig.value = false
@@ -895,22 +834,6 @@ onMounted(() => {
   }
 })
 
-watch(() => parsedWindows.value, (newWindows) => {
-  // 当窗口期变化时，初始化新窗口的权重
-  newWindows.forEach(window => {
-    if (localWindowWeights.value[window] === undefined) {
-      localWindowWeights.value[window] = 5 // 默认权重
-    }
-  })
-  // 移除不在窗口列表中的权重
-  Object.keys(localWindowWeights.value).forEach(key => {
-    if (!newWindows.includes(parseInt(key, 10))) {
-      delete localWindowWeights.value[key]
-    }
-  })
-  // 更新窗口权重
-  updateWindowWeights()
-}, { immediate: true })
 
 // 暴露 parsedWindows 给父组件
 defineExpose({

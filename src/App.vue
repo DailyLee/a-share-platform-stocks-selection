@@ -599,11 +599,8 @@
             扫描参数配置
           </h2>
           <ScanConfigForm
+            v-model="config"
             :show-scan-date="true"
-            :window-weights="windowWeights"
-            @update:config="config = $event"
-            @show-tutorial="showParameterTutorial"
-            @update-window-weights="(window, value) => { windowWeights[window] = parseInt(value, 10); updateWindowWeights(window, value); }"
             ref="scanConfigFormRef"
           />
           <div class="flex items-center justify-center mt-6">
@@ -1414,11 +1411,10 @@ const loading = ref(false);
 const error = ref(null);
 const hasSearched = ref(false); // Track if a search has been performed
 const isDarkMode = ref(false); // 暗色模式状态
-const windowWeights = ref({}); // 窗口权重
 const expandedReasons = ref({}); // 跟踪每个股票的选择理由是否展开
 const selectedStocks = ref([]); // 选中的股票列表（用于回测）
 const scanConfigFormRef = ref(null); // 扫描配置表单引用
-const config = ref({}); // 扫描配置，由 ScanConfigForm 组件通过 @update:config 事件更新
+const config = ref({}); // 扫描配置，由 ScanConfigForm 组件通过 v-model 更新
 
 // 筛选相关状态
 const showFilterPanel = ref(false); // 筛选面板显示状态
@@ -1677,17 +1673,6 @@ const parameterHelp = inject('parameterHelp', {
     return null;
   }
 });
-
-// 打开参数教程
-const showParameterTutorial = (id) => {
-  console.log('App: 显示参数教程:', id);
-  // 这个方法现在可能不会被调用，因为 ParameterLabel 组件会直接调用 parameterHelp.openTutorial
-  if (parameterHelp && parameterHelp.openTutorial) {
-    parameterHelp.openTutorial(id);
-  } else {
-    console.warn('App: parameterHelp.openTutorial 未提供');
-  }
-};
 
 // 初始化时检查系统偏好
 onMounted(() => {
@@ -2480,29 +2465,8 @@ const parsedWindows = computed(() => {
     return [30, 60, 90];
   }
 
-  // Initialize window weights if needed
-  windows.forEach(window => {
-    if (windowWeights.value[window] === undefined) {
-      windowWeights.value[window] = 5; // Default weight
-    }
-  });
-
   return windows;
 });
-
-// Update window weights and config
-// 注意：窗口权重的归一化逻辑已经在 ScanConfigForm 组件中处理
-// 组件会通过 @update:config 事件自动更新 config.value.window_weights
-// 这里只需要同步 windowWeights.value（原始权重值，未归一化）
-function updateWindowWeights (window, value) {
-  // 如果提供了特定窗口的值，更新它
-  if (window !== undefined && value !== undefined) {
-    windowWeights.value[window] = parseInt(value, 10);
-  }
-  
-  // 窗口权重的归一化和 config.window_weights 的更新由 ScanConfigForm 组件内部处理
-  // 组件会通过 @update:config 事件自动更新 config.value.window_weights
-}
 
 // 清理轮询定时器
 onUnmounted(() => {

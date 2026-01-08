@@ -1,5 +1,8 @@
 <template>
   <div class="min-h-screen bg-background text-foreground p-4">
+    <!-- 参数帮助管理器 -->
+    <ParameterHelpManager />
+    
     <div class="max-w-6xl mx-auto">
       <!-- 页面标题 -->
       <div class="mb-6">
@@ -102,11 +105,8 @@
             扫描参数配置
           </h3>
           <ScanConfigForm
+            v-model="scanConfig"
             :show-scan-date="false"
-            :window-weights="windowWeights"
-            @update:config="scanConfig = $event"
-            @update-window-weights="updateWindowWeights"
-            @show-tutorial="showParameterTutorial"
             ref="scanConfigFormRef"
           />
         </div>
@@ -317,12 +317,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 参数教程 -->
-    <ParameterTutorial
-      v-model:visible="showTutorialDialog"
-      :parameter-id="tutorialParameterId"
-    />
 
     <!-- 批量回测对话框 -->
     <div
@@ -684,7 +678,7 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import ScanConfigForm from './ScanConfigForm.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
-import ParameterTutorial from './parameter-help/ParameterTutorial.vue'
+import { ParameterHelpManager } from './parameter-help'
 import TaskDetails from './batch-scan/TaskDetails.vue'
 import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
@@ -697,7 +691,7 @@ const taskName = ref('')
 const startDate = ref('')
 const endDate = ref('')
 const scanPeriodDays = ref(7)
-const scanConfig = ref({})
+const scanConfig = ref({}) // 扫描配置，由 ScanConfigForm 组件通过 v-model 更新
 const scanConfigFormRef = ref(null) // 扫描配置表单引用
 
 const tasks = ref([])
@@ -705,8 +699,6 @@ const loading = ref(false)
 const showConfirmDialog = ref(false)
 const showTaskDetailsDialog = ref(false)
 const selectedTaskId = ref(null)
-const showTutorialDialog = ref(false)
-const tutorialParameterId = ref('')
 
 // 确认对话框相关
 const showCancelConfirmDialog = ref(false)
@@ -827,8 +819,7 @@ const getFirstSundayOfYear = () => {
   return `${yearStr}-${monthStr}-${dayStr}`
 }
 
-// 窗口权重
-const windowWeights = ref({})
+// 解析窗口期
 const parsedWindows = computed(() => {
   // 优先从 ScanConfigForm 组件获取 parsedWindows
   if (scanConfigFormRef.value && scanConfigFormRef.value.parsedWindows) {
@@ -850,53 +841,6 @@ const parsedWindows = computed(() => {
   
   return windows
 })
-
-// 更新窗口权重
-const updateWindowWeights = (window, value) => {
-  if (window !== undefined && value !== undefined) {
-    windowWeights.value[window] = parseInt(value, 10)
-  }
-  
-  // 归一化权重
-  const weights = {}
-  let total = 0
-  
-  // 计算总和
-  for (const [key, val] of Object.entries(windowWeights.value)) {
-    if (parsedWindows.value.includes(parseInt(key, 10))) {
-      total += val
-    }
-  }
-  
-  // 归一化
-  if (total > 0) {
-    for (const [key, val] of Object.entries(windowWeights.value)) {
-      if (parsedWindows.value.includes(parseInt(key, 10))) {
-        weights[key] = val / total
-      }
-    }
-  }
-  
-  // 更新配置
-  scanConfig.value.window_weights = weights
-}
-
-// 监听窗口期变化，初始化窗口权重
-watch(parsedWindows, (newWindows) => {
-  newWindows.forEach(window => {
-    if (windowWeights.value[window] === undefined) {
-      windowWeights.value[window] = 5 // 默认权重
-    }
-  })
-  // 移除不在窗口列表中的权重
-  Object.keys(windowWeights.value).forEach(key => {
-    if (!newWindows.includes(parseInt(key, 10))) {
-      delete windowWeights.value[key]
-    }
-  })
-  // 更新配置中的窗口权重
-  updateWindowWeights()
-}, { immediate: true })
 
 const canSubmit = computed(() => {
   return taskName.value.trim() !== '' &&
@@ -960,8 +904,6 @@ const submitTask = async () => {
     // 构建扫描配置
     // 使用 parsedWindows 计算属性（已包含安全检查）
     const windows = parsedWindows.value
-    // 使用已归一化的窗口权重
-    const windowWeights = scanConfig.value.window_weights || {}
     
     const payload = {
       task_name: taskName.value,
@@ -1001,7 +943,7 @@ const submitTask = async () => {
       pb_percentile: scanConfig.value.pb_percentile,
       fundamental_years_to_check: scanConfig.value.fundamental_years_to_check,
       use_window_weights: scanConfig.value.use_window_weights,
-      window_weights: windowWeights,
+      window_weights: scanConfig.value.window_weights || {},
       use_scan_cache: scanConfig.value.use_scan_cache !== undefined ? scanConfig.value.use_scan_cache : true,
       max_stock_count: scanConfig.value.max_stock_count && scanConfig.value.max_stock_count > 0 ? scanConfig.value.max_stock_count : null,
       use_local_database_first: scanConfig.value.use_local_database_first !== undefined ? scanConfig.value.use_local_database_first : true
@@ -1102,10 +1044,6 @@ const formatNumber = (num, decimals = 0) => {
   })
 }
 
-const showParameterTutorial = (parameterId) => {
-  tutorialParameterId.value = parameterId
-  showTutorialDialog.value = true
-}
 
 const handleSubmitClick = () => {
   if (!canSubmit.value) {
