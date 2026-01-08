@@ -75,7 +75,8 @@ try:
         DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
-        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
+        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
     )
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
@@ -89,7 +90,8 @@ except ImportError:
         DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
-        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+        DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
+        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
     )
 
 
@@ -175,6 +177,10 @@ class ScanConfigRequest(BaseModel):
     use_window_weights: bool = False  # Whether to use window weights
     window_weights: Dict[int, float] = Field(
         default_factory=dict)  # Weights for different windows
+
+    # Turnover rate settings
+    max_turnover_rate: float = DEFAULT_MAX_TURNOVER_RATE  # 平台期平均换手率不超过此值（%）
+    allow_turnover_spikes: bool = DEFAULT_ALLOW_TURNOVER_SPIKES  # 是否允许偶尔的异常放量
 
     # System settings
     max_workers: int = 5  # Keep concurrency reasonable for serverless
@@ -2523,6 +2529,8 @@ class BatchScanRequest(BaseModel):
     fundamental_years_to_check: int = 3
     use_window_weights: bool = False
     window_weights: Dict[int, float] = Field(default_factory=dict)
+    max_turnover_rate: float = DEFAULT_MAX_TURNOVER_RATE
+    allow_turnover_spikes: bool = DEFAULT_ALLOW_TURNOVER_SPIKES
     max_workers: int = 5
     retry_attempts: int = 2
     retry_delay: int = 1

@@ -376,6 +376,27 @@
               <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
 
+            <!-- 换手率 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">换手率 (%)</label>
+              <div v-if="allStockAttributes.maxTurnoverRate > allStockAttributes.minTurnoverRate && allStockAttributes.maxTurnoverRate > 0" class="space-y-1.5">
+                <Slider
+                  v-model="turnoverRateRangeArray"
+                  :min="allStockAttributes.minTurnoverRate"
+                  :max="allStockAttributes.maxTurnoverRate"
+                  :step="Math.max(0.01, (allStockAttributes.maxTurnoverRate - allStockAttributes.minTurnoverRate) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minTurnoverRate.toFixed(2) }}%</span>
+                  <span class="font-medium text-foreground">
+                    {{ turnoverRateRangeArray[0].toFixed(2) }}% - {{ turnoverRateRangeArray[1].toFixed(2) }}%
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxTurnoverRate.toFixed(2) }}%</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
             <!-- ========== 第四组：位置和下跌（百分比 Range Slider） ========== -->
             <!-- 低位判断百分比 -->
             <div>
@@ -711,7 +732,8 @@ const router = useRouter()
     volumeStabilityRange: { min: null, max: null }, // 成交量稳定性范围（min/max为null表示不限制）
     lowPositionPercentRange: { min: null, max: null }, // 低位判断百分比范围（从高点下跌的百分比）
     rapidDeclinePercentRange: { min: null, max: null }, // 快速下跌百分比范围
-    stockCountRange: { min: null, max: null } // 周期内购买的股票数量范围
+    stockCountRange: { min: null, max: null }, // 周期内购买的股票数量范围
+    turnoverRateRange: { min: null, max: null } // 换手率范围（min/max为null表示不限制）
   })
   
   // 所有股票的属性集合（用于筛选条件选项）
@@ -735,7 +757,9 @@ const router = useRouter()
     minRapidDeclinePercent: 0, // 最小快速下跌百分比
     maxRapidDeclinePercent: 0, // 最大快速下跌百分比
     minStockCount: 0, // 最小股票数量
-    maxStockCount: 0 // 最大股票数量
+    maxStockCount: 0, // 最大股票数量
+    minTurnoverRate: 0, // 最小换手率
+    maxTurnoverRate: 0 // 最大换手率
   })
 
   // 价格区间数组（用于 shadcn-vue Slider 组件）
@@ -871,6 +895,23 @@ const router = useRouter()
     set: (value) => {
       if (Array.isArray(value) && value.length === 2) {
         statisticsFilters.value.stockCountRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 换手率数组（用于 shadcn-vue Slider 组件）
+  const turnoverRateRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.turnoverRateRange.min ?? allStockAttributes.value.minTurnoverRate
+      const max = statisticsFilters.value.turnoverRateRange.max ?? allStockAttributes.value.maxTurnoverRate
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.turnoverRateRange = {
           min: value[0],
           max: value[1]
         }
@@ -1378,6 +1419,7 @@ const router = useRouter()
       const volatilities = []
       const volumeChanges = []
       const volumeStabilities = []
+      const turnoverRates = []
       const lowPositionPercents = []
       const rapidDeclinePercents = []
 
@@ -1537,6 +1579,56 @@ const router = useRouter()
             }
           })
         }
+        
+        // 收集换手率数据
+        // 从 turnover_analysis 中提取（如果后端返回了）
+        if (stock.turnover_analysis && typeof stock.turnover_analysis === 'object') {
+          Object.values(stock.turnover_analysis).forEach(windowAnalysis => {
+            if (windowAnalysis && typeof windowAnalysis === 'object') {
+              const avgTurnoverRate = windowAnalysis.avg_turnover_rate
+              if (avgTurnoverRate !== null && avgTurnoverRate !== undefined && typeof avgTurnoverRate === 'number' && !isNaN(avgTurnoverRate) && isFinite(avgTurnoverRate) && avgTurnoverRate >= 0) {
+                turnoverRates.push(avgTurnoverRate)
+              }
+            }
+          })
+        }
+        
+        // 如果没有，从kline_data中计算
+        // 注意：需要排除最近5天，与后端逻辑保持一致（避免突破期的放量干扰平台期判断）
+        if ((!stock.turnover_analysis || Object.keys(stock.turnover_analysis).length === 0) && stock.kline_data && Array.isArray(stock.kline_data) && stock.kline_data.length > 0) {
+          // 获取所有窗口期的换手率
+          const windows = Array.from(platformPeriodsSet)
+          const excludeRecentDays = 5 // 排除最近5天，与后端逻辑一致
+          
+          windows.forEach(window => {
+            const windowDays = parseInt(window)
+            if (!isNaN(windowDays) && windowDays > 0) {
+              // 确保有足够的数据
+              if (stock.kline_data.length < windowDays) {
+                return
+              }
+              
+              // 获取平台期数据（排除最近5天）
+              let platformData
+              if (excludeRecentDays > 0 && stock.kline_data.length > windowDays) {
+                // 排除最近5天：从倒数第windowDays天到倒数第excludeRecentDays天
+                platformData = stock.kline_data.slice(-windowDays, -excludeRecentDays)
+              } else {
+                // 如果数据不足，使用全部数据
+                platformData = stock.kline_data.slice(-windowDays)
+              }
+              
+              const windowTurnoverRates = platformData
+                .map(item => item.turn)
+                .filter(turn => turn !== null && turn !== undefined && !isNaN(turn) && turn >= 0 && turn <= 100)
+              
+              if (windowTurnoverRates.length > 0) {
+                const avgTurnoverRate = windowTurnoverRates.reduce((sum, rate) => sum + rate, 0) / windowTurnoverRates.length
+                turnoverRates.push(avgTurnoverRate)
+              }
+            }
+          })
+        }
       })
 
       // 更新属性集合
@@ -1657,6 +1749,41 @@ const router = useRouter()
           statisticsFilters.value.volumeStabilityRange = {
             min: 0,
             max: 1
+          }
+        }
+      }
+      if (turnoverRates.length > 0) {
+        // 过滤掉异常值：换手率通常在 0 到 100 之间
+        const validTurnoverRates = turnoverRates.filter(v => v >= 0 && v <= 100)
+        if (validTurnoverRates.length > 0) {
+          allStockAttributes.value.minTurnoverRate = Math.min(...validTurnoverRates)
+          allStockAttributes.value.maxTurnoverRate = Math.max(...validTurnoverRates)
+          // 如果 turnoverRateRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+          if (statisticsFilters.value.turnoverRateRange.min === null || statisticsFilters.value.turnoverRateRange.max === null) {
+            statisticsFilters.value.turnoverRateRange = {
+              min: allStockAttributes.value.minTurnoverRate,
+              max: allStockAttributes.value.maxTurnoverRate
+            }
+          }
+        } else {
+          // 如果过滤后没有有效数据，设置为默认值
+          allStockAttributes.value.minTurnoverRate = 0
+          allStockAttributes.value.maxTurnoverRate = 10
+          if (statisticsFilters.value.turnoverRateRange.min === null || statisticsFilters.value.turnoverRateRange.max === null) {
+            statisticsFilters.value.turnoverRateRange = {
+              min: 0,
+              max: 10
+            }
+          }
+        }
+      } else {
+        // 如果没有数据，设置为默认值，避免筛选逻辑出错
+        allStockAttributes.value.minTurnoverRate = 0
+        allStockAttributes.value.maxTurnoverRate = 10
+        if (statisticsFilters.value.turnoverRateRange.min === null || statisticsFilters.value.turnoverRateRange.max === null) {
+          statisticsFilters.value.turnoverRateRange = {
+            min: 0,
+            max: 10
           }
         }
       }
@@ -2206,6 +2333,84 @@ const router = useRouter()
           const isNarrowerThanFullRange = volumeStabilityRangeFilter.min > minVolumeStability || volumeStabilityRangeFilter.max < maxVolumeStability
           if (isNarrowerThanFullRange) {
             if (stockVolumeStability < volumeStabilityRangeFilter.min || stockVolumeStability > volumeStabilityRangeFilter.max) {
+              return false
+            }
+          }
+        }
+
+        // 换手率筛选
+        const turnoverRateRangeFilter = statisticsFilters.value.turnoverRateRange
+        if (turnoverRateRangeFilter.min !== null && turnoverRateRangeFilter.max !== null) {
+          let stockTurnoverRate = null
+          let hasTurnoverRateData = false
+          
+          // 从 turnover_analysis 中提取（如果后端返回了）
+          if (stock.turnover_analysis && typeof stock.turnover_analysis === 'object') {
+            Object.values(stock.turnover_analysis).forEach(windowAnalysis => {
+              if (windowAnalysis && typeof windowAnalysis === 'object') {
+                const avgTurnoverRate = windowAnalysis.avg_turnover_rate
+                if (avgTurnoverRate !== null && avgTurnoverRate !== undefined && typeof avgTurnoverRate === 'number' && !isNaN(avgTurnoverRate) && isFinite(avgTurnoverRate) && avgTurnoverRate >= 0) {
+                  if (stockTurnoverRate === null || avgTurnoverRate < stockTurnoverRate) {
+                    stockTurnoverRate = avgTurnoverRate
+                  }
+                  hasTurnoverRateData = true
+                }
+              }
+            })
+          }
+          
+          // 如果没有，从kline_data中计算
+          // 注意：需要排除最近5天，与后端逻辑保持一致（避免突破期的放量干扰平台期判断）
+          if (!hasTurnoverRateData && stock.kline_data && Array.isArray(stock.kline_data) && stock.kline_data.length > 0) {
+            // 获取所有窗口期的换手率，取最小值
+            const windows = Array.from(allStockAttributes.value.platformPeriods)
+            const excludeRecentDays = 5 // 排除最近5天，与后端逻辑一致
+            
+            windows.forEach(window => {
+              const windowDays = parseInt(window)
+              if (!isNaN(windowDays) && windowDays > 0) {
+                // 确保有足够的数据
+                if (stock.kline_data.length < windowDays) {
+                  return
+                }
+                
+                // 获取平台期数据（排除最近5天）
+                let platformData
+                if (excludeRecentDays > 0 && stock.kline_data.length > windowDays) {
+                  // 排除最近5天：从倒数第windowDays天到倒数第excludeRecentDays天
+                  platformData = stock.kline_data.slice(-windowDays, -excludeRecentDays)
+                } else {
+                  // 如果数据不足，使用全部数据
+                  platformData = stock.kline_data.slice(-windowDays)
+                }
+                
+                const turnoverRates = platformData
+                  .map(item => item.turn)
+                  .filter(turn => turn !== null && turn !== undefined && !isNaN(turn) && turn >= 0 && turn <= 100)
+                
+                if (turnoverRates.length > 0) {
+                  const avgTurnoverRate = turnoverRates.reduce((sum, rate) => sum + rate, 0) / turnoverRates.length
+                  if (stockTurnoverRate === null || avgTurnoverRate < stockTurnoverRate) {
+                    stockTurnoverRate = avgTurnoverRate
+                  }
+                  hasTurnoverRateData = true
+                }
+              }
+            })
+          }
+          
+          if (!hasTurnoverRateData) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          }
+          
+          // 检查是否在范围内
+          const minTurnoverRate = allStockAttributes.value.minTurnoverRate
+          const maxTurnoverRate = allStockAttributes.value.maxTurnoverRate
+          // 只有当用户设置的范围比全范围更窄时才进行筛选
+          const isNarrowerThanFullRange = turnoverRateRangeFilter.min > minTurnoverRate || turnoverRateRangeFilter.max < maxTurnoverRate
+          if (isNarrowerThanFullRange) {
+            if (stockTurnoverRate < turnoverRateRangeFilter.min || stockTurnoverRate > turnoverRateRangeFilter.max) {
               return false
             }
           }

@@ -84,6 +84,10 @@ class ScanConfig(BaseModel):
     window_weights: Dict[int, float] = Field(
         default_factory=dict)  # Weights for different windows
 
+    # Turnover rate settings
+    max_turnover_rate: float = 3.0  # 平台期平均换手率不超过此值（%）
+    allow_turnover_spikes: bool = True  # 是否允许偶尔的异常放量
+
     # System settings
     max_workers: int = 5
     retry_attempts: int = 2
@@ -136,6 +140,8 @@ DEFAULT_USE_BREAKTHROUGH_CONFIRMATION = DEFAULT_CONFIG.use_breakthrough_confirma
 DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS = DEFAULT_CONFIG.breakthrough_confirmation_days
 DEFAULT_USE_BREAKTHROUGH_PREDICTION = DEFAULT_CONFIG.use_breakthrough_prediction
 DEFAULT_USE_WINDOW_WEIGHTS = DEFAULT_CONFIG.use_window_weights
+DEFAULT_MAX_TURNOVER_RATE = DEFAULT_CONFIG.max_turnover_rate
+DEFAULT_ALLOW_TURNOVER_SPIKES = DEFAULT_CONFIG.allow_turnover_spikes
 
 
 def merge_config(user_config: Dict[str, Any]) -> ScanConfig:

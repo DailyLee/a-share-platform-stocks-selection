@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 
 from .price_analyzer import analyze_price
 from .volume_analyzer import analyze_volume
+from .turnover_analyzer import analyze_turnover
 from .breakthrough_analyzer import analyze_breakthrough, check_breakthrough_confirmation
 from .window_weight_analyzer import apply_window_weights
 from .enhanced_platform_analyzer import analyze_enhanced_platform, check_enhanced_platform
@@ -24,7 +25,8 @@ from ..config import (
     DEFAULT_DECLINE_THRESHOLD, DEFAULT_USE_RAPID_DECLINE_DETECTION,
     DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
     DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
-    DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS
+    DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
+    DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
 )
 
 
@@ -50,7 +52,9 @@ def analyze_stock(df: pd.DataFrame,
                   use_breakthrough_confirmation: bool = None,
                   breakthrough_confirmation_days: int = None,
                   use_box_detection: bool = None,
-                  box_quality_threshold: float = None) -> Dict[str, Any]:
+                  box_quality_threshold: float = None,
+                  max_turnover_rate: float = None,
+                  allow_turnover_spikes: bool = None) -> Dict[str, Any]:
     """
     Analyze a stock for platform periods across multiple time windows,
     including price analysis, volume analysis, breakthrough prediction, position analysis,
@@ -127,6 +131,10 @@ def analyze_stock(df: pd.DataFrame,
         use_box_detection = DEFAULT_USE_BOX_DETECTION
     if box_quality_threshold is None:
         box_quality_threshold = DEFAULT_BOX_QUALITY_THRESHOLD
+    if max_turnover_rate is None:
+        max_turnover_rate = DEFAULT_MAX_TURNOVER_RATE
+    if allow_turnover_spikes is None:
+        allow_turnover_spikes = DEFAULT_ALLOW_TURNOVER_SPIKES
 
     if df.empty:
         return {
@@ -188,6 +196,7 @@ def analyze_stock(df: pd.DataFrame,
     details = {}
     selection_reasons = {}
     volume_analysis_results = {}
+    turnover_analysis_results = {}
     breakthrough_results = {}
 
     # ============================================================
@@ -235,6 +244,25 @@ def analyze_stock(df: pd.DataFrame,
                     "consolidation_details": details[window]["volume_analysis"],
                     "breakthrough_details": {"status": "未分析"}
                 }
+            
+            # Add turnover rate analysis for enhanced platform windows
+            if 'turn' in df.columns:
+                turnover_analysis = analyze_turnover(
+                    df, window, max_turnover_rate, allow_turnover_spikes
+                )
+                turnover_analysis_results[window] = turnover_analysis
+                
+                # Add turnover analysis to details if window is in platform_windows
+                if window in platform_windows and window in details:
+                    details[window]["turnover_analysis"] = turnover_analysis["details"]
+                    
+                    # Check if turnover criteria should filter out this window
+                    if not turnover_analysis["meets_criteria"] and turnover_analysis.get("avg_turnover_rate") is not None:
+                        # Remove from platform_windows if turnover doesn't meet criteria
+                        if window in platform_windows:
+                            platform_windows.remove(window)
+                        if window in selection_reasons:
+                            del selection_reasons[window]
     else:
         # Use traditional analysis method
         # Only analyze candidate windows (those that passed quick check)
@@ -259,20 +287,43 @@ def analyze_stock(df: pd.DataFrame,
                     "breakthrough_details": {"status": "未分析"}
                 }
 
-            # Combine price and volume analysis
+            # Turnover rate analysis if turnover data is available
+            turnover_analysis = None
+            if 'turn' in df.columns:
+                turnover_analysis = analyze_turnover(
+                    df, window, max_turnover_rate, allow_turnover_spikes
+                )
+                turnover_analysis_results[window] = turnover_analysis
+            else:
+                turnover_analysis = {
+                    "meets_criteria": True,  # Default to True if no turnover data
+                    "avg_turnover_rate": None,
+                    "details": {"status": "无换手率数据"}
+                }
+                turnover_analysis_results[window] = turnover_analysis
+
+            # Combine price, volume, and turnover analysis
             is_price_platform = price_analysis["is_price_platform"]
             has_consolidation_volume = volume_analysis["has_consolidation_volume"]
+            meets_turnover_criteria = turnover_analysis["meets_criteria"] if turnover_analysis else True
 
-            # A stock is in platform period if price forms a platform and volume shows consolidation
+            # A stock is in platform period if price forms a platform, volume shows consolidation, and turnover meets criteria
             is_window_platform = is_price_platform
             if use_volume_analysis:
                 is_window_platform = is_window_platform and has_consolidation_volume
+            # Turnover rate is always checked if data is available
+            if turnover_analysis and turnover_analysis.get("avg_turnover_rate") is not None:
+                is_window_platform = is_window_platform and meets_turnover_criteria
 
             # Store details
             details[window] = {
                 "price_analysis": price_analysis["details"],
                 "volume_analysis": volume_analysis["consolidation_details"] if use_volume_analysis else {"status": "未分析"}
             }
+            
+            # Add turnover analysis to details
+            if turnover_analysis:
+                details[window]["turnover_analysis"] = turnover_analysis["details"]
 
             # Check for breakthrough
             has_breakthrough = volume_analysis["has_breakthrough"] if use_volume_analysis else False
@@ -299,6 +350,11 @@ def analyze_stock(df: pd.DataFrame,
                     if has_breakthrough:
                         breakthrough_details = volume_analysis["breakthrough_details"]
                         reason += f", 成交量突破{breakthrough_details.get('volume_increase_ratio', 'N/A'):.2f}倍"
+                
+                # Add turnover rate information if available
+                if turnover_analysis and turnover_analysis.get("avg_turnover_rate") is not None:
+                    turnover_details = turnover_analysis["details"]
+                    reason += f", 平均换手率{turnover_details.get('avg_turnover_rate', 'N/A'):.2f}%"
 
                 selection_reasons[window] = reason
 
@@ -491,6 +547,7 @@ def analyze_stock(df: pd.DataFrame,
         "details": details,
         "selection_reasons": selection_reasons,
         "volume_analysis": volume_analysis_results if use_volume_analysis else {},
+        "turnover_analysis": turnover_analysis_results,
         "box_analysis": box_analysis_results if (use_box_detection and is_basic_platform) else {},
         "mark_lines": mark_lines,  # 直接添加标记线数据
         "platform_judgment_log": platform_judgment_log,  # 添加判断过程日志

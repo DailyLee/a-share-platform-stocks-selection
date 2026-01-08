@@ -524,7 +524,9 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                         config.use_breakthrough_confirmation,
                         config.breakthrough_confirmation_days,
                         config.use_box_detection,
-                        config.box_quality_threshold
+                        config.box_quality_threshold,
+                        config.max_turnover_rate,
+                        config.allow_turnover_spikes
                     )
                     print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Analysis completed for {stock_code}, is_platform: {analysis_result['is_platform']}{Style.RESET_ALL}")
 
@@ -555,6 +557,10 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                         # Add volume analysis results if available
                         if config.use_volume_analysis and "volume_analysis" in analysis_result:
                             platform_stock['volume_analysis'] = analysis_result["volume_analysis"]
+
+                        # Add turnover analysis results if available
+                        if "turnover_analysis" in analysis_result:
+                            platform_stock['turnover_analysis'] = analysis_result["turnover_analysis"]
 
                         # Add breakthrough prediction results if available
                         if config.use_breakthrough_prediction and "breakthrough_prediction" in analysis_result:
@@ -696,7 +702,8 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                             config.rapid_decline_days, config.rapid_decline_threshold,
                             config.use_breakthrough_confirmation,
                             config.breakthrough_confirmation_days,
-                            config.use_box_detection, config.box_quality_threshold
+                            config.use_box_detection, config.box_quality_threshold,
+                            config.max_turnover_rate, config.allow_turnover_spikes
                         )
                         if analysis_result["is_platform"]:
                             platform_count += 1
@@ -710,6 +717,8 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                             }
                             if "mark_lines" in analysis_result:
                                 platform_stock['mark_lines'] = analysis_result["mark_lines"]
+                            if "turnover_analysis" in analysis_result:
+                                platform_stock['turnover_analysis'] = analysis_result["turnover_analysis"]
                             platform_stocks.append(platform_stock)
                             success_count += 1
                         else:

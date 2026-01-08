@@ -731,6 +731,8 @@ const scanConfig = ref({
   fundamental_years_to_check: 3,
   use_window_weights: true,
   window_weights: {},
+  max_turnover_rate: 5.0,
+  allow_turnover_spikes: true,
   use_scan_cache: false,
   max_stock_count: null,
   use_local_database_first: true

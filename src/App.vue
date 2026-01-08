@@ -506,6 +506,16 @@
                                 </div>
                               </div>
                             </div>
+
+                            <!-- 换手率分析结果（每个窗口期） -->
+                            <div v-if="getTurnoverRateForWindow(stock, window) !== null" class="mt-2 border-t border-border pt-1">
+                              <div class="text-xs font-medium text-primary">换手率分析:</div>
+                              <div class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-exchange-alt text-blue-500 mr-1"></i>
+                                <span class="font-medium">平均换手率:</span> 
+                                {{ getTurnoverRateForWindow(stock, window).toFixed(2) }}%
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -730,6 +740,45 @@
                 <input v-model.number="config.volume_increase_threshold" class="input" id="volumeIncreaseThreshold"
                   type="number" step="0.1" placeholder="例如: 1.5">
                 <p class="text-xs text-muted-foreground mt-1">识别为突破的最小成交量放大倍数</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 换手率参数 -->
+          <div class="mb-4">
+            <h3 class="text-sm font-medium mb-2 flex items-center">
+              <i class="fas fa-exchange-alt mr-1 text-primary"></i>
+              换手率参数
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+              <div>
+                <ParameterLabel for-id="maxTurnoverRate" parameter-id="max_turnover_rate"
+                  @show-tutorial="showParameterTutorial">
+                  最大换手率 (%)
+                </ParameterLabel>
+                <input v-model.number="config.max_turnover_rate" class="input" id="maxTurnoverRate" type="number"
+                  step="0.1" min="0" placeholder="例如: 3.0">
+                <p class="text-xs text-muted-foreground mt-1">
+                  平台期平均换手率不超过此值
+                </p>
+              </div>
+              <div>
+                <div class="flex items-center justify-between">
+                  <ParameterLabel for-id="allowTurnoverSpikes" parameter-id="allow_turnover_spikes"
+                    @show-tutorial="showParameterTutorial">
+                    允许异常放量
+                  </ParameterLabel>
+                  <label for="allowTurnoverSpikes" class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" v-model="config.allow_turnover_spikes" id="allowTurnoverSpikes"
+                      class="sr-only peer">
+                    <div
+                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-secondary">
+                    </div>
+                  </label>
+                </div>
+                <p class="text-xs text-muted-foreground mt-1">
+                  是否允许偶尔的异常放量
+                </p>
               </div>
             </div>
           </div>
@@ -1333,6 +1382,16 @@
                                 </div>
                               </div>
                             </div>
+
+                            <!-- 换手率分析结果（每个窗口期） -->
+                            <div v-if="getTurnoverRateForWindow(stock, window) !== null" class="mt-2 border-t border-border pt-1">
+                              <div class="text-xs font-medium text-primary">换手率分析:</div>
+                              <div class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-exchange-alt text-blue-500 mr-1"></i>
+                                <span class="font-medium">平均换手率:</span> 
+                                {{ getTurnoverRateForWindow(stock, window).toFixed(2) }}%
+                              </div>
+                            </div>
                           </div>
 
                           <!-- 突破前兆识别结果 -->
@@ -1605,6 +1664,16 @@
                             </div>
                           </div>
                         </div>
+
+                        <!-- 换手率分析结果（每个窗口期） -->
+                        <div v-if="getTurnoverRateForWindow(stock, window) !== null" class="mt-2 border-t border-border pt-1">
+                          <div class="text-xs font-medium text-primary">换手率分析:</div>
+                          <div class="text-xs text-muted-foreground flex items-center">
+                            <i class="fas fa-exchange-alt text-blue-500 mr-1"></i>
+                            <span class="font-medium">平均换手率:</span> 
+                            {{ getTurnoverRateForWindow(stock, window).toFixed(2) }}%
+                          </div>
+                        </div>
                       </div>
 
                       <!-- 突破前兆识别结果 -->
@@ -1788,6 +1857,25 @@ const config = ref({
   use_box_detection: true, // 是否启用箱体检测
   box_quality_threshold: 0.94, // 箱体质量阈值
 
+  // todo: 新增的因子
+  // 进入平台期后的筹码与分布参数 (新增)
+  // use_chip_distribution: true,
+  // cost_concentration_threshold: 0.15, // 90%筹码集中度小于15%
+  // avg_cost_divergence: 0.05, // 当前价格偏离平均成本不超过5%
+
+  // // 进入平台期后的布林带特征参数 (新增)
+  // use_boll_analysis: true,
+  // boll_bandwidth_threshold: 0.10, // 布林带开口收窄至10%以内
+
+  // 进入平台期后的换手率参数 (新增)
+  max_turnover_rate: 5.0, // 平台期平均换手率不超过
+  allow_turnover_spikes: true, // 是否允许偶尔的异常放量
+
+  // 进入平台期后的相对强度参数 (新增)
+  check_relative_strength: true, // 启用相对大盘强度检查
+  outperform_index_threshold: 0.0, // 相对强度需大于0（即跑赢或持平大盘）
+  // todo end
+
   // 基本面筛选参数
   use_fundamental_filter: false, // 是否启用基本面筛选
   revenue_growth_percentile: 0.3, // 营收增长率行业百分位
@@ -1832,6 +1920,20 @@ const filteredStocks = computed(() => {
     filtered = filtered.filter(stock => {
       const stockBoard = getStockBoard(stock.code)
       return stockBoard && selectedBoards.value.includes(stockBoard)
+    }).map(stock => {
+      // 确保筛选后的对象保留所有原始字段
+      return {
+        ...stock,
+        volume_analysis: stock.volume_analysis || null,
+        breakthrough_prediction: stock.breakthrough_prediction || null,
+        turnover_analysis: stock.turnover_analysis || null,
+        box_analysis: stock.box_analysis || null,
+        details: stock.details || {},
+        selection_reasons: stock.selection_reasons || {},
+        platform_windows: stock.platform_windows || [],
+        kline_data: stock.kline_data || [],
+        markLines: stock.markLines || stock.mark_lines || []
+      }
     })
   }
   
@@ -1862,6 +1964,20 @@ const filteredStocks = computed(() => {
       
       // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
       return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+    }).map(stock => {
+      // 确保筛选后的对象保留所有原始字段
+      return {
+        ...stock,
+        volume_analysis: stock.volume_analysis || null,
+        breakthrough_prediction: stock.breakthrough_prediction || null,
+        turnover_analysis: stock.turnover_analysis || null,
+        box_analysis: stock.box_analysis || null,
+        details: stock.details || {},
+        selection_reasons: stock.selection_reasons || {},
+        platform_windows: stock.platform_windows || [],
+        kline_data: stock.kline_data || [],
+        markLines: stock.markLines || stock.mark_lines || []
+      }
     })
   }
   
@@ -2322,6 +2438,53 @@ function getActiveBreakthroughSignals(signals) {
   return activeSignals
 }
 
+// 获取指定窗口期的换手率
+function getTurnoverRateForWindow(stock, window) {
+  if (!stock || !window) return null
+  
+  // 首先检查后端是否返回了换手率分析数据
+  if (stock.turnover_analysis && stock.turnover_analysis[window]) {
+    const analysis = stock.turnover_analysis[window]
+    if (analysis.avg_turnover_rate !== null && analysis.avg_turnover_rate !== undefined) {
+      return analysis.avg_turnover_rate
+    }
+  }
+  
+  // 如果没有，从kline_data中计算平台期的平均换手率
+  // 注意：需要排除最近5天，与后端逻辑保持一致（避免突破期的放量干扰平台期判断）
+  if (stock.kline_data && Array.isArray(stock.kline_data) && stock.kline_data.length > 0) {
+    const windowDays = parseInt(window)
+    const excludeRecentDays = 5 // 排除最近5天，与后端逻辑一致
+    
+    // 确保有足够的数据
+    if (stock.kline_data.length < windowDays) {
+      return null
+    }
+    
+    // 获取平台期数据（排除最近5天）
+    let platformData
+    if (excludeRecentDays > 0 && stock.kline_data.length > windowDays) {
+      // 排除最近5天：从倒数第windowDays天到倒数第excludeRecentDays天
+      platformData = stock.kline_data.slice(-windowDays, -excludeRecentDays)
+    } else {
+      // 如果数据不足，使用全部数据
+      platformData = stock.kline_data.slice(-windowDays)
+    }
+    
+    // 计算平均换手率
+    const turnoverRates = platformData
+      .map(item => item.turn)
+      .filter(turn => turn !== null && turn !== undefined && !isNaN(turn) && turn >= 0 && turn <= 100)
+    
+    if (turnoverRates.length > 0) {
+      const avgTurnoverRate = turnoverRates.reduce((sum, rate) => sum + rate, 0) / turnoverRates.length
+      return avgTurnoverRate
+    }
+  }
+  
+  return null
+}
+
 // 切换选择理由的展开/收起状态
 function toggleReasonExpand (stockCode) {
   // 如果该股票的展开状态尚未初始化，则初始化为true（展开）
@@ -2463,6 +2626,8 @@ function goToBacktest() {
     volume_change_threshold: config.value.volume_change_threshold,
     volume_stability_threshold: config.value.volume_stability_threshold,
     volume_increase_threshold: config.value.volume_increase_threshold,
+    max_turnover_rate: config.value.max_turnover_rate,
+    allow_turnover_spikes: config.value.allow_turnover_spikes,
     use_technical_indicators: config.value.use_technical_indicators,
     use_breakthrough_prediction: config.value.use_breakthrough_prediction,
     use_low_position: config.value.use_low_position,
@@ -2539,6 +2704,8 @@ async function exportToCase (stock) {
           volume_change_threshold: config.value.volume_change_threshold,
           volume_stability_threshold: config.value.volume_stability_threshold,
           volume_increase_threshold: config.value.volume_increase_threshold,
+          max_turnover_rate: config.value.max_turnover_rate,
+          allow_turnover_spikes: config.value.allow_turnover_spikes,
           use_breakthrough_prediction: config.value.use_breakthrough_prediction,
           use_window_weights: config.value.use_window_weights,
           use_low_position: config.value.use_low_position,
@@ -2863,14 +3030,36 @@ function startPolling (taskId) {
 
         // 处理结果
         if (taskData.result && Array.isArray(taskData.result)) {
-          // 处理每个股票数据，确保标记线数据正确
+          // 处理每个股票数据，确保所有字段都被正确保留
           const processedResults = taskData.result.map(stock => {
-            // 如果后端返回了mark_lines字段，将其重命名为markLines
-            if (stock.mark_lines) {
-              console.log(`处理股票 ${stock.code} 的标记线数据:`, stock.mark_lines);
-              stock.markLines = stock.mark_lines;
+            // 创建处理后的股票对象，确保所有字段都被正确保留
+            const processedStock = {
+              ...stock, // 先保留所有原始字段
+              // 如果后端返回了mark_lines字段，将其重命名为markLines
+              markLines: stock.mark_lines || stock.markLines || [],
+              // 确保这些字段存在（即使后端没有返回，也设置为null或空对象）
+              volume_analysis: stock.volume_analysis || null,
+              breakthrough_prediction: stock.breakthrough_prediction || null,
+              turnover_analysis: stock.turnover_analysis || null,
+              box_analysis: stock.box_analysis || null,
+              details: stock.details || {},
+              selection_reasons: stock.selection_reasons || {},
+              platform_windows: stock.platform_windows || [],
+              kline_data: stock.kline_data || []
+            };
+            
+            // 如果后端返回了mark_lines字段，确保markLines也被设置
+            if (stock.mark_lines && !processedStock.markLines) {
+              processedStock.markLines = stock.mark_lines;
             }
-            return stock;
+            
+            console.log(`处理股票 ${processedStock.code} 的数据:`, {
+              hasVolumeAnalysis: !!processedStock.volume_analysis,
+              hasBreakthroughPrediction: !!processedStock.breakthrough_prediction,
+              hasTurnoverAnalysis: !!processedStock.turnover_analysis
+            });
+            
+            return processedStock;
           });
 
           platformStocks.value = processedResults;
@@ -2953,6 +3142,10 @@ async function fetchPlatformStocks () {
       volume_change_threshold: config.value.volume_change_threshold,
       volume_stability_threshold: config.value.volume_stability_threshold,
       volume_increase_threshold: config.value.volume_increase_threshold,
+
+      // 换手率参数
+      max_turnover_rate: config.value.max_turnover_rate,
+      allow_turnover_spikes: config.value.allow_turnover_spikes,
 
       // 技术指标参数
       use_technical_indicators: config.value.use_technical_indicators,
@@ -3063,6 +3256,10 @@ async function fetchPlatformStocksLegacy () {
       volume_stability_threshold: config.value.volume_stability_threshold,
       volume_increase_threshold: config.value.volume_increase_threshold,
 
+      // 换手率参数
+      max_turnover_rate: config.value.max_turnover_rate,
+      allow_turnover_spikes: config.value.allow_turnover_spikes,
+
       // 技术指标参数
       use_technical_indicators: config.value.use_technical_indicators,
       use_breakthrough_prediction: config.value.use_breakthrough_prediction,
@@ -3112,14 +3309,36 @@ async function fetchPlatformStocksLegacy () {
     });
 
     if (Array.isArray(resp.data)) {
-      // 处理每个股票数据，确保标记线数据正确
+      // 处理每个股票数据，确保所有字段都被正确保留
       const processedResults = resp.data.map(stock => {
-        // 如果后端返回了mark_lines字段，将其重命名为markLines
-        if (stock.mark_lines) {
-          console.log(`处理股票 ${stock.code} 的标记线数据:`, stock.mark_lines);
-          stock.markLines = stock.mark_lines;
+        // 创建处理后的股票对象，确保所有字段都被正确保留
+        const processedStock = {
+          ...stock, // 先保留所有原始字段
+          // 如果后端返回了mark_lines字段，将其重命名为markLines
+          markLines: stock.mark_lines || stock.markLines || [],
+          // 确保这些字段存在（即使后端没有返回，也设置为null或空对象）
+          volume_analysis: stock.volume_analysis || null,
+          breakthrough_prediction: stock.breakthrough_prediction || null,
+          turnover_analysis: stock.turnover_analysis || null,
+          box_analysis: stock.box_analysis || null,
+          details: stock.details || {},
+          selection_reasons: stock.selection_reasons || {},
+          platform_windows: stock.platform_windows || [],
+          kline_data: stock.kline_data || []
+        };
+        
+        // 如果后端返回了mark_lines字段，确保markLines也被设置
+        if (stock.mark_lines && !processedStock.markLines) {
+          processedStock.markLines = stock.mark_lines;
         }
-        return stock;
+        
+        console.log(`处理股票 ${processedStock.code} 的数据:`, {
+          hasVolumeAnalysis: !!processedStock.volume_analysis,
+          hasBreakthroughPrediction: !!processedStock.breakthrough_prediction,
+          hasTurnoverAnalysis: !!processedStock.turnover_analysis
+        });
+        
+        return processedStock;
       });
 
       platformStocks.value = processedResults;
@@ -3144,6 +3363,8 @@ async function fetchPlatformStocksLegacy () {
         volume_change_threshold: config.value.volume_change_threshold,
         volume_stability_threshold: config.value.volume_stability_threshold,
         volume_increase_threshold: config.value.volume_increase_threshold,
+        max_turnover_rate: config.value.max_turnover_rate,
+        allow_turnover_spikes: config.value.allow_turnover_spikes,
         use_technical_indicators: config.value.use_technical_indicators,
         use_breakthrough_prediction: config.value.use_breakthrough_prediction,
         use_low_position: config.value.use_low_position,

@@ -390,6 +390,45 @@
       </div>
     </div>
 
+    <!-- 换手率参数 -->
+    <div>
+      <h3 class="text-sm font-medium mb-2 flex items-center">
+        <i class="fas fa-exchange-alt mr-1 text-primary"></i>
+        换手率参数
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+        <div>
+          <ParameterLabel for-id="maxTurnoverRate" parameter-id="max_turnover_rate"
+            @show-tutorial="$emit('show-tutorial', 'max_turnover_rate')">
+            最大换手率 (%)
+          </ParameterLabel>
+          <input v-model.number="localConfig.max_turnover_rate" class="input" id="maxTurnoverRate" type="number"
+            step="0.1" min="0" placeholder="例如: 3.0">
+          <p class="text-xs text-muted-foreground mt-1">
+            平台期平均换手率不超过此值
+          </p>
+        </div>
+        <div>
+          <div class="flex items-center justify-between">
+            <ParameterLabel for-id="allowTurnoverSpikes" parameter-id="allow_turnover_spikes"
+              @show-tutorial="$emit('show-tutorial', 'allow_turnover_spikes')">
+              允许异常放量
+            </ParameterLabel>
+            <label for="allowTurnoverSpikes" class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="localConfig.allow_turnover_spikes" id="allowTurnoverSpikes"
+                class="sr-only peer">
+              <div
+                class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-secondary">
+              </div>
+            </label>
+          </div>
+          <p class="text-xs text-muted-foreground mt-1">
+            是否允许偶尔的异常放量
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- 窗口权重参数 -->
     <div>
       <h3 class="text-sm font-medium mb-2 flex items-center">
