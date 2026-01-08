@@ -88,6 +88,10 @@ class ScanConfig(BaseModel):
     max_turnover_rate: float = 3.0  # 平台期平均换手率不超过此值（%）
     allow_turnover_spikes: bool = True  # 是否允许偶尔的异常放量
 
+    # Relative strength settings
+    check_relative_strength: bool = True  # 是否启用相对大盘强度检查
+    outperform_index_threshold: Optional[float] = None  # 相对强度需大于此值（None表示不限制，但仍计算和保存相对强度）
+
     # System settings
     max_workers: int = 5
     retry_attempts: int = 2
@@ -142,6 +146,8 @@ DEFAULT_USE_BREAKTHROUGH_PREDICTION = DEFAULT_CONFIG.use_breakthrough_prediction
 DEFAULT_USE_WINDOW_WEIGHTS = DEFAULT_CONFIG.use_window_weights
 DEFAULT_MAX_TURNOVER_RATE = DEFAULT_CONFIG.max_turnover_rate
 DEFAULT_ALLOW_TURNOVER_SPIKES = DEFAULT_CONFIG.allow_turnover_spikes
+DEFAULT_CHECK_RELATIVE_STRENGTH = DEFAULT_CONFIG.check_relative_strength
+DEFAULT_OUTPERFORM_INDEX_THRESHOLD = DEFAULT_CONFIG.outperform_index_threshold
 
 
 def merge_config(user_config: Dict[str, Any]) -> ScanConfig:

@@ -4,7 +4,7 @@ import colorama  # For colored console output
 import traceback
 import pandas as pd
 from typing import List, Dict, Optional, Any
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field, RootModel, field_validator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -76,7 +76,8 @@ try:
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
         DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
-        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
+        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES,
+        DEFAULT_CHECK_RELATIVE_STRENGTH, DEFAULT_OUTPERFORM_INDEX_THRESHOLD
     )
 except ImportError:
     # 如果绝对导入失败，尝试相对导入（本地开发环境）
@@ -91,7 +92,8 @@ except ImportError:
         DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
         DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
         DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
-        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
+        DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES,
+        DEFAULT_CHECK_RELATIVE_STRENGTH, DEFAULT_OUTPERFORM_INDEX_THRESHOLD
     )
 
 
@@ -182,6 +184,10 @@ class ScanConfigRequest(BaseModel):
     max_turnover_rate: float = DEFAULT_MAX_TURNOVER_RATE  # 平台期平均换手率不超过此值（%）
     allow_turnover_spikes: bool = DEFAULT_ALLOW_TURNOVER_SPIKES  # 是否允许偶尔的异常放量
 
+    # Relative strength settings
+    check_relative_strength: bool = DEFAULT_CHECK_RELATIVE_STRENGTH  # 是否启用相对大盘强度检查（计算并保存相对强度值）
+    outperform_index_threshold: Optional[float] = DEFAULT_OUTPERFORM_INDEX_THRESHOLD  # 相对强度阈值，None表示不过滤（计算并保存但不作为筛选条件）
+
     # System settings
     max_workers: int = 5  # Keep concurrency reasonable for serverless
     retry_attempts: int = 2
@@ -194,6 +200,14 @@ class ScanConfigRequest(BaseModel):
     
     # Data source settings
     use_local_database_first: bool = True  # 优先使用本地数据库数据，默认为开启
+
+    @field_validator('outperform_index_threshold', mode='before')
+    @classmethod
+    def validate_outperform_index_threshold(cls, v):
+        """将空字符串转换为 None"""
+        if v == '' or v is None:
+            return None
+        return v
 
 # --- Define response models ---
 
@@ -235,6 +249,15 @@ class StockScanResult(BaseModel):
     selection_reasons: Dict[int, str]
     kline_data: List[KlineDataPoint]
     mark_lines: Optional[List[MarkLine]] = None
+    outperform_index: Optional[float] = None  # 相对强度值（相对于大盘）
+    stock_return: Optional[float] = None  # 股票涨跌幅（%）
+    market_return: Optional[float] = None  # 大盘涨跌幅（%）
+    volume_analysis: Optional[Dict[str, Any]] = None  # 成交量分析结果
+    breakthrough_prediction: Optional[Dict[str, Any]] = None  # 突破前兆识别结果
+    turnover_analysis: Optional[Dict[str, Any]] = None  # 换手率分析结果
+    box_analysis: Optional[Dict[str, Any]] = None  # 箱体分析结果
+    weighted_score: Optional[float] = None  # 窗口权重得分
+    weight_details: Optional[Dict[str, Any]] = None  # 权重详情
 
 # --- Task-related models ---
 
@@ -604,6 +627,16 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                                             f"{Fore.YELLOW}[INDEX] Warning: Failed to process mark line for {stock_code}: {e}{Style.RESET_ALL}")
                                         continue
 
+                            # 转换字典键从整数到字符串（volume_analysis 和 turnover_analysis）
+                            def convert_dict_keys_to_str(d: dict) -> dict:
+                                """将字典的键从整数转换为字符串"""
+                                if not d or not isinstance(d, dict):
+                                    return d
+                                return {str(k): v for k, v in d.items()}
+                            
+                            volume_analysis = stock.get('volume_analysis')
+                            turnover_analysis = stock.get('turnover_analysis')
+                            
                             result_stock = StockScanResult(
                                 code=stock['code'],
                                 name=stock['name'],
@@ -611,7 +644,16 @@ async def start_scan(config_request: ScanConfigRequest, background_tasks: Backgr
                                 selection_reasons=stock.get(
                                     'selection_reasons', {}),
                                 kline_data=kline_data,
-                                mark_lines=mark_lines
+                                mark_lines=mark_lines,
+                                outperform_index=stock.get('outperform_index'),
+                                stock_return=stock.get('stock_return'),
+                                market_return=stock.get('market_return'),
+                                volume_analysis=convert_dict_keys_to_str(volume_analysis),
+                                breakthrough_prediction=stock.get('breakthrough_prediction'),
+                                turnover_analysis=convert_dict_keys_to_str(turnover_analysis),
+                                box_analysis=stock.get('box_analysis'),
+                                weighted_score=stock.get('weighted_score'),
+                                weight_details=stock.get('weight_details')
                             )
                             result_stocks.append(result_stock)
                             
@@ -863,13 +905,32 @@ async def run_scan(config_request: ScanConfigRequest):
                             f"{Fore.YELLOW}Warning: Failed to process mark line: {e}{Style.RESET_ALL}")
                         continue
 
+            # 转换字典键从整数到字符串（volume_analysis 和 turnover_analysis）
+            def convert_dict_keys_to_str(d: dict) -> dict:
+                """将字典的键从整数转换为字符串"""
+                if not d or not isinstance(d, dict):
+                    return d
+                return {str(k): v for k, v in d.items()}
+            
+            volume_analysis = stock.get('volume_analysis')
+            turnover_analysis = stock.get('turnover_analysis')
+
             result_stock = StockScanResult(
                 code=stock['code'],
                 name=stock['name'],
                 industry=stock.get('industry', '未知行业'),
                 selection_reasons=stock.get('selection_reasons', {}),
                 kline_data=kline_data,
-                mark_lines=mark_lines
+                mark_lines=mark_lines,
+                outperform_index=stock.get('outperform_index'),
+                stock_return=stock.get('stock_return'),
+                market_return=stock.get('market_return'),
+                volume_analysis=convert_dict_keys_to_str(volume_analysis),
+                breakthrough_prediction=stock.get('breakthrough_prediction'),
+                turnover_analysis=convert_dict_keys_to_str(turnover_analysis),
+                box_analysis=stock.get('box_analysis'),
+                weighted_score=stock.get('weighted_score'),
+                weight_details=stock.get('weight_details')
             )
             result_stocks.append(result_stock)
         except Exception as e:
@@ -2531,6 +2592,9 @@ class BatchScanRequest(BaseModel):
     window_weights: Dict[int, float] = Field(default_factory=dict)
     max_turnover_rate: float = DEFAULT_MAX_TURNOVER_RATE
     allow_turnover_spikes: bool = DEFAULT_ALLOW_TURNOVER_SPIKES
+    # Relative strength settings
+    check_relative_strength: bool = DEFAULT_CHECK_RELATIVE_STRENGTH  # 是否启用相对大盘强度检查（计算并保存相对强度值）
+    outperform_index_threshold: Optional[float] = DEFAULT_OUTPERFORM_INDEX_THRESHOLD  # 相对强度阈值，None表示不过滤（计算并保存但不作为筛选条件）
     max_workers: int = 5
     retry_attempts: int = 2
     retry_delay: int = 1
@@ -2538,6 +2602,14 @@ class BatchScanRequest(BaseModel):
     max_stock_count: Optional[int] = None
     use_scan_cache: bool = True
     use_local_database_first: bool = True
+
+    @field_validator('outperform_index_threshold', mode='before')
+    @classmethod
+    def validate_outperform_index_threshold(cls, v):
+        """将空字符串转换为 None"""
+        if v == '' or v is None:
+            return None
+        return v
 
 
 class BatchScanTaskResponse(BaseModel):
@@ -2854,6 +2926,18 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
             )
         
         print(f"{Fore.CYAN}开始批量任务回测: 任务ID={task_id}, 扫描结果数={len(scan_results)}{Style.RESET_ALL}")
+        
+        # 显示扫描任务配置中的相对强度参数
+        scan_config = task.get('scan_config', {})
+        check_relative_strength = scan_config.get('check_relative_strength', False)
+        outperform_index_threshold = scan_config.get('outperform_index_threshold')
+        if check_relative_strength:
+            if outperform_index_threshold is not None:
+                print(f"{Fore.CYAN}扫描配置: 相对强度检查已启用，阈值={outperform_index_threshold}%{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.CYAN}扫描配置: 相对强度检查已启用，无阈值限制（计算并保存相对强度值）{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}扫描配置: 相对强度检查未启用{Style.RESET_ALL}")
         
         total = len(scan_results)
         completed = 0

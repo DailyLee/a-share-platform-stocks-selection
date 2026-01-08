@@ -397,6 +397,27 @@
               <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
 
+            <!-- 相对强度 -->
+            <div>
+              <label class="block text-xs font-medium mb-1">相对强度 (%)</label>
+              <div v-if="allStockAttributes.maxOutperformIndex !== undefined && allStockAttributes.minOutperformIndex !== undefined && allStockAttributes.maxOutperformIndex > allStockAttributes.minOutperformIndex" class="space-y-1.5">
+                <Slider
+                  v-model="outperformIndexRangeArray"
+                  :min="allStockAttributes.minOutperformIndex"
+                  :max="allStockAttributes.maxOutperformIndex"
+                  :step="Math.max(0.1, (allStockAttributes.maxOutperformIndex - allStockAttributes.minOutperformIndex) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minOutperformIndex.toFixed(2) }}%</span>
+                  <span class="font-medium text-foreground">
+                    {{ outperformIndexRangeArray[0].toFixed(2) }}% - {{ outperformIndexRangeArray[1].toFixed(2) }}%
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxOutperformIndex.toFixed(2) }}%</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
             <!-- ========== 第四组：位置和下跌（百分比 Range Slider） ========== -->
             <!-- 低位判断百分比 -->
             <div>
@@ -733,7 +754,8 @@ const router = useRouter()
     lowPositionPercentRange: { min: null, max: null }, // 低位判断百分比范围（从高点下跌的百分比）
     rapidDeclinePercentRange: { min: null, max: null }, // 快速下跌百分比范围
     stockCountRange: { min: null, max: null }, // 周期内购买的股票数量范围
-    turnoverRateRange: { min: null, max: null } // 换手率范围（min/max为null表示不限制）
+    turnoverRateRange: { min: null, max: null }, // 换手率范围（min/max为null表示不限制）
+    outperformIndexRange: { min: null, max: null } // 相对强度范围（min/max为null表示不限制）
   })
   
   // 所有股票的属性集合（用于筛选条件选项）
@@ -759,7 +781,9 @@ const router = useRouter()
     minStockCount: 0, // 最小股票数量
     maxStockCount: 0, // 最大股票数量
     minTurnoverRate: 0, // 最小换手率
-    maxTurnoverRate: 0 // 最大换手率
+    maxTurnoverRate: 0, // 最大换手率
+    minOutperformIndex: undefined, // 最小相对强度
+    maxOutperformIndex: undefined // 最大相对强度
   })
 
   // 价格区间数组（用于 shadcn-vue Slider 组件）
@@ -912,6 +936,24 @@ const router = useRouter()
     set: (value) => {
       if (Array.isArray(value) && value.length === 2) {
         statisticsFilters.value.turnoverRateRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 相对强度数组（用于 shadcn-vue Slider 组件）
+  const outperformIndexRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.outperformIndexRange.min ?? allStockAttributes.value.minOutperformIndex
+      const max = statisticsFilters.value.outperformIndexRange.max ?? allStockAttributes.value.maxOutperformIndex
+      // 如果没有数据，返回默认值（但不会显示，因为 UI 会显示"暂无数据"）
+      return [min ?? 0, max ?? 0]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.outperformIndexRange = {
           min: value[0],
           max: value[1]
         }
@@ -1379,6 +1421,9 @@ const router = useRouter()
               details: stockDetails?.details || stock.details,
               box_analysis: stockDetails?.box_analysis || stock.box_analysis,
               industry: stockDetails?.industry || stock.industry || '',
+              outperform_index: stockDetails?.outperform_index !== undefined ? stockDetails.outperform_index : (stock.outperform_index !== undefined ? stock.outperform_index : null),
+              stock_return: stockDetails?.stock_return !== undefined ? stockDetails.stock_return : (stock.stock_return !== undefined ? stock.stock_return : null),
+              market_return: stockDetails?.market_return !== undefined ? stockDetails.market_return : (stock.market_return !== undefined ? stock.market_return : null),
               scanDate: scanDate,
               record: record
             })
@@ -1403,6 +1448,9 @@ const router = useRouter()
               has_breakthrough_confirmation: stockDetails?.has_breakthrough_confirmation,
               details: stockDetails?.details,
               box_analysis: stockDetails?.box_analysis,
+              outperform_index: stockDetails?.outperform_index !== undefined ? stockDetails.outperform_index : null,
+              stock_return: stockDetails?.stock_return !== undefined ? stockDetails.stock_return : null,
+              market_return: stockDetails?.market_return !== undefined ? stockDetails.market_return : null,
               scanDate: scanDate,
               record: record
             })
@@ -1420,6 +1468,7 @@ const router = useRouter()
       const volumeChanges = []
       const volumeStabilities = []
       const turnoverRates = []
+      const outperformIndices = []
       const lowPositionPercents = []
       const rapidDeclinePercents = []
 
@@ -1629,6 +1678,11 @@ const router = useRouter()
             }
           })
         }
+        
+        // 收集相对强度数据
+        if (stock.outperform_index !== null && stock.outperform_index !== undefined && typeof stock.outperform_index === 'number' && !isNaN(stock.outperform_index) && isFinite(stock.outperform_index)) {
+          outperformIndices.push(stock.outperform_index)
+        }
       })
 
       // 更新属性集合
@@ -1785,6 +1839,26 @@ const router = useRouter()
             min: 0,
             max: 10
           }
+        }
+      }
+      if (outperformIndices.length > 0) {
+        allStockAttributes.value.minOutperformIndex = Math.min(...outperformIndices)
+        allStockAttributes.value.maxOutperformIndex = Math.max(...outperformIndices)
+        // 如果 outperformIndexRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.outperformIndexRange.min === null || statisticsFilters.value.outperformIndexRange.max === null) {
+          statisticsFilters.value.outperformIndexRange = {
+            min: allStockAttributes.value.minOutperformIndex,
+            max: allStockAttributes.value.maxOutperformIndex
+          }
+        }
+      } else {
+        // 如果没有数据，不设置默认值，保持为 undefined
+        allStockAttributes.value.minOutperformIndex = undefined
+        allStockAttributes.value.maxOutperformIndex = undefined
+        // 如果没有数据，清空筛选范围
+        statisticsFilters.value.outperformIndexRange = {
+          min: null,
+          max: null
         }
       }
       if (lowPositionPercents.length > 0) {
@@ -2456,6 +2530,34 @@ const router = useRouter()
             }
             // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
           }
+        }
+
+        // 相对强度筛选
+        const outperformIndexRangeFilter = statisticsFilters.value.outperformIndexRange
+        const minOutperformIndex = allStockAttributes.value.minOutperformIndex
+        const maxOutperformIndex = allStockAttributes.value.maxOutperformIndex
+        
+        // 只有当有数据且设置了筛选范围时才进行筛选
+        if (outperformIndexRangeFilter.min !== null && outperformIndexRangeFilter.max !== null 
+            && minOutperformIndex !== undefined && maxOutperformIndex !== undefined) {
+          const stockOutperformIndex = stock.outperform_index
+          
+          // 只有当用户设置的范围比全范围更窄时才进行筛选
+          const isRangeNarrowed = outperformIndexRangeFilter.min > minOutperformIndex || outperformIndexRangeFilter.max < maxOutperformIndex
+          
+          if (isRangeNarrowed) {
+            // 用户明确缩小了筛选范围，需要进行筛选
+            if (stockOutperformIndex === null || stockOutperformIndex === undefined) {
+              // 没有相对强度数据，排除股票（因为用户明确选择了筛选条件）
+              return false
+            } else {
+              // 检查是否在范围内
+              if (stockOutperformIndex < outperformIndexRangeFilter.min || stockOutperformIndex > outperformIndexRangeFilter.max) {
+                return false
+              }
+            }
+          }
+          // 如果用户设置的范围等于全范围，不进行筛选（包括没有相对强度数据的股票也通过）
         }
 
         return true

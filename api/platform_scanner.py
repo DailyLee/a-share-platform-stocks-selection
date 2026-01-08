@@ -12,7 +12,7 @@ from tqdm import tqdm
 from colorama import Fore, Style
 import platform as platform_module
 
-from .data_fetcher import fetch_kline_data, baostock_login, get_data_source_stats, clear_data_source_stats
+from .data_fetcher import fetch_kline_data, baostock_login, get_data_source_stats, clear_data_source_stats, BaostockConnectionManager
 from .industry_filter import apply_industry_diversity_filter
 from .config import ScanConfig
 
@@ -157,6 +157,22 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
     
     # Clear data source statistics at the start of scan
     clear_data_source_stats()
+    
+    # Fetch market index data for relative strength calculation (if enabled)
+    market_df = pd.DataFrame()
+    if getattr(config, 'check_relative_strength', False):
+        try:
+            print(f"{Fore.CYAN}[SCAN_CHECKPOINT] Fetching market index data (sh.000001) for relative strength calculation...{Style.RESET_ALL}")
+            market_index_code = "sh.000001"  # 上证指数
+            with BaostockConnectionManager():
+                market_df = fetch_kline_data(market_index_code, start_date, end_date)
+            if not market_df.empty:
+                print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Market index data fetched: {len(market_df)} records{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Failed to fetch market index data, relative strength calculation will be skipped{Style.RESET_ALL}")
+        except Exception as e:
+            print(f"{Fore.YELLOW}[SCAN_CHECKPOINT] ⚠️ Error fetching market index data: {e}, relative strength calculation will be skipped{Style.RESET_ALL}")
+            market_df = pd.DataFrame()
     print(f"{Fore.YELLOW}Scan parameters:{Style.RESET_ALL}")
     print(
         f"  - Date range: {Fore.GREEN}{start_date} to {end_date}{Style.RESET_ALL}")
@@ -526,7 +542,11 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                         config.use_box_detection,
                         config.box_quality_threshold,
                         config.max_turnover_rate,
-                        config.allow_turnover_spikes
+                        config.allow_turnover_spikes,
+                        getattr(config, 'check_relative_strength', False),
+                        getattr(config, 'outperform_index_threshold', None),
+                        market_df,
+                        end_date
                     )
                     print(f"{Fore.CYAN}[SCAN_CHECKPOINT] ✓ Analysis completed for {stock_code}, is_platform: {analysis_result['is_platform']}{Style.RESET_ALL}")
 
@@ -538,6 +558,11 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                         print(f"{Fore.GREEN}[SCAN_CHECKPOINT] ✓ Platform found: {stock_code} ({stock_name}) - Total platforms: {platform_count}{Style.RESET_ALL}")
 
                         # Create result object
+                        outperform_index = analysis_result.get("outperform_index")
+                        stock_return = analysis_result.get("stock_return")
+                        market_return = analysis_result.get("market_return")
+                        print(f"[RELATIVE_STRENGTH_DEBUG] Stock {stock_code} ({stock_name}): outperform_index={outperform_index}, stock_return={stock_return}, market_return={market_return}")
+                        
                         platform_stock = {
                             'code': stock_code,
                             'name': stock_name,
@@ -545,7 +570,10 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                             'platform_windows': analysis_result["platform_windows"],
                             'details': analysis_result["details"],
                             'selection_reasons': analysis_result["selection_reasons"],
-                            'kline_data': df.to_dict(orient='records')
+                            'kline_data': df.to_dict(orient='records'),
+                            'outperform_index': outperform_index,
+                            'stock_return': stock_return,
+                            'market_return': market_return
                         }
 
                         # Add mark lines if available
@@ -703,17 +731,29 @@ def scan_stocks(stock_list: List[Dict[str, Any]],
                             config.use_breakthrough_confirmation,
                             config.breakthrough_confirmation_days,
                             config.use_box_detection, config.box_quality_threshold,
-                            config.max_turnover_rate, config.allow_turnover_spikes
+                            config.max_turnover_rate, config.allow_turnover_spikes,
+                            getattr(config, 'check_relative_strength', False),
+                            getattr(config, 'outperform_index_threshold', 0.0),
+                            market_df,
+                            end_date
                         )
                         if analysis_result["is_platform"]:
                             platform_count += 1
+                            outperform_index = analysis_result.get("outperform_index")
+                            stock_return = analysis_result.get("stock_return")
+                            market_return = analysis_result.get("market_return")
+                            print(f"[RELATIVE_STRENGTH_DEBUG] Stock {stock_code} ({stock_name}): outperform_index={outperform_index}, stock_return={stock_return}, market_return={market_return}")
+                            
                             platform_stock = {
                                 'code': stock_code, 'name': stock_name,
                                 'industry': stock.get('industry', 'Unknown'),
                                 'platform_windows': analysis_result["platform_windows"],
                                 'details': analysis_result["details"],
                                 'selection_reasons': analysis_result["selection_reasons"],
-                                'kline_data': df.to_dict(orient='records')
+                                'kline_data': df.to_dict(orient='records'),
+                                'outperform_index': outperform_index,
+                                'stock_return': stock_return,
+                                'market_return': market_return
                             }
                             if "mark_lines" in analysis_result:
                                 platform_stock['mark_lines'] = analysis_result["mark_lines"]

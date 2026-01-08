@@ -102,13 +102,12 @@
             扫描参数配置
           </h3>
           <ScanConfigForm
-            :config="scanConfig"
             :show-scan-date="false"
             :window-weights="windowWeights"
-            :parsed-windows="parsedWindows"
             @update:config="scanConfig = $event"
             @update-window-weights="updateWindowWeights"
             @show-tutorial="showParameterTutorial"
+            ref="scanConfigFormRef"
           />
         </div>
 
@@ -698,45 +697,8 @@ const taskName = ref('')
 const startDate = ref('')
 const endDate = ref('')
 const scanPeriodDays = ref(7)
-const scanConfig = ref({
-  windowsInput: '30,60,90',
-  expected_count: 30,
-  box_threshold: 0.3,
-  ma_diff_threshold: 0.03,
-  volatility_threshold: 0.03,
-  use_volume_analysis: true,
-  volume_change_threshold: 0.5,
-  volume_stability_threshold: 0.5,
-  volume_increase_threshold: 1.5,
-  use_technical_indicators: false,
-  use_breakthrough_prediction: true,
-  use_low_position: true,
-  high_point_lookback_days: 365,
-  decline_period_days: 180,
-  decline_threshold: 0.3,
-  use_rapid_decline_detection: true,
-  rapid_decline_days: 30,
-  rapid_decline_threshold: 0.15,
-  use_breakthrough_confirmation: true,
-  breakthrough_confirmation_days: 1,
-  use_box_detection: true,
-  box_quality_threshold: 0.94,
-  use_fundamental_filter: false,
-  revenue_growth_percentile: 0.3,
-  profit_growth_percentile: 0.3,
-  roe_percentile: 0.3,
-  liability_percentile: 0.3,
-  pe_percentile: 0.7,
-  pb_percentile: 0.7,
-  fundamental_years_to_check: 3,
-  use_window_weights: true,
-  window_weights: {},
-  max_turnover_rate: 5.0,
-  allow_turnover_spikes: true,
-  use_scan_cache: false,
-  max_stock_count: null,
-  use_local_database_first: true
-})
+const scanConfig = ref({})
+const scanConfigFormRef = ref(null) // 扫描配置表单引用
 
 const tasks = ref([])
 const loading = ref(false)
@@ -868,10 +830,23 @@ const getFirstSundayOfYear = () => {
 // 窗口权重
 const windowWeights = ref({})
 const parsedWindows = computed(() => {
-  const windows = scanConfig.value.windowsInput
+  // 优先从 ScanConfigForm 组件获取 parsedWindows
+  if (scanConfigFormRef.value && scanConfigFormRef.value.parsedWindows) {
+    return scanConfigFormRef.value.parsedWindows
+  }
+  
+  // 如果没有组件引用，则从 scanConfig 中解析
+  // 添加安全检查，确保 windowsInput 存在且有效
+  const windowsInput = scanConfig.value?.windowsInput || '30,60,90'
+  const windows = windowsInput
     .split(',')
     .map(w => parseInt(w.trim(), 10))
     .filter(w => !isNaN(w) && w > 0)
+  
+  // 如果解析结果为空，返回默认值
+  if (windows.length === 0) {
+    return [30, 60, 90]
+  }
   
   return windows
 })
@@ -983,7 +958,8 @@ const loadTasks = async () => {
 const submitTask = async () => {
   try {
     // 构建扫描配置
-    const windows = scanConfig.value.windowsInput.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w))
+    // 使用 parsedWindows 计算属性（已包含安全检查）
+    const windows = parsedWindows.value
     // 使用已归一化的窗口权重
     const windowWeights = scanConfig.value.window_weights || {}
     
@@ -1014,6 +990,8 @@ const submitTask = async () => {
       breakthrough_confirmation_days: scanConfig.value.breakthrough_confirmation_days,
       use_box_detection: scanConfig.value.use_box_detection,
       box_quality_threshold: scanConfig.value.box_quality_threshold,
+      check_relative_strength: scanConfig.value.check_relative_strength,
+      outperform_index_threshold: scanConfig.value.outperform_index_threshold !== null && scanConfig.value.outperform_index_threshold !== undefined ? scanConfig.value.outperform_index_threshold : null,
       use_fundamental_filter: scanConfig.value.use_fundamental_filter,
       revenue_growth_percentile: scanConfig.value.revenue_growth_percentile,
       profit_growth_percentile: scanConfig.value.profit_growth_percentile,

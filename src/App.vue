@@ -475,7 +475,7 @@
                           <div v-for="(reason, window) in stock.selection_reasons" :key="window"
                             class="mb-1 text-xs text-muted-foreground">
                             <span class="font-medium text-primary">{{ window }}天:</span>
-                            {{ reason }}
+                            <span v-html="formatSelectionReason(reason)"></span>
 
                             <!-- 成交量分析结果（每个窗口期） -->
                             <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
@@ -514,6 +514,46 @@
                                 <i class="fas fa-exchange-alt text-blue-500 mr-1"></i>
                                 <span class="font-medium">平均换手率:</span> 
                                 {{ getTurnoverRateForWindow(stock, window).toFixed(2) }}%
+                              </div>
+                            </div>
+
+                             <!-- 相对强度/涨跌幅 -->
+                            <div v-if="stock.outperform_index !== null && stock.outperform_index !== undefined" class="mb-3 pb-3 border-b border-border">
+                              <div class="text-xs font-medium text-primary mb-1.5">相对强度/涨跌幅:</div>
+                              <div class="space-y-1">
+                                <!-- 相对强度 -->
+                                <div class="flex items-center">
+                                  <span class="text-xs text-muted-foreground mr-2 w-16">相对强度:</span>
+                                  <span
+                                    :class="[
+                                      'px-2 py-0.5 rounded text-xs font-medium',
+                                      stock.outperform_index >= 0 ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-red-500/20 text-red-600 dark:text-red-400'
+                                    ]">
+                                    {{ stock.outperform_index >= 0 ? '+' : '' }}{{ stock.outperform_index.toFixed(2) }}%
+                                  </span>
+                                </div>
+                                <!-- 股票涨跌幅 -->
+                                <div v-if="stock.stock_return !== null && stock.stock_return !== undefined" class="flex items-center">
+                                  <span class="text-xs text-muted-foreground mr-2 w-16">股票涨跌:</span>
+                                  <span
+                                    :class="[
+                                      'px-2 py-0.5 rounded text-xs font-medium',
+                                      stock.stock_return >= 0 ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'bg-orange-500/20 text-orange-600 dark:text-orange-400'
+                                    ]">
+                                    {{ stock.stock_return >= 0 ? '+' : '' }}{{ stock.stock_return.toFixed(2) }}%
+                                  </span>
+                                </div>
+                                <!-- 大盘涨跌幅 -->
+                                <div v-if="stock.market_return !== null && stock.market_return !== undefined" class="flex items-center">
+                                  <span class="text-xs text-muted-foreground mr-2 w-16">大盘涨跌:</span>
+                                  <span
+                                    :class="[
+                                      'px-2 py-0.5 rounded text-xs font-medium',
+                                      stock.market_return >= 0 ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' : 'bg-pink-500/20 text-pink-600 dark:text-pink-400'
+                                    ]">
+                                    {{ stock.market_return >= 0 ? '+' : '' }}{{ stock.market_return.toFixed(2) }}%
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -558,540 +598,15 @@
             <i class="fas fa-sliders-h mr-2 text-primary"></i>
             扫描参数配置
           </h2>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4">
-            <!-- 扫描日期 -->
-            <div>
-              <label class="block text-sm font-medium mb-2">
-                <i class="fas fa-calendar-alt mr-1 text-primary"></i>
-                扫描日期
-              </label>
-              <input
-                v-model="config.scan_date"
-                type="date"
-                class="input w-full"
-                :max="maxDate"
-              />
-              <p class="text-xs text-muted-foreground mt-1">
-                设置扫描的截止日期，默认为今天
-              </p>
-            </div>
-            <!-- 基本参数 -->
-            <div>
-              <ParameterLabel for-id="windows" parameter-id="windows" @show-tutorial="showParameterTutorial">
-                窗口期设置
-              </ParameterLabel>
-              <div class="flex flex-col space-y-2">
-                <!-- 预设选项 -->
-                <div class="flex flex-wrap gap-2">
-                  <button v-for="preset in windowPresets" :key="preset.name" @click="selectWindowPreset(preset.value)"
-                    :class="[
-                      'px-2 py-1 text-xs rounded-md transition-colors',
-                      config.windowsInput === preset.value
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                    ]">
-                    {{ preset.name }}
-                  </button>
-                  <button @click="showCustomWindowInput = true" :class="[
-                    'px-2 py-1 text-xs rounded-md transition-colors',
-                    !isUsingPreset
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                  ]">
-                    自定义
-                  </button>
-                </div>
-
-                <!-- 自定义输入 -->
-                <div v-if="showCustomWindowInput" class="flex items-center space-x-2">
-                  <input v-model="config.windowsInput" class="input flex-grow" id="windows" type="text"
-                    placeholder="例如: 30,60,90">
-                  <button @click="validateCustomWindows" class="btn btn-primary text-xs py-1 px-2">
-                    确认
-                  </button>
-                </div>
-
-                <!-- 当前选择的窗口期显示 -->
-                <div v-if="!showCustomWindowInput" class="text-xs text-muted-foreground">
-                  当前窗口期:
-                  <span v-for="(window, index) in parsedWindows" :key="window" class="font-medium">
-                    {{ window }}天{{ index < parsedWindows.length - 1 ? '、' : '' }} </span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <ParameterLabel for-id="expectedCount" parameter-id="expected_count"
-                @show-tutorial="showParameterTutorial">
-                期望股票数量
-              </ParameterLabel>
-              <input v-model.number="config.expected_count" class="input" id="expectedCount" type="number" min="1"
-                max="100" placeholder="例如: 10">
-            </div>
-            <div class="flex flex-wrap items-end gap-4">
-              <label for="useVolumeAnalysis"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.use_volume_analysis" id="useVolumeAnalysis" class="checkbox">
-                <ParameterLabel for-id="useVolumeAnalysis" parameter-id="use_volume_analysis"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">启用成交量分析</span>
-                </ParameterLabel>
-              </label>
-              <label for="useBreakthroughPrediction"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.use_breakthrough_prediction" id="useBreakthroughPrediction"
-                  class="checkbox">
-                <ParameterLabel for-id="useBreakthroughPrediction" parameter-id="use_breakthrough_prediction"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">启用突破前兆识别</span>
-                </ParameterLabel>
-              </label>
-              <label for="useBreakthroughConfirmation"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.use_breakthrough_confirmation" id="useBreakthroughConfirmation"
-                  class="checkbox">
-                <ParameterLabel for-id="useBreakthroughConfirmation" parameter-id="use_breakthrough_confirmation"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">启用突破确认</span>
-                </ParameterLabel>
-              </label>
-              <label for="useLowPosition"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.use_low_position" id="useLowPosition" class="checkbox">
-                <ParameterLabel for-id="useLowPosition" parameter-id="use_low_position"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">启用低位判断</span>
-                </ParameterLabel>
-              </label>
-              <label for="useWindowWeights"
-                class="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-md hover:bg-muted/30">
-                <input type="checkbox" v-model="config.use_window_weights" id="useWindowWeights" class="checkbox">
-                <ParameterLabel for-id="useWindowWeights" parameter-id="use_window_weights"
-                  @show-tutorial="showParameterTutorial">
-                  <span class="text-sm font-medium">启用窗口权重</span>
-                </ParameterLabel>
-              </label>
-            </div>
-          </div>
-
-          <!-- 价格参数 -->
-          <div class="mb-4">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-chart-line mr-1 text-primary"></i>
-              价格参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <ParameterLabel for-id="boxThreshold" parameter-id="box_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  振幅阈值 (%)
-                </ParameterLabel>
-                <input v-model.number="config.box_threshold" class="input" id="boxThreshold" type="number" step="0.01"
-                  placeholder="例如: 0.3">
-              </div>
-              <div>
-                <ParameterLabel for-id="maDiffThreshold" parameter-id="ma_diff_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  均线粘合度 (%)
-                </ParameterLabel>
-                <input v-model.number="config.ma_diff_threshold" class="input" id="maDiffThreshold" type="number"
-                  step="0.005" placeholder="例如: 0.03">
-              </div>
-              <div>
-                <ParameterLabel for-id="volatilityThreshold" parameter-id="volatility_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  波动率阈值 (%)
-                </ParameterLabel>
-                <input v-model.number="config.volatility_threshold" class="input" id="volatilityThreshold" type="number"
-                  step="0.005" placeholder="例如: 0.03">
-              </div>
-            </div>
-          </div>
-
-          <!-- 成交量参数 -->
-          <div class="mb-4" v-if="config.use_volume_analysis">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-chart-bar mr-1 text-primary"></i>
-              成交量参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <ParameterLabel for-id="volumeChangeThreshold" parameter-id="volume_change_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  成交量变化阈值
-                </ParameterLabel>
-                <input v-model.number="config.volume_change_threshold" class="input" id="volumeChangeThreshold"
-                  type="number" step="0.05" placeholder="例如: 0.8">
-                <p class="text-xs text-muted-foreground mt-1">平台期内成交量变化的最大比例</p>
-              </div>
-              <div>
-                <ParameterLabel for-id="volumeStabilityThreshold" parameter-id="volume_stability_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  成交量稳定性阈值
-                </ParameterLabel>
-                <input v-model.number="config.volume_stability_threshold" class="input" id="volumeStabilityThreshold"
-                  type="number" step="0.05" placeholder="例如: 0.5">
-                <p class="text-xs text-muted-foreground mt-1">平台期内成交量波动的最大程度</p>
-              </div>
-              <div>
-                <ParameterLabel for-id="volumeIncreaseThreshold" parameter-id="volume_increase_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  成交量突破阈值
-                </ParameterLabel>
-                <input v-model.number="config.volume_increase_threshold" class="input" id="volumeIncreaseThreshold"
-                  type="number" step="0.1" placeholder="例如: 1.5">
-                <p class="text-xs text-muted-foreground mt-1">识别为突破的最小成交量放大倍数</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 换手率参数 -->
-          <div class="mb-4">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-exchange-alt mr-1 text-primary"></i>
-              换手率参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <ParameterLabel for-id="maxTurnoverRate" parameter-id="max_turnover_rate"
-                  @show-tutorial="showParameterTutorial">
-                  最大换手率 (%)
-                </ParameterLabel>
-                <input v-model.number="config.max_turnover_rate" class="input" id="maxTurnoverRate" type="number"
-                  step="0.1" min="0" placeholder="例如: 3.0">
-                <p class="text-xs text-muted-foreground mt-1">
-                  平台期平均换手率不超过此值
-                </p>
-              </div>
-              <div>
-                <div class="flex items-center justify-between">
-                  <ParameterLabel for-id="allowTurnoverSpikes" parameter-id="allow_turnover_spikes"
-                    @show-tutorial="showParameterTutorial">
-                    允许异常放量
-                  </ParameterLabel>
-                  <label for="allowTurnoverSpikes" class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="config.allow_turnover_spikes" id="allowTurnoverSpikes"
-                      class="sr-only peer">
-                    <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-secondary">
-                    </div>
-                  </label>
-                </div>
-                <p class="text-xs text-muted-foreground mt-1">
-                  是否允许偶尔的异常放量
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 位置参数 -->
-          <div class="mb-4" v-if="config.use_low_position">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-map-marker-alt mr-1 text-primary"></i>
-              位置参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <ParameterLabel for-id="highPointLookbackDays" parameter-id="high_point_lookback_days"
-                  @show-tutorial="showParameterTutorial">
-                  高点查找时间范围 (天)
-                </ParameterLabel>
-                <input v-model.number="config.high_point_lookback_days" class="input" id="highPointLookbackDays"
-                  type="number" step="1" min="30" placeholder="例如: 365">
-              </div>
-              <div>
-                <ParameterLabel for-id="declinePeriodDays" parameter-id="decline_period_days"
-                  @show-tutorial="showParameterTutorial">
-                  下跌时间范围 (天)
-                </ParameterLabel>
-                <input v-model.number="config.decline_period_days" class="input" id="declinePeriodDays" type="number"
-                  step="1" min="30" placeholder="例如: 180">
-              </div>
-              <div>
-                <ParameterLabel for-id="declineThreshold" parameter-id="decline_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  下跌幅度阈值
-                </ParameterLabel>
-                <input v-model.number="config.decline_threshold" class="input" id="declineThreshold" type="number"
-                  step="0.05" min="0.1" max="0.9" placeholder="例如: 0.3">
-                <p class="text-xs text-muted-foreground mt-1">从高点下跌的最小百分比 (0.3 = 30%)</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 快速下跌判断参数 -->
-          <div class="mb-4" v-if="config.use_low_position">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-bolt mr-1 text-primary"></i>
-              快速下跌判断
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <div class="flex items-center justify-between">
-                  <ParameterLabel for-id="useRapidDeclineDetection" parameter-id="use_rapid_decline_detection"
-                    @show-tutorial="showParameterTutorial">
-                    启用快速下跌判断
-                  </ParameterLabel>
-                  <label for="useRapidDeclineDetection" class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="config.use_rapid_decline_detection" id="useRapidDeclineDetection"
-                      class="sr-only peer">
-                    <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary">
-                    </div>
-                  </label>
-                </div>
-                <p class="text-xs text-muted-foreground mt-1">识别类似安记食品的快速下跌后形成平台期的股票</p>
-              </div>
-              <!-- 只有在启用快速下跌判断时才显示这些参数 -->
-              <div v-if="config.use_rapid_decline_detection">
-                <ParameterLabel for-id="rapidDeclineDays" parameter-id="rapid_decline_days"
-                  @show-tutorial="showParameterTutorial">
-                  快速下跌时间窗口 (天)
-                </ParameterLabel>
-                <input v-model.number="config.rapid_decline_days" class="input" id="rapidDeclineDays" type="number"
-                  step="1" min="10" max="60" placeholder="例如: 30">
-                <p class="text-xs text-muted-foreground mt-1">定义快速下跌的时间窗口</p>
-              </div>
-              <div v-if="config.use_rapid_decline_detection">
-                <ParameterLabel for-id="rapidDeclineThreshold" parameter-id="rapid_decline_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  快速下跌幅度阈值
-                </ParameterLabel>
-                <input v-model.number="config.rapid_decline_threshold" class="input" id="rapidDeclineThreshold"
-                  type="number" step="0.05" min="0.05" max="0.5" placeholder="例如: 0.15">
-                <p class="text-xs text-muted-foreground mt-1">快速下跌的最小百分比 (0.15 = 15%)</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 突破确认参数 -->
-          <div class="mb-4" v-if="config.use_breakthrough_confirmation">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-check-circle mr-1 text-primary"></i>
-              突破确认参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <ParameterLabel for-id="breakthroughConfirmationDays" parameter-id="breakthrough_confirmation_days"
-                  @show-tutorial="showParameterTutorial">
-                  确认天数
-                </ParameterLabel>
-                <input v-model.number="config.breakthrough_confirmation_days" class="input"
-                  id="breakthroughConfirmationDays" type="number" step="1" min="1" max="5" placeholder="例如: 1">
-                <p class="text-xs text-muted-foreground mt-1">突破后需要多少天确认</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 箱体检测参数 -->
-          <div class="mb-4">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-cube mr-1 text-primary"></i>
-              箱体检测参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <div class="flex items-center justify-between">
-                  <ParameterLabel for-id="useBoxDetection" parameter-id="use_box_detection"
-                    @show-tutorial="showParameterTutorial">
-                    启用箱体检测
-                  </ParameterLabel>
-                  <label for="useBoxDetection" class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="config.use_box_detection" id="useBoxDetection" class="sr-only peer">
-                    <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary">
-                    </div>
-                  </label>
-                </div>
-                <p class="text-xs text-muted-foreground mt-1">启用更精确的箱体形态检测</p>
-              </div>
-              <div v-if="config.use_box_detection">
-                <ParameterLabel for-id="boxQualityThreshold" parameter-id="box_quality_threshold"
-                  @show-tutorial="showParameterTutorial">
-                  箱体质量阈值
-                </ParameterLabel>
-                <input v-model.number="config.box_quality_threshold" class="input" id="boxQualityThreshold"
-                  type="number" step="0.01" min="0.1" max="1.0" placeholder="例如: 0.94">
-                <p class="text-xs text-muted-foreground mt-1">箱体形态的最低质量要求 (0.6 = 60%)</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 基本面筛选参数 -->
-          <div class="mb-4">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-chart-pie mr-1 text-secondary"></i>
-              基本面筛选参数
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-              <div>
-                <div class="flex items-center justify-between">
-                  <ParameterLabel for-id="useFundamentalFilter" parameter-id="use_fundamental_filter"
-                    @show-tutorial="showParameterTutorial">
-                    启用基本面筛选
-                  </ParameterLabel>
-                  <label for="useFundamentalFilter" class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="config.use_fundamental_filter" id="useFundamentalFilter"
-                      class="sr-only peer">
-                    <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-secondary">
-                    </div>
-                  </label>
-                </div>
-                <p class="text-xs text-muted-foreground mt-1">启用基于财务指标的基本面筛选</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="revenueGrowthPercentile" parameter-id="revenue_growth_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  营收增长率百分位
-                </ParameterLabel>
-                <input v-model.number="config.revenue_growth_percentile" class="input" id="revenueGrowthPercentile"
-                  type="number" step="0.05" min="0.1" max="0.9" placeholder="例如: 0.3">
-                <p class="text-xs text-muted-foreground mt-1">要求位于行业前X%（0.3 = 前30%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="profitGrowthPercentile" parameter-id="profit_growth_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  净利润增长率百分位
-                </ParameterLabel>
-                <input v-model.number="config.profit_growth_percentile" class="input" id="profitGrowthPercentile"
-                  type="number" step="0.05" min="0.1" max="0.9" placeholder="例如: 0.3">
-                <p class="text-xs text-muted-foreground mt-1">要求位于行业前X%（0.3 = 前30%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="roePercentile" parameter-id="roe_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  ROE百分位
-                </ParameterLabel>
-                <input v-model.number="config.roe_percentile" class="input" id="roePercentile" type="number" step="0.05"
-                  min="0.1" max="0.9" placeholder="例如: 0.3">
-                <p class="text-xs text-muted-foreground mt-1">要求位于行业前X%（0.3 = 前30%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="liabilityPercentile" parameter-id="liability_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  资产负债率百分位
-                </ParameterLabel>
-                <input v-model.number="config.liability_percentile" class="input" id="liabilityPercentile" type="number"
-                  step="0.05" min="0.1" max="0.9" placeholder="例如: 0.3">
-                <p class="text-xs text-muted-foreground mt-1">要求位于行业后X%（0.3 = 后30%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="pePercentile" parameter-id="pe_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  PE百分位
-                </ParameterLabel>
-                <input v-model.number="config.pe_percentile" class="input" id="pePercentile" type="number" step="0.05"
-                  min="0.1" max="0.9" placeholder="例如: 0.7">
-                <p class="text-xs text-muted-foreground mt-1">要求不在行业前X%最高估值（0.7 = 后70%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="pbPercentile" parameter-id="pb_percentile"
-                  @show-tutorial="showParameterTutorial">
-                  PB百分位
-                </ParameterLabel>
-                <input v-model.number="config.pb_percentile" class="input" id="pbPercentile" type="number" step="0.05"
-                  min="0.1" max="0.9" placeholder="例如: 0.7">
-                <p class="text-xs text-muted-foreground mt-1">要求不在行业前X%最高估值（0.7 = 后70%）</p>
-              </div>
-
-              <div v-if="config.use_fundamental_filter">
-                <ParameterLabel for-id="fundamentalYearsToCheck" parameter-id="fundamental_years_to_check"
-                  @show-tutorial="showParameterTutorial">
-                  检查年数
-                </ParameterLabel>
-                <input v-model.number="config.fundamental_years_to_check" class="input" id="fundamentalYearsToCheck"
-                  type="number" step="1" min="1" max="5" placeholder="例如: 3">
-                <p class="text-xs text-muted-foreground mt-1">连续增长的年数要求（默认3年）</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 窗口权重设置 -->
-          <div class="mb-4" v-if="config.use_window_weights">
-            <h3 class="text-sm font-medium mb-2 flex items-center">
-              <i class="fas fa-balance-scale mr-1 text-primary"></i>
-              窗口权重设置
-            </h3>
-            <div class="bg-muted/30 p-3 rounded-md mb-3">
-              <p class="text-xs text-muted-foreground mb-2">
-                为不同的窗口期分配权重，权重总和将自动归一化。权重越高，该窗口期的分析结果对最终评分的影响越大。
-              </p>
-              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                <div v-for="window in parsedWindows" :key="window" class="flex items-center space-x-2">
-                  <label class="text-sm font-medium whitespace-nowrap">{{ window }}天:</label>
-                  <input v-model.number="windowWeights[window]" type="range" min="0" max="10" step="1" class="flex-grow"
-                    @input="updateWindowWeights(window, $event.target.value)">
-                  <span class="text-sm">{{ windowWeights[window] || 0 }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 系统设置 -->
-          <div class="mb-6">
-            <h3 class="text-sm font-medium mb-3 flex items-center">
-              <i class="fas fa-cog mr-2 text-primary"></i>
-              系统设置
-            </h3>
-            <div class="bg-muted/30 p-4 rounded-md space-y-3">
-              <div class="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="useScanCache"
-                  v-model="config.use_scan_cache"
-                  class="checkbox"
-                />
-                <label for="useScanCache" class="text-sm cursor-pointer">
-                  <i class="fas fa-database mr-1 text-primary"></i>
-                  使用扫描结果缓存
-                </label>
-              </div>
-              <p class="text-xs text-muted-foreground ml-6">
-                开启后，相同参数的扫描结果会从缓存中读取，提高扫描速度。关闭后会重新从数据中筛选，不使用缓存。
-              </p>
-              <div class="flex items-center space-x-2 mt-4">
-                <input
-                  type="checkbox"
-                  id="useLocalDatabaseFirst"
-                  v-model="config.use_local_database_first"
-                  class="checkbox"
-                />
-                <label for="useLocalDatabaseFirst" class="text-sm cursor-pointer">
-                  <i class="fas fa-server mr-1 text-primary"></i>
-                  优先使用本地数据库
-                </label>
-              </div>
-              <p class="text-xs text-muted-foreground ml-6">
-                开启后，优先从本地数据库读取数据，减少API请求。关闭后，所有数据都从网络API获取并更新本地数据库。
-              </p>
-              <div class="mt-4">
-                <label for="maxStockCount" class="block text-sm font-medium mb-2">
-                  <i class="fas fa-list-ol mr-1 text-primary"></i>
-                  扫描股票数量
-                </label>
-                <input
-                  id="maxStockCount"
-                  v-model.number="config.max_stock_count"
-                  type="number"
-                  step="1"
-                  min="1"
-                  class="input w-full"
-                  placeholder="留空表示全量扫描"
-                />
-                <p class="text-xs text-muted-foreground mt-1">
-                  限制扫描的股票数量，留空或0表示扫描全部股票。输入数字后，将只扫描前N只股票。
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <div class="flex items-center justify-center">
+          <ScanConfigForm
+            :show-scan-date="true"
+            :window-weights="windowWeights"
+            @update:config="config = $event"
+            @show-tutorial="showParameterTutorial"
+            @update-window-weights="(window, value) => { windowWeights[window] = parseInt(value, 10); updateWindowWeights(window, value); }"
+            ref="scanConfigFormRef"
+          />
+          <div class="flex items-center justify-center mt-6">
             <button @click="fetchPlatformStocks" :disabled="loading" class="btn btn-primary py-2 px-6" type="button">
               <i class="fas fa-search mr-2" v-if="!loading"></i>
               <i class="fas fa-spinner fa-spin mr-2" v-if="loading"></i>
@@ -1351,12 +866,12 @@
                           <div v-for="(reason, window) in stock.selection_reasons" :key="window"
                             class="mb-1 text-xs text-muted-foreground">
                             <span class="font-medium text-primary">{{ window }}天:</span>
-                            {{ reason }}
+                            <span v-html="formatSelectionReason(reason)"></span>
 
                             <!-- 成交量分析结果（每个窗口期） -->
                             <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
                               class="mt-2 border-t border-border pt-1">
-                              <div class="text-xs font-medium text-primary">成交量分析:</div>
+                              <div class="text-xs font-medium text-primary mb-1">成交量分析:</div>
                               <div v-if="stock.volume_analysis[window].has_consolidation_volume"
                                 class="text-xs text-muted-foreground flex items-center">
                                 <i class="fas fa-check-circle text-green-500 mr-1"></i>
@@ -1385,7 +900,7 @@
 
                             <!-- 换手率分析结果（每个窗口期） -->
                             <div v-if="getTurnoverRateForWindow(stock, window) !== null" class="mt-2 border-t border-border pt-1">
-                              <div class="text-xs font-medium text-primary">换手率分析:</div>
+                              <div class="text-xs font-medium text-primary mb-1">换手率分析:</div>
                               <div class="text-xs text-muted-foreground flex items-center">
                                 <i class="fas fa-exchange-alt text-blue-500 mr-1"></i>
                                 <span class="font-medium">平均换手率:</span> 
@@ -1398,7 +913,7 @@
                           <div
                             v-if="stock.breakthrough_prediction && stock.breakthrough_prediction.has_breakthrough_signal"
                             class="mt-2 border-t border-border pt-1">
-                            <div class="text-xs font-medium text-primary">突破前兆:</div>
+                            <div class="text-xs font-medium text-primary mb-1">突破前兆:</div>
                             <div class="text-xs text-muted-foreground">
                               <span class="flex items-center">
                                 <i class="fas fa-bolt text-amber-500 mr-1"></i>
@@ -1416,7 +931,7 @@
                           </div>
 
                           <!-- 窗口权重得分 -->
-                          <div v-if="stock.weighted_score !== undefined" class="mt-2 border-t border-border pt-1">
+                          <!-- <div v-if="stock.weighted_score !== undefined" class="mt-2 border-t border-border pt-1">
                             <div class="text-xs font-medium text-primary">加权得分:</div>
                             <div class="text-xs text-muted-foreground flex items-center">
                               <i class="fas fa-star text-yellow-500 mr-1"></i>
@@ -1436,6 +951,45 @@
                                 </span>
                               </div>
                             </div>
+                          </div> -->
+                          <!-- 相对强度/涨跌幅 -->
+                          <div v-if="stock.outperform_index !== null && stock.outperform_index !== undefined" class=" mt-2 border-t border-border pt-1">
+                          <div class="text-xs font-medium text-primary mb-1" >相对强度/涨跌幅:</div>
+                          <div class="space-y-1">
+                            <!-- 相对强度 -->
+                            <div class="flex items-center">
+                              <span class="text-xs text-muted-foreground mr-2 w-16">相对强度:</span>
+                              <span
+                                :class="[
+                                  'px-2 py-0.5 rounded text-xs font-medium',
+                                  stock.outperform_index >= 0 ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-red-500/20 text-red-600 dark:text-red-400'
+                                ]">
+                                {{ stock.outperform_index >= 0 ? '+' : '' }}{{ stock.outperform_index.toFixed(2) }}%
+                              </span>
+                            </div>
+                            <!-- 股票涨跌幅 -->
+                            <div v-if="stock.stock_return !== null && stock.stock_return !== undefined" class="flex items-center">
+                              <span class="text-xs text-muted-foreground mr-2 w-16">股票涨跌:</span>
+                              <span
+                                :class="[
+                                  'px-2 py-0.5 rounded text-xs font-medium',
+                                  stock.stock_return >= 0 ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'bg-orange-500/20 text-orange-600 dark:text-orange-400'
+                                ]">
+                                {{ stock.stock_return >= 0 ? '+' : '' }}{{ stock.stock_return.toFixed(2) }}%
+                              </span>
+                            </div>
+                            <!-- 大盘涨跌幅 -->
+                            <div v-if="stock.market_return !== null && stock.market_return !== undefined" class="flex items-center">
+                              <span class="text-xs text-muted-foreground mr-2 w-16">大盘涨跌:</span>
+                              <span
+                                :class="[
+                                  'px-2 py-0.5 rounded text-xs font-medium',
+                                  stock.market_return >= 0 ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' : 'bg-pink-500/20 text-pink-600 dark:text-pink-400'
+                                ]">
+                                {{ stock.market_return >= 0 ? '+' : '' }}{{ stock.market_return.toFixed(2) }}%
+                              </span>
+                            </div>
+                          </div>
                           </div>
                         </div>
                         <div v-else class="text-xs text-muted-foreground italic p-2">
@@ -1631,12 +1185,12 @@
                       <div v-for="(reason, window) in stock.selection_reasons" :key="window"
                         class="mb-1 text-xs text-muted-foreground">
                         <span class="font-medium text-primary">{{ window }}天:</span>
-                        {{ reason }}
+                        <span v-html="formatSelectionReason(reason)"></span>
 
                         <!-- 成交量分析结果（每个窗口期） -->
                         <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
                           class="mt-2 border-t border-border pt-1">
-                          <div class="text-xs font-medium text-primary">成交量分析:</div>
+                          <div class="text-xs font-medium text-primary mb-1">成交量分析:</div>
                           <div v-if="stock.volume_analysis[window].has_consolidation_volume"
                             class="text-xs text-muted-foreground flex items-center">
                             <i class="fas fa-check-circle text-green-500 mr-1"></i>
@@ -1680,7 +1234,7 @@
                       <div
                         v-if="stock.breakthrough_prediction && stock.breakthrough_prediction.has_breakthrough_signal"
                         class="mt-2 border-t border-border pt-1">
-                        <div class="text-xs font-medium text-primary">突破前兆:</div>
+                        <div class="text-xs font-medium text-primary mb-1">突破前兆:</div>
                         <div class="text-xs text-muted-foreground">
                           <span class="flex items-center">
                             <i class="fas fa-bolt text-amber-500 mr-1"></i>
@@ -1698,7 +1252,7 @@
                       </div>
 
                       <!-- 窗口权重得分 -->
-                      <div v-if="stock.weighted_score !== undefined" class="mt-2 border-t border-border pt-1">
+                      <!-- <div v-if="stock.weighted_score !== undefined" class="mt-2 border-t border-border pt-1">
                         <div class="text-xs font-medium text-primary">加权得分:</div>
                         <div class="text-xs text-muted-foreground flex items-center">
                           <i class="fas fa-star text-yellow-500 mr-1"></i>
@@ -1708,6 +1262,45 @@
                               <div class="bg-yellow-500 h-full rounded-full"
                                 :style="{ width: `${Math.min(100, stock.weighted_score * 100)}%` }"></div>
                             </div>
+                          </div>
+                        </div>
+                      </div> -->
+                       <!-- 相对强度/涨跌幅 -->
+                       <div v-if="stock.outperform_index !== null && stock.outperform_index !== undefined" class="mt-2 border-t border-border pt-1">
+                        <div class="text-xs font-medium text-primary mb-1">相对强度/涨跌幅:</div>
+                        <div class="space-y-1">
+                          <!-- 相对强度 -->
+                          <div class="flex items-center">
+                            <span class="text-xs text-muted-foreground mr-2 w-16">相对强度:</span>
+                            <span
+                              :class="[
+                                'px-2 py-0.5 rounded text-xs font-medium',
+                                stock.outperform_index >= 0 ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-red-500/20 text-red-600 dark:text-red-400'
+                              ]">
+                              {{ stock.outperform_index >= 0 ? '+' : '' }}{{ stock.outperform_index.toFixed(2) }}%
+                            </span>
+                          </div>
+                          <!-- 股票涨跌幅 -->
+                          <div v-if="stock.stock_return !== null && stock.stock_return !== undefined" class="flex items-center">
+                            <span class="text-xs text-muted-foreground mr-2 w-16">股票涨跌:</span>
+                            <span
+                              :class="[
+                                'px-2 py-0.5 rounded text-xs font-medium',
+                                stock.stock_return >= 0 ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' : 'bg-orange-500/20 text-orange-600 dark:text-orange-400'
+                              ]">
+                              {{ stock.stock_return >= 0 ? '+' : '' }}{{ stock.stock_return.toFixed(2) }}%
+                            </span>
+                          </div>
+                          <!-- 大盘涨跌幅 -->
+                          <div v-if="stock.market_return !== null && stock.market_return !== undefined" class="flex items-center">
+                            <span class="text-xs text-muted-foreground mr-2 w-16">大盘涨跌:</span>
+                            <span
+                              :class="[
+                                'px-2 py-0.5 rounded text-xs font-medium',
+                                stock.market_return >= 0 ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' : 'bg-pink-500/20 text-pink-600 dark:text-pink-400'
+                              ]">
+                              {{ stock.market_return >= 0 ? '+' : '' }}{{ stock.market_return.toFixed(2) }}%
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1804,6 +1397,7 @@ import CaseManager from './components/case-management/CaseManager.vue'; // 案�
 import ThemeToggle from './components/ThemeToggle.vue'; // 主题切换组件
 import ConfirmDialog from './components/ConfirmDialog.vue'; // 确认对话框组件
 import DateRangeFilter from './components/DateRangeFilter.vue'; // 日期筛选组件
+import ScanConfigForm from './components/ScanConfigForm.vue'; // 扫描配置表单组件
 import { getStockBoard } from './utils/stockBoardUtils.js'; // 板块工具函数
 import { gsap } from 'gsap';
 
@@ -1815,87 +1409,6 @@ const maxDate = computed(() => {
   return today.toISOString().split('T')[0]
 })
 
-const config = ref({
-  // 扫描日期
-  scan_date: '', // 扫描日期，默认为今天
-  
-  // 基本参数
-  windowsInput: '30,60,90', // 中期窗口期设置（默认）
-  expected_count: 30, // 期望返回的股票数量，默认为30
-
-  // 价格参数
-  box_threshold: 0.3, // 箱体阈值
-  ma_diff_threshold: 0.03, // 均线粘合度阈值
-  volatility_threshold: 0.03, // 波动率阈值
-
-  // 成交量参数
-  use_volume_analysis: true, // 是否启用成交量分析
-  volume_change_threshold: 0.5, // 成交量变化阈值
-  volume_stability_threshold: 0.5, // 成交量稳定性阈值
-  volume_increase_threshold: 1.5, // 成交量突破阈值
-
-  // 技术指标参数
-  use_technical_indicators: false, // 是否启用技术指标
-  use_breakthrough_prediction: true, // 是否启用突破前兆识别
-
-  // 位置参数
-  use_low_position: true, // 是否启用低位判断
-  high_point_lookback_days: 365, // 高点查找时间范围
-  decline_period_days: 180, // 下跌时间范围
-  decline_threshold: 0.3, // 下跌阈值
-
-  // 快速下跌判断参数
-  use_rapid_decline_detection: true, // 是否启用快速下跌判断
-  rapid_decline_days: 30, // 快速下跌窗口
-  rapid_decline_threshold: 0.15, // 快速下跌阈值
-
-  // 突破确认参数
-  use_breakthrough_confirmation: true, // 是否启用突破确认
-  breakthrough_confirmation_days: 1, // 确认天数，默认为1天，这样启用时不需要手动修改
-
-  // 箱体检测参数
-  use_box_detection: true, // 是否启用箱体检测
-  box_quality_threshold: 0.94, // 箱体质量阈值
-
-  // todo: 新增的因子
-  // 进入平台期后的筹码与分布参数 (新增)
-  // use_chip_distribution: true,
-  // cost_concentration_threshold: 0.15, // 90%筹码集中度小于15%
-  // avg_cost_divergence: 0.05, // 当前价格偏离平均成本不超过5%
-
-  // // 进入平台期后的布林带特征参数 (新增)
-  // use_boll_analysis: true,
-  // boll_bandwidth_threshold: 0.10, // 布林带开口收窄至10%以内
-
-  // 进入平台期后的换手率参数 (新增)
-  max_turnover_rate: 5.0, // 平台期平均换手率不超过
-  allow_turnover_spikes: true, // 是否允许偶尔的异常放量
-
-  // 进入平台期后的相对强度参数 (新增)
-  check_relative_strength: true, // 启用相对大盘强度检查
-  outperform_index_threshold: 0.0, // 相对强度需大于0（即跑赢或持平大盘）
-  // todo end
-
-  // 基本面筛选参数
-  use_fundamental_filter: false, // 是否启用基本面筛选
-  revenue_growth_percentile: 0.3, // 营收增长率行业百分位
-  profit_growth_percentile: 0.3, // 净利润增长率行业百分位
-  roe_percentile: 0.3, // ROE行业百分位
-  liability_percentile: 0.3, // 资产负债率行业百分位
-  pe_percentile: 0.7, // PE行业百分位
-  pb_percentile: 0.7, // PB行业百分位
-  fundamental_years_to_check: 3, // 检查连续增长的年数
-
-  // 窗口权重参数
-  use_window_weights: true, // 是否使用窗口权重
-  window_weights: {}, // 窗口权重
-  
-  // 系统设置
-  use_scan_cache: false, // 是否使用扫描结果缓存，默认为关闭
-  max_stock_count: null, // 扫描股票数量限制，null或0表示全量扫描
-  use_local_database_first: true // 优先使用本地数据库数据，默认为开启
-});
-
 const platformStocks = ref([]);
 const loading = ref(false);
 const error = ref(null);
@@ -1904,12 +1417,16 @@ const isDarkMode = ref(false); // 暗色模式状态
 const windowWeights = ref({}); // 窗口权重
 const expandedReasons = ref({}); // 跟踪每个股票的选择理由是否展开
 const selectedStocks = ref([]); // 选中的股票列表（用于回测）
+const scanConfigFormRef = ref(null); // 扫描配置表单引用
+const config = ref({}); // 扫描配置，由 ScanConfigForm 组件通过 @update:config 事件更新
 
 // 筛选相关状态
 const showFilterPanel = ref(false); // 筛选面板显示状态
 const selectedPlatformPeriods = ref([]); // 选中的平台期列表
 const availablePlatformPeriods = ref([]); // 可用的平台期列表（从结果中统计）
 const selectedBoards = ref(['创业板', '科创板', '主板']); // 选中的板块列表（默认选中所有板块）
+const minOutperformIndex = ref(null); // 最小相对强度值
+const maxOutperformIndex = ref(null); // 最大相对强度值
 
 // 筛选后的股票列表
 const filteredStocks = computed(() => {
@@ -1964,6 +1481,37 @@ const filteredStocks = computed(() => {
       
       // 检查股票是否有任何一个选中的平台期（使用 OR 逻辑）
       return selectedPlatformPeriods.value.some(period => stockPeriods.includes(period))
+    }).map(stock => {
+      // 确保筛选后的对象保留所有原始字段
+      return {
+        ...stock,
+        volume_analysis: stock.volume_analysis || null,
+        breakthrough_prediction: stock.breakthrough_prediction || null,
+        turnover_analysis: stock.turnover_analysis || null,
+        box_analysis: stock.box_analysis || null,
+        details: stock.details || {},
+        selection_reasons: stock.selection_reasons || {},
+        platform_windows: stock.platform_windows || [],
+        kline_data: stock.kline_data || [],
+        markLines: stock.markLines || stock.mark_lines || []
+      }
+    })
+  }
+  
+  // 应用相对强度筛选
+  if (minOutperformIndex.value !== null || maxOutperformIndex.value !== null) {
+    filtered = filtered.filter(stock => {
+      const outperformIndex = stock.outperform_index
+      if (outperformIndex === null || outperformIndex === undefined) {
+        return false // 如果没有相对强度数据，排除
+      }
+      if (minOutperformIndex.value !== null && outperformIndex < minOutperformIndex.value) {
+        return false
+      }
+      if (maxOutperformIndex.value !== null && outperformIndex > maxOutperformIndex.value) {
+        return false
+      }
+      return true
     }).map(stock => {
       // 确保筛选后的对象保留所有原始字段
       return {
@@ -2081,20 +1629,6 @@ function changePageSize (size) {
   }
 }
 
-// 窗口期预设
-const windowPresets = [
-  { name: '标准', value: '80,100,120' },
-  { name: '短期', value: '10,20,30' },
-  { name: '中期', value: '30,60,90' },
-  { name: '长期', value: '60,120,180' },
-  { name: '混合', value: '30,60,120' }
-];
-
-// 自定义窗口期相关
-const showCustomWindowInput = ref(false);
-const isUsingPreset = computed(() => {
-  return windowPresets.some(preset => preset.value === config.value.windowsInput);
-});
 
 // 任务状态相关
 const currentTaskId = ref(null);
@@ -2155,17 +1689,8 @@ const showParameterTutorial = (id) => {
   }
 };
 
-// 初始化扫描日期为今天
-function initScanDate() {
-  const today = new Date();
-  config.value.scan_date = today.toISOString().split('T')[0];
-}
-
 // 初始化时检查系统偏好
 onMounted(() => {
-  // 初始化扫描日期
-  initScanDate();
-  
   // 检查本地存储中的主题设置
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -2485,6 +2010,33 @@ function getTurnoverRateForWindow(stock, window) {
   return null
 }
 
+// 格式化选择理由，将相对强度/涨跌幅信息显示在最后
+function formatSelectionReason(reason) {
+  if (!reason) return '';
+  
+  // 匹配相对强度/涨跌幅信息（格式：, 相对强度X.XX%/股票涨跌幅X.XX%/大盘涨跌幅X.XX%）
+  // 匹配模式：以逗号开头，后跟相对强度信息（可能包含股票涨跌幅和大盘涨跌幅，直到字符串末尾或下一个逗号）
+  // 使用非贪婪匹配，匹配到字符串末尾或下一个逗号之前
+  const rsPattern = /(,\s*相对强度[\d.-]+%(\/股票涨跌幅[\d.-]+%)?(\/大盘涨跌幅[\d.-]+%)?)/;
+  const match = reason.match(rsPattern);
+  
+  if (match) {
+    // 移除原始字符串中的相对强度/涨跌幅信息
+    const mainReason = reason.replace(rsPattern, '').trim();
+    // 提取相对强度/涨跌幅信息（去掉开头的逗号和空格）
+    const rsInfo = match[1].replace(/^,\s*/, '');
+    
+    // 返回格式化后的HTML，相对强度/涨跌幅信息用特殊样式显示在最后
+    // 使用转义HTML来防止XSS攻击
+    const escapedMainReason = mainReason.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escapedRsInfo = rsInfo.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `${escapedMainReason}<span class="text-primary font-medium ml-1">${escapedRsInfo}</span>`;
+  }
+  
+  // 如果没有匹配到，直接返回（转义HTML）
+  return reason.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // 切换选择理由的展开/收起状态
 function toggleReasonExpand (stockCode) {
   // 如果该股票的展开状态尚未初始化，则初始化为true（展开）
@@ -2643,6 +2195,8 @@ function goToBacktest() {
     window_weights: config.value.window_weights,
     use_box_detection: config.value.use_box_detection,
     box_quality_threshold: config.value.box_quality_threshold,
+    check_relative_strength: config.value.check_relative_strength,
+    outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
     use_fundamental_filter: config.value.use_fundamental_filter,
     revenue_growth_percentile: config.value.revenue_growth_percentile,
     profit_growth_percentile: config.value.profit_growth_percentile,
@@ -2908,10 +2462,23 @@ function closeToast (toast) {
 
 // Computed property to parse windows input string into an array of numbers
 const parsedWindows = computed(() => {
-  const windows = config.value.windowsInput
+  // 优先从 ScanConfigForm 组件获取 parsedWindows
+  if (scanConfigFormRef.value && scanConfigFormRef.value.parsedWindows) {
+    return scanConfigFormRef.value.parsedWindows;
+  }
+  
+  // 如果没有组件引用，则从 config 中解析
+  // 添加安全检查，确保 windowsInput 存在且有效
+  const windowsInput = config.value?.windowsInput || '30,60,90';
+  const windows = windowsInput
     .split(',')
     .map(w => parseInt(w.trim(), 10))
     .filter(w => !isNaN(w) && w > 0);
+
+  // 如果解析结果为空，返回默认值
+  if (windows.length === 0) {
+    return [30, 60, 90];
+  }
 
   // Initialize window weights if needed
   windows.forEach(window => {
@@ -2923,79 +2490,18 @@ const parsedWindows = computed(() => {
   return windows;
 });
 
-// 选择窗口期预设
-function selectWindowPreset (presetValue) {
-  config.value.windowsInput = presetValue;
-  showCustomWindowInput.value = false;
-
-  // 重新初始化窗口权重
-  parsedWindows.value.forEach(window => {
-    if (windowWeights.value[window] === undefined) {
-      windowWeights.value[window] = 5; // Default weight
-    }
-  });
-
-  // 更新窗口权重
-  updateWindowWeights();
-}
-
-// 验证自定义窗口期
-function validateCustomWindows () {
-  const windows = config.value.windowsInput
-    .split(',')
-    .map(w => parseInt(w.trim(), 10))
-    .filter(w => !isNaN(w) && w > 0);
-
-  if (windows.length === 0) {
-    // 如果没有有效的窗口期，恢复为默认值
-    config.value.windowsInput = '30,60,90';
-    alert('请输入有效的窗口期，例如: 30,60,90');
-  } else {
-    // 格式化输入
-    config.value.windowsInput = windows.join(',');
-    showCustomWindowInput.value = false;
-
-    // 重新初始化窗口权重
-    windows.forEach(window => {
-      if (windowWeights.value[window] === undefined) {
-        windowWeights.value[window] = 5; // Default weight
-      }
-    });
-
-    // 更新窗口权重
-    updateWindowWeights();
-  }
-}
-
 // Update window weights and config
+// 注意：窗口权重的归一化逻辑已经在 ScanConfigForm 组件中处理
+// 组件会通过 @update:config 事件自动更新 config.value.window_weights
+// 这里只需要同步 windowWeights.value（原始权重值，未归一化）
 function updateWindowWeights (window, value) {
   // 如果提供了特定窗口的值，更新它
   if (window !== undefined && value !== undefined) {
     windowWeights.value[window] = parseInt(value, 10);
   }
-
-  // Update config.window_weights with normalized values
-  const weights = {};
-  let total = 0;
-
-  // Calculate total
-  for (const [key, value] of Object.entries(windowWeights.value)) {
-    if (parsedWindows.value.includes(parseInt(key, 10))) {
-      total += value;
-    }
-  }
-
-  // Normalize weights
-  if (total > 0) {
-    for (const [key, value] of Object.entries(windowWeights.value)) {
-      if (parsedWindows.value.includes(parseInt(key, 10))) {
-        weights[key] = value / total;
-      }
-    }
-  }
-
-  // Update config
-  config.value.window_weights = weights;
+  
+  // 窗口权重的归一化和 config.window_weights 的更新由 ScanConfigForm 组件内部处理
+  // 组件会通过 @update:config 事件自动更新 config.value.window_weights
 }
 
 // 清理轮询定时器
@@ -3045,7 +2551,10 @@ function startPolling (taskId) {
               details: stock.details || {},
               selection_reasons: stock.selection_reasons || {},
               platform_windows: stock.platform_windows || [],
-              kline_data: stock.kline_data || []
+              kline_data: stock.kline_data || [],
+              outperform_index: stock.outperform_index !== undefined ? stock.outperform_index : null,
+              stock_return: stock.stock_return !== undefined ? stock.stock_return : null,
+              market_return: stock.market_return !== undefined ? stock.market_return : null
             };
             
             // 如果后端返回了mark_lines字段，确保markLines也被设置
@@ -3174,6 +2683,10 @@ async function fetchPlatformStocks () {
       use_box_detection: config.value.use_box_detection,
       box_quality_threshold: config.value.box_quality_threshold,
 
+      // 相对强度参数
+      check_relative_strength: config.value.check_relative_strength,
+      outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
+
       // 基本面筛选参数
       use_fundamental_filter: config.value.use_fundamental_filter,
       revenue_growth_percentile: config.value.revenue_growth_percentile,
@@ -3286,6 +2799,10 @@ async function fetchPlatformStocksLegacy () {
       // 箱体检测参数
       use_box_detection: config.value.use_box_detection,
       box_quality_threshold: config.value.box_quality_threshold,
+
+      // 相对强度参数
+      check_relative_strength: config.value.check_relative_strength,
+      outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
 
       // 基本面筛选参数
       use_fundamental_filter: config.value.use_fundamental_filter,
@@ -3709,7 +3226,10 @@ async function loadScanHistoryToPage(record) {
         breakthrough_prediction: stock.breakthrough_prediction || null,
         volume_analysis: stock.volume_analysis || null,
         box_analysis: stock.box_analysis || null,
-        details: stock.details || {}
+        details: stock.details || {},
+        outperform_index: stock.outperform_index !== undefined ? stock.outperform_index : null,
+        stock_return: stock.stock_return !== undefined ? stock.stock_return : null,
+        market_return: stock.market_return !== undefined ? stock.market_return : null
       }
       
       // 如果后端返回了mark_lines字段，将其重命名为markLines

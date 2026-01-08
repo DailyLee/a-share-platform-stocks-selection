@@ -13,6 +13,7 @@ from .window_weight_analyzer import apply_window_weights
 from .enhanced_platform_analyzer import analyze_enhanced_platform, check_enhanced_platform
 from .box_detector import analyze_box_pattern, check_box_pattern
 from .decline_analyzer import analyze_decline_speed, check_decline_pattern
+from .relative_strength_analyzer import analyze_relative_strength_for_windows
 
 # Import default values from config to ensure consistency
 from ..config import (
@@ -26,7 +27,8 @@ from ..config import (
     DEFAULT_RAPID_DECLINE_DAYS, DEFAULT_RAPID_DECLINE_THRESHOLD,
     DEFAULT_USE_BREAKTHROUGH_CONFIRMATION, DEFAULT_BREAKTHROUGH_CONFIRMATION_DAYS,
     DEFAULT_USE_BREAKTHROUGH_PREDICTION, DEFAULT_USE_WINDOW_WEIGHTS,
-    DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES
+    DEFAULT_MAX_TURNOVER_RATE, DEFAULT_ALLOW_TURNOVER_SPIKES,
+    DEFAULT_CHECK_RELATIVE_STRENGTH, DEFAULT_OUTPERFORM_INDEX_THRESHOLD
 )
 
 
@@ -54,7 +56,11 @@ def analyze_stock(df: pd.DataFrame,
                   use_box_detection: bool = None,
                   box_quality_threshold: float = None,
                   max_turnover_rate: float = None,
-                  allow_turnover_spikes: bool = None) -> Dict[str, Any]:
+                  allow_turnover_spikes: bool = None,
+                  check_relative_strength: bool = None,
+                  outperform_index_threshold: float = None,
+                  market_df: Optional[pd.DataFrame] = None,
+                  end_date: Optional[str] = None) -> Dict[str, Any]:
     """
     Analyze a stock for platform periods across multiple time windows,
     including price analysis, volume analysis, breakthrough prediction, position analysis,
@@ -135,6 +141,10 @@ def analyze_stock(df: pd.DataFrame,
         max_turnover_rate = DEFAULT_MAX_TURNOVER_RATE
     if allow_turnover_spikes is None:
         allow_turnover_spikes = DEFAULT_ALLOW_TURNOVER_SPIKES
+    if check_relative_strength is None:
+        check_relative_strength = DEFAULT_CHECK_RELATIVE_STRENGTH
+    if outperform_index_threshold is None:
+        outperform_index_threshold = DEFAULT_OUTPERFORM_INDEX_THRESHOLD
 
     if df.empty:
         return {
@@ -463,9 +473,69 @@ def analyze_stock(df: pd.DataFrame,
         is_platform = is_platform and is_box_pattern
         platform_judgment_log.append(f"箱体检测: {is_box_pattern}")
 
-    # 记录最终判断结果
-    platform_judgment_log.append(f"最终平台期判断: {is_platform}")
+    # 记录最终判断结果（在计算相对强度之前）
+    platform_judgment_log.append(f"最终平台期判断（相对强度计算前）: {is_platform}")
     print(f"平台期判断过程: {' -> '.join(platform_judgment_log)}")
+
+    # ============================================================
+    # STEP 7: Calculate Relative Strength (only for confirmed platform stocks)
+    # ============================================================
+    # 只有在最终确认是平台期后，才计算相对强度
+    relative_strength_results = {}
+    print(f"[RELATIVE_STRENGTH_DEBUG] Final is_platform={is_platform}, check_relative_strength={check_relative_strength}, market_df is None={market_df is None}, market_df empty={market_df.empty if market_df is not None else 'N/A'}")
+    
+    if is_platform and check_relative_strength and market_df is not None and not market_df.empty:
+        # 只对确认的平台窗口计算相对强度
+        print(f"[RELATIVE_STRENGTH_DEBUG] Calculating relative strength for platform windows: {platform_windows}")
+        for window in platform_windows:
+            try:
+                from .relative_strength_analyzer import calculate_relative_strength
+                print(f"[RELATIVE_STRENGTH_DEBUG] Calculating relative strength for window {window}, end_date={end_date}")
+                rs_result = calculate_relative_strength(df, market_df, window, end_date)
+                relative_strength_results[window] = rs_result
+                print(f"[RELATIVE_STRENGTH_DEBUG] Window {window} result: outperform_index={rs_result.get('outperform_index')}, stock_return={rs_result.get('stock_return')}, market_return={rs_result.get('market_return')}, status={rs_result.get('status')}")
+                # Save relative strength result to details for this window
+                if window in details:
+                    details[window]["relative_strength"] = rs_result
+                # Note: Relative strength will be added to selection_reasons at the end
+            except Exception as e:
+                print(f"[RELATIVE_STRENGTH_DEBUG] Warning: Failed to calculate relative strength for window {window}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        print(f"[RELATIVE_STRENGTH_DEBUG] Collected {len(relative_strength_results)} relative strength results")
+        
+        # 如果启用了相对强度检查且设置了阈值，需要满足相对强度阈值
+        # 如果阈值为 None，则不进行过滤，但仍计算和保存相对强度
+        if relative_strength_results and outperform_index_threshold is not None:
+            # 检查是否有任何一个平台期窗口满足相对强度阈值
+            meets_relative_strength = False
+            for window in platform_windows:
+                if window in relative_strength_results:
+                    rs_result = relative_strength_results[window]
+                    outperform_index = rs_result.get("outperform_index")
+                    if outperform_index is not None and outperform_index >= outperform_index_threshold:
+                        meets_relative_strength = True
+                        break
+            
+            if not meets_relative_strength:
+                is_platform = False
+                platform_judgment_log.append(f"相对强度检查: 未满足阈值({outperform_index_threshold})")
+            else:
+                platform_judgment_log.append(f"相对强度检查: 满足阈值({outperform_index_threshold})")
+        elif relative_strength_results and outperform_index_threshold is None:
+            # 阈值未设置，不进行过滤，但仍计算和保存相对强度
+            platform_judgment_log.append("相对强度检查: 已计算（无阈值限制）")
+    else:
+        if not is_platform:
+            print(f"[RELATIVE_STRENGTH_DEBUG] Skipping relative strength calculation: not a platform stock")
+        elif not check_relative_strength:
+            print(f"[RELATIVE_STRENGTH_DEBUG] Relative strength check is disabled")
+        elif market_df is None or market_df.empty:
+            print(f"[RELATIVE_STRENGTH_DEBUG] Market data unavailable: market_df is None={market_df is None}, empty={market_df.empty if market_df is not None else 'N/A'}")
+    
+    # 记录最终判断结果（在相对强度检查之后）
+    platform_judgment_log.append(f"最终平台期判断（相对强度检查后）: {is_platform}")
 
     # 重新计算标准模式（低位+快速下跌后形成平台期）
     has_decline_pattern = False
@@ -540,6 +610,49 @@ def analyze_stock(df: pd.DataFrame,
                         "color": "#ec0000"  # 红色
                     })
 
+    # Calculate overall outperform_index (use the maximum value from all platform windows)
+    # Also extract stock_return and market_return from the window with maximum outperform_index
+    overall_outperform_index = None
+    overall_stock_return = None
+    overall_market_return = None
+    print(f"[RELATIVE_STRENGTH_DEBUG] Extracting overall values from {len(relative_strength_results)} results")
+    if relative_strength_results:
+        # Find the window with maximum outperform_index
+        max_window = None
+        max_outperform_index = None
+        for window, rs_result in relative_strength_results.items():
+            outperform_index = rs_result.get("outperform_index")
+            print(f"[RELATIVE_STRENGTH_DEBUG] Checking window {window}: outperform_index={outperform_index}")
+            if outperform_index is not None:
+                if max_outperform_index is None or outperform_index > max_outperform_index:
+                    max_outperform_index = outperform_index
+                    max_window = window
+        
+        if max_window is not None:
+            # Found a window with valid outperform_index
+            overall_outperform_index = max_outperform_index
+            max_rs_result = relative_strength_results[max_window]
+            overall_stock_return = max_rs_result.get("stock_return")
+            overall_market_return = max_rs_result.get("market_return")
+            print(f"[RELATIVE_STRENGTH_DEBUG] Using window {max_window}: outperform_index={overall_outperform_index}, stock_return={overall_stock_return}, market_return={overall_market_return}")
+        else:
+            # No valid outperform_index found, but try to extract stock_return and market_return
+            # from any window that has valid stock_return (fallback)
+            print(f"[RELATIVE_STRENGTH_DEBUG] No valid outperform_index found, trying fallback...")
+            for window, rs_result in relative_strength_results.items():
+                stock_return = rs_result.get("stock_return")
+                market_return = rs_result.get("market_return")
+                print(f"[RELATIVE_STRENGTH_DEBUG] Fallback check window {window}: stock_return={stock_return}, market_return={market_return}")
+                if stock_return is not None:
+                    overall_stock_return = stock_return
+                    overall_market_return = market_return
+                    print(f"[RELATIVE_STRENGTH_DEBUG] Fallback success: stock_return={overall_stock_return}, market_return={overall_market_return}")
+                    break  # Use the first window with valid stock_return
+    else:
+        print(f"[RELATIVE_STRENGTH_DEBUG] No relative_strength_results available")
+    
+    print(f"[RELATIVE_STRENGTH_DEBUG] Final values: outperform_index={overall_outperform_index}, stock_return={overall_stock_return}, market_return={overall_market_return}")
+
     result = {
         "is_platform": is_platform,  # 使用新的平台期判断结果
         "windows_checked": windows,
@@ -549,6 +662,10 @@ def analyze_stock(df: pd.DataFrame,
         "volume_analysis": volume_analysis_results if use_volume_analysis else {},
         "turnover_analysis": turnover_analysis_results,
         "box_analysis": box_analysis_results if (use_box_detection and is_basic_platform) else {},
+        "relative_strength_analysis": relative_strength_results,  # 添加相对强度分析结果
+        "outperform_index": overall_outperform_index,  # 添加整体相对强度值
+        "stock_return": overall_stock_return,  # 添加股票涨跌幅
+        "market_return": overall_market_return,  # 添加大盘涨跌幅
         "mark_lines": mark_lines,  # 直接添加标记线数据
         "platform_judgment_log": platform_judgment_log,  # 添加判断过程日志
         "candidate_windows": candidate_windows,  # 通过快速检查的窗口
@@ -699,5 +816,26 @@ def analyze_stock(df: pd.DataFrame,
             for window in platform_windows:
                 if window in selection_reasons:
                     selection_reasons[window] += f", 加权得分: {weighted_score:.2f}"
+
+    # Add relative strength and return information to selection reasons at the end
+    if is_platform and relative_strength_results:
+        for window in platform_windows:
+            if window in relative_strength_results and window in selection_reasons:
+                rs_result = relative_strength_results[window]
+                outperform_index = rs_result.get("outperform_index")
+                stock_return = rs_result.get("stock_return")
+                market_return = rs_result.get("market_return")
+                
+                # Build the relative strength/return info string
+                rs_info_parts = []
+                if outperform_index is not None:
+                    rs_info_parts.append(f"相对强度{outperform_index:.2f}%")
+                if stock_return is not None:
+                    rs_info_parts.append(f"股票涨跌幅{stock_return:.2f}%")
+                if market_return is not None:
+                    rs_info_parts.append(f"大盘涨跌幅{market_return:.2f}%")
+                
+                if rs_info_parts:
+                    selection_reasons[window] += f", {'/'.join(rs_info_parts)}"
 
     return result
