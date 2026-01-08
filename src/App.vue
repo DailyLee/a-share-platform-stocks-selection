@@ -430,34 +430,87 @@
               </div>
 
               <div v-if="selectedScanHistoryRecord.scannedStocks && selectedScanHistoryRecord.scannedStocks.length > 0">
-                <h3 class="text-md font-semibold mb-3">扫描结果股票列表</h3>
-                <div class="overflow-x-auto">
-                  <table class="w-full text-sm">
-                    <thead>
-                      <tr class="border-b border-border">
-                        <th class="text-left p-2">代码</th>
-                        <th class="text-left p-2">名称</th>
-                        <th class="text-left p-2">行业</th>
-                        <th class="text-left p-2">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="stock in selectedScanHistoryRecord.scannedStocks" :key="stock.code" class="border-b border-border/50 hover:bg-muted/30">
-                        <td class="p-2">{{ stock.code }}</td>
-                        <td class="p-2">{{ stock.name }}</td>
-                        <td class="p-2">{{ stock.industry || '未知' }}</td>
-                        <td class="p-2">
-                          <button
-                            @click.stop="goToStockCheck(stock)"
-                            class="px-2 py-1 text-xs rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                            title="单股查询"
-                          >
-                            <i class="fas fa-search"></i>
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <h3 class="text-md font-semibold mb-3">扫描结果股票列表 ({{ selectedScanHistoryRecord.scannedStocks.length }} 只)</h3>
+                <div class="space-y-3 max-h-[60vh] overflow-y-auto">
+                  <div
+                    v-for="stock in selectedScanHistoryRecord.scannedStocks"
+                    :key="stock.code"
+                    class="border border-border rounded-lg p-3 hover:bg-muted/30 transition-colors"
+                  >
+                    <div class="flex justify-between items-start mb-2">
+                      <div class="flex-1">
+                        <div class="font-medium">{{ stock.name }}</div>
+                        <div class="text-sm text-muted-foreground">{{ stock.code }}</div>
+                        <div v-if="stock.industry" class="text-xs text-muted-foreground mt-1">
+                          {{ stock.industry }}
+                        </div>
+                      </div>
+                      <button
+                        @click.stop="goToStockCheck(stock)"
+                        class="px-2 py-1 text-xs rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors ml-2"
+                        title="单股查询"
+                      >
+                        <i class="fas fa-search"></i>
+                      </button>
+                    </div>
+
+                    <!-- 选择理由（可折叠） -->
+                    <div v-if="stock.selection_reasons && Object.keys(stock.selection_reasons).length > 0" class="mt-2">
+                      <div
+                        @click="expandedReasons[stock.code] = !expandedReasons[stock.code]"
+                        class="flex items-center justify-between cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <span class="font-medium">选择理由</span>
+                        <i :class="[
+                          'fas transition-transform duration-300',
+                          expandedReasons[stock.code] ? 'fa-chevron-up' : 'fa-chevron-down'
+                        ]"></i>
+                      </div>
+                      <div :class="[
+                        'overflow-hidden transition-all duration-300 mt-1',
+                        expandedReasons[stock.code] ? 'h-auto opacity-100' : 'h-0 opacity-0'
+                      ]">
+                        <div v-if="Object.keys(stock.selection_reasons || {}).length > 0"
+                          class="p-2 bg-muted/10 rounded">
+                          <div v-for="(reason, window) in stock.selection_reasons" :key="window"
+                            class="mb-1 text-xs text-muted-foreground">
+                            <span class="font-medium text-primary">{{ window }}天:</span>
+                            {{ reason }}
+
+                            <!-- 成交量分析结果（每个窗口期） -->
+                            <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
+                              class="mt-2 border-t border-border pt-1">
+                              <div class="text-xs font-medium text-primary">成交量分析:</div>
+                              <div v-if="stock.volume_analysis[window].has_consolidation_volume"
+                                class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                                成交量萎缩
+                              </div>
+                              <div v-if="stock.volume_analysis[window].has_breakthrough"
+                                class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-arrow-circle-up text-primary mr-1"></i>
+                                成交量突破 ({{
+                                  stock.volume_analysis[window].breakthrough_details?.volume_increase_ratio?.toFixed(2) || 'N/A' }}倍)
+                              </div>
+                              <!-- 成交量变化和稳定性数值 -->
+                              <div v-if="stock.volume_analysis[window].consolidation_details" class="mt-1 space-y-0.5">
+                                <div v-if="stock.volume_analysis[window].consolidation_details.volume_change_ratio !== null && stock.volume_analysis[window].consolidation_details.volume_change_ratio !== undefined"
+                                  class="text-xs text-muted-foreground">
+                                  <span class="font-medium">成交量变化:</span> 
+                                  {{ stock.volume_analysis[window].consolidation_details.volume_change_ratio.toFixed(4) }}
+                                </div>
+                                <div v-if="stock.volume_analysis[window].consolidation_details.volume_stability !== null && stock.volume_analysis[window].consolidation_details.volume_stability !== undefined"
+                                  class="text-xs text-muted-foreground">
+                                  <span class="font-medium">成交量稳定性:</span> 
+                                  {{ stock.volume_analysis[window].consolidation_details.volume_stability.toFixed(4) }}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1159,8 +1212,8 @@
                 <thead class="bg-muted/50">
                   <tr>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <div class="flex items-center space-x-2">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[60px]">
+                      <div class="flex items-center space-x-1">
                         <input
                           type="checkbox"
                           :checked="isAllSelected"
@@ -1173,31 +1226,31 @@
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[100px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[80px]">
                       <div class="flex items-center">
                         <i class="fas fa-hashtag mr-1"></i> 代码
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[120px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[100px]">
                       <div class="flex items-center">
                         <i class="fas fa-font mr-1"></i> 名称
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[100px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[60px]">
                       <div class="flex items-center">
                         <i class="fas fa-tag mr-1"></i> 行业
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[500px] min-w-[400px]">
                       <div class="flex items-center">
                         <i class="fas fa-check-circle mr-1"></i> 选择理由
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[400px]">
+                      class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[500px] min-w-[400px]">
                       <div class="flex items-center">
                         <i class="fas fa-chart-line mr-1"></i> 近期K线
                       </div>
@@ -1206,7 +1259,7 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                   <tr v-for="stock in paginatedStocks" :key="stock.code">
-                    <td class="px-4 py-3 whitespace-nowrap">
+                    <td class="px-2 py-3 whitespace-nowrap w-[60px]">
                       <input
                         type="checkbox"
                         :checked="isStockSelected(stock.code)"
@@ -1214,10 +1267,10 @@
                         class="checkbox"
                       />
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium">{{ stock.code }}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm">{{ stock.name }}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm">
-                      <span class="px-2 py-0.5 rounded-full text-xs bg-primary/20 text-primary">
+                    <td class="px-2 py-3 whitespace-nowrap text-sm font-medium w-[80px]">{{ stock.code }}</td>
+                    <td class="px-2 py-3 whitespace-nowrap text-sm w-[100px]">{{ stock.name }}</td>
+                    <td class="px-2 py-3 whitespace-nowrap text-sm w-[60px]">
+                      <span class="px-1 py-0.5 rounded-full text-xs bg-primary/20 text-primary">
                         {{ stock.industry || '未知行业' }}
                       </span>
                     </td>
@@ -1250,22 +1303,35 @@
                             class="mb-1 text-xs text-muted-foreground">
                             <span class="font-medium text-primary">{{ window }}天:</span>
                             {{ reason }}
-                          </div>
 
-                          <!-- 成交量分析结果 -->
-                          <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
-                            class="mt-2 border-t border-border pt-1">
-                            <div class="text-xs font-medium text-primary">成交量分析:</div>
-                            <div v-if="stock.volume_analysis[window].has_consolidation_volume"
-                              class="text-xs text-muted-foreground flex items-center">
-                              <i class="fas fa-check-circle text-green-500 mr-1"></i>
-                              成交量萎缩
-                            </div>
-                            <div v-if="stock.volume_analysis[window].has_breakthrough"
-                              class="text-xs text-muted-foreground flex items-center">
-                              <i class="fas fa-arrow-circle-up text-primary mr-1"></i>
-                              成交量突破 ({{
-                                stock.volume_analysis[window].breakthrough_details.volume_increase_ratio.toFixed(2) }}倍)
+                            <!-- 成交量分析结果（每个窗口期） -->
+                            <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
+                              class="mt-2 border-t border-border pt-1">
+                              <div class="text-xs font-medium text-primary">成交量分析:</div>
+                              <div v-if="stock.volume_analysis[window].has_consolidation_volume"
+                                class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                                成交量萎缩
+                              </div>
+                              <div v-if="stock.volume_analysis[window].has_breakthrough"
+                                class="text-xs text-muted-foreground flex items-center">
+                                <i class="fas fa-arrow-circle-up text-primary mr-1"></i>
+                                成交量突破 ({{
+                                  stock.volume_analysis[window].breakthrough_details?.volume_increase_ratio?.toFixed(2) || 'N/A' }}倍)
+                              </div>
+                              <!-- 成交量变化和稳定性数值 -->
+                              <div v-if="stock.volume_analysis[window].consolidation_details" class="mt-1 space-y-0.5">
+                                <div v-if="stock.volume_analysis[window].consolidation_details.volume_change_ratio !== null && stock.volume_analysis[window].consolidation_details.volume_change_ratio !== undefined"
+                                  class="text-xs text-muted-foreground">
+                                  <span class="font-medium">成交量变化:</span> 
+                                  {{ stock.volume_analysis[window].consolidation_details.volume_change_ratio.toFixed(4) }}
+                                </div>
+                                <div v-if="stock.volume_analysis[window].consolidation_details.volume_stability !== null && stock.volume_analysis[window].consolidation_details.volume_stability !== undefined"
+                                  class="text-xs text-muted-foreground">
+                                  <span class="font-medium">成交量稳定性:</span> 
+                                  {{ stock.volume_analysis[window].consolidation_details.volume_stability.toFixed(4) }}
+                                </div>
+                              </div>
                             </div>
                           </div>
 
@@ -1318,11 +1384,11 @@
                         </div>
                       </div>
                     </td>
-                    <td class="px-4 py-3">
+                    <td class="px-4 py-3 align-top">
                       <!-- 缩略图K线图容器 -->
                       <div class="relative group w-full">
                         <!-- K线图 -->
-                        <KlineChart :klineData="stock.kline_data" height="150px" width="100%"
+                        <KlineChart :klineData="stock.kline_data" height="220px" width="100%"
                           :title="`${stock.name} (${stock.code})`" :isDarkMode="isDarkMode"
                           :markLines="generateMarkLines(stock)" :supportLevels="getSupportLevels(stock)"
                           :resistanceLevels="getResistanceLevels(stock)" class="rounded-md overflow-hidden w-full" />
@@ -1507,22 +1573,37 @@
                         class="mb-1 text-xs text-muted-foreground">
                         <span class="font-medium text-primary">{{ window }}天:</span>
                         {{ reason }}
-                      </div>
 
-                      <!-- 成交量分析结果 -->
-                      <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
-                        class="mt-2 border-t border-border pt-1">
-                        <div class="text-xs font-medium text-primary">成交量分析:</div>
-                        <div v-if="stock.volume_analysis[window].has_consolidation_volume"
-                          class="text-xs text-muted-foreground flex items-center">
-                          <i class="fas fa-check-circle text-green-500 mr-1"></i>
-                          成交量萎缩
-                        </div>
-                        <div v-if="stock.volume_analysis[window].has_breakthrough"
-                          class="text-xs text-muted-foreground flex items-center">
-                          <i class="fas fa-arrow-circle-up text-primary mr-1"></i>
-                          成交量突破 ({{
-                            stock.volume_analysis[window].breakthrough_details.volume_increase_ratio.toFixed(2) }}倍)
+                        <!-- 成交量分析结果（每个窗口期） -->
+                        <div v-if="stock.volume_analysis && stock.volume_analysis[window]"
+                          class="mt-2 border-t border-border pt-1">
+                          <div class="text-xs font-medium text-primary">成交量分析:</div>
+                          <div v-if="stock.volume_analysis[window].has_consolidation_volume"
+                            class="text-xs text-muted-foreground flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                            成交量萎缩
+                          </div>
+                          <div v-if="stock.volume_analysis[window].has_breakthrough"
+                            class="text-xs text-muted-foreground flex items-center">
+                            <i class="fas fa-arrow-circle-up text-primary mr-1"></i>
+                            成交量突破 ({{
+                              stock.volume_analysis[window].breakthrough_details?.volume_increase_ratio?.toFixed(2) || 'N/A' }}倍)
+                          </div>
+                          <!-- 成交量变化和稳定性数值 -->
+                          <div v-if="stock.volume_analysis[window].consolidation_details" class="mt-1 space-y-0.5">
+                            <div v-if="stock.volume_analysis[window].consolidation_details.volume_change_ratio !== null && stock.volume_analysis[window].consolidation_details.volume_change_ratio !== undefined"
+                              class="text-xs text-muted-foreground">
+                              <span class="font-medium">成交量变化:</span> 
+                              {{ stock.volume_analysis[window].consolidation_details.volume_change_ratio.toFixed(4) }}
+                              <span class="text-muted-foreground/70">(阈值: {{ stock.volume_analysis[window].consolidation_details.volume_change_threshold ?? 'N/A' }})</span>
+                            </div>
+                            <div v-if="stock.volume_analysis[window].consolidation_details.volume_stability !== null && stock.volume_analysis[window].consolidation_details.volume_stability !== undefined"
+                              class="text-xs text-muted-foreground">
+                              <span class="font-medium">成交量稳定性:</span> 
+                              {{ stock.volume_analysis[window].consolidation_details.volume_stability.toFixed(4) }}
+                              <span class="text-muted-foreground/70">(阈值: {{ stock.volume_analysis[window].consolidation_details.volume_stability_threshold ?? 'N/A' }})</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
