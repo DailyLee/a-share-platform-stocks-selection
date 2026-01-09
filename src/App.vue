@@ -772,19 +772,19 @@
                   <i class="fas fa-chart-line mr-1 text-primary"></i>
                   布林极限 (%B) 筛选
                 </h3>
-                <div v-if="percentBRange.maxPercentB > percentBRange.minPercentB && percentBRange.maxPercentB > 0" class="space-y-1.5">
+                <div v-if="percentBRange && percentBRange.maxPercentB !== undefined && percentBRange.minPercentB !== undefined && percentBRange.maxPercentB > percentBRange.minPercentB && percentBRange.maxPercentB > 0" class="space-y-1.5">
                   <Slider
                     v-model="percentBRangeArray"
-                    :min="percentBRange.minPercentB"
-                    :max="percentBRange.maxPercentB"
-                    :step="Math.max(0.01, (percentBRange.maxPercentB - percentBRange.minPercentB) / 100)"
+                    :min="percentBRange?.minPercentB ?? 0"
+                    :max="percentBRange?.maxPercentB ?? 1"
+                    :step="Math.max(0.01, ((percentBRange?.maxPercentB ?? 1) - (percentBRange?.minPercentB ?? 0)) / 100)"
                   />
                   <div class="flex justify-between items-center text-xs">
-                    <span class="text-muted-foreground">{{ percentBRange.minPercentB.toFixed(2) }}</span>
+                    <span class="text-muted-foreground">{{ (percentBRange?.minPercentB ?? 0).toFixed(2) }}</span>
                     <span class="font-medium text-foreground">
-                      {{ percentBRangeArray[0].toFixed(2) }} - {{ percentBRangeArray[1].toFixed(2) }}
+                      {{ percentBRangeArray[0]?.toFixed(2) ?? '0.00' }} - {{ percentBRangeArray[1]?.toFixed(2) ?? '1.00' }}
                     </span>
-                    <span class="text-muted-foreground">{{ percentBRange.maxPercentB.toFixed(2) }}</span>
+                    <span class="text-muted-foreground">{{ (percentBRange?.maxPercentB ?? 1).toFixed(2) }}</span>
                   </div>
                 </div>
                 <p v-else class="text-xs text-muted-foreground">暂无数据</p>
@@ -866,6 +866,10 @@
                         <div class="flex items-center">
                           <i class="fas fa-info-circle text-primary mr-1.5"></i>
                           <span class="font-medium">选择理由</span>
+                          <!-- %B 数值显示 -->
+                          <span v-if="getStockPercentB(stock) !== null" class="ml-1.5 text-xs font-medium text-primary">
+                            (%B: {{ getStockPercentB(stock).toFixed(4) }})
+                          </span>
                           <span v-if="Object.keys(stock.selection_reasons || {}).length > 0"
                             class="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                             {{ Object.keys(stock.selection_reasons || {}).length }}
@@ -1186,6 +1190,10 @@
                     <div class="flex items-center">
                       <i class="fas fa-info-circle text-primary mr-1.5"></i>
                       <span class="font-medium">选择理由</span>
+                      <!-- %B 数值显示 -->
+                      <span v-if="getStockPercentB(stock) !== null" class="ml-1.5 text-xs font-medium text-primary">
+                        (%B: {{ getStockPercentB(stock).toFixed(4) }})
+                      </span>
                       <span v-if="Object.keys(stock.selection_reasons || {}).length > 0"
                         class="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                         {{ Object.keys(stock.selection_reasons || {}).length }}
@@ -1589,6 +1597,11 @@ const filteredStocks = computed(() => {
   
   return filtered
 })
+
+// 获取股票的 %B 值（用于模板）
+const getStockPercentB = (stock) => {
+  return extractPercentB(stock)
+}
 
 // 分页相关状态
 const currentPage = ref(1);
