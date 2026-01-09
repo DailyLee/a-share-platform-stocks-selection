@@ -684,6 +684,7 @@ import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
 import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
 import { getStockBoard } from '../utils/stockBoardUtils.js'
+import { getDefaultScanConfig } from '../config/scanConfig.js' // 默认扫描配置
 
 const router = useRouter()
 
@@ -691,7 +692,7 @@ const taskName = ref('')
 const startDate = ref('')
 const endDate = ref('')
 const scanPeriodDays = ref(7)
-const scanConfig = ref({}) // 扫描配置，由 ScanConfigForm 组件通过 v-model 更新
+const scanConfig = ref(getDefaultScanConfig()) // 扫描配置，使用默认配置初始化
 const scanConfigFormRef = ref(null) // 扫描配置表单引用
 
 const tasks = ref([])
@@ -899,54 +900,97 @@ const loadTasks = async () => {
   }
 }
 
+// 构建扫描配置 payload 的辅助函数
+// 从 config 中提取所有扫描相关参数，排除不需要的字段
+function buildScanPayload(config, options = {}) {
+  const {
+    includeScanDate = false, // 批量扫描不包含 scan_date
+    windows = null // 自定义 windows（如果提供则使用，否则从 config 解析）
+  } = options
+
+  // 需要排除的字段（这些字段不应该发送到后端）
+  const excludeFields = ['windowsInput', 'scan_date'] // windowsInput 需要转换为 windows 数组，scan_date 批量扫描不需要
+
+  // 从 config 中提取所有字段，排除不需要的
+  const payload = {}
+  Object.keys(config).forEach(key => {
+    if (!excludeFields.includes(key)) {
+      const value = config[key]
+      // 处理 null/undefined 值
+      if (value !== null && value !== undefined) {
+        payload[key] = value
+      }
+    }
+  })
+
+  // 设置 windows（优先使用传入的，否则从 config 解析）
+  if (windows) {
+    payload.windows = windows
+  } else if (config.windowsInput) {
+    const parsed = config.windowsInput
+      .split(',')
+      .map(w => parseInt(w.trim(), 10))
+      .filter(w => !isNaN(w) && w > 0)
+    payload.windows = parsed.length > 0 ? parsed : [30, 60, 90]
+  }
+
+  // 设置 scan_date（如果包含）
+  if (includeScanDate && config.scan_date) {
+    payload.scan_date = config.scan_date
+  }
+
+  // 处理特殊字段的默认值
+  if (payload.expected_count === undefined || payload.expected_count === null) {
+    payload.expected_count = 10
+  }
+
+  // 处理 outperform_index_threshold（null 值需要明确传递）
+  if (payload.outperform_index_threshold === null || payload.outperform_index_threshold === undefined) {
+    payload.outperform_index_threshold = null
+  }
+
+  // 处理 use_scan_cache 默认值
+  if (payload.use_scan_cache === undefined) {
+    payload.use_scan_cache = false
+  }
+
+  // 处理 max_stock_count（null 或 0 表示不限制）
+  if (payload.max_stock_count && payload.max_stock_count > 0) {
+    payload.max_stock_count = payload.max_stock_count
+  } else {
+    payload.max_stock_count = null
+  }
+
+  // 处理 use_local_database_first 默认值
+  if (payload.use_local_database_first === undefined) {
+    payload.use_local_database_first = true
+  }
+
+  // 处理 window_weights（确保是对象）
+  if (payload.window_weights && typeof payload.window_weights === 'object') {
+    payload.window_weights = payload.window_weights
+  } else {
+    payload.window_weights = {}
+  }
+
+  return payload
+}
+
 const submitTask = async () => {
   try {
-    // 构建扫描配置
-    // 使用 parsedWindows 计算属性（已包含安全检查）
-    const windows = parsedWindows.value
+    // 使用辅助函数构建扫描配置 payload
+    const scanPayload = buildScanPayload(scanConfig.value, {
+      includeScanDate: false, // 批量扫描不包含 scan_date
+      windows: parsedWindows.value
+    })
     
+    // 添加批量扫描特有的字段
     const payload = {
       task_name: taskName.value,
       start_date: startDate.value,
       end_date: endDate.value,
       scan_period_days: scanPeriodDays.value,
-      windows: windows,
-      expected_count: scanConfig.value.expected_count,
-      box_threshold: scanConfig.value.box_threshold,
-      ma_diff_threshold: scanConfig.value.ma_diff_threshold,
-      volatility_threshold: scanConfig.value.volatility_threshold,
-      use_volume_analysis: scanConfig.value.use_volume_analysis,
-      volume_change_threshold: scanConfig.value.volume_change_threshold,
-      volume_stability_threshold: scanConfig.value.volume_stability_threshold,
-      volume_increase_threshold: scanConfig.value.volume_increase_threshold,
-      use_technical_indicators: scanConfig.value.use_technical_indicators,
-      use_breakthrough_prediction: scanConfig.value.use_breakthrough_prediction,
-      use_low_position: scanConfig.value.use_low_position,
-      high_point_lookback_days: scanConfig.value.high_point_lookback_days,
-      decline_period_days: scanConfig.value.decline_period_days,
-      decline_threshold: scanConfig.value.decline_threshold,
-      use_rapid_decline_detection: scanConfig.value.use_rapid_decline_detection,
-      rapid_decline_days: scanConfig.value.rapid_decline_days,
-      rapid_decline_threshold: scanConfig.value.rapid_decline_threshold,
-      use_breakthrough_confirmation: scanConfig.value.use_breakthrough_confirmation,
-      breakthrough_confirmation_days: scanConfig.value.breakthrough_confirmation_days,
-      use_box_detection: scanConfig.value.use_box_detection,
-      box_quality_threshold: scanConfig.value.box_quality_threshold,
-      check_relative_strength: scanConfig.value.check_relative_strength,
-      outperform_index_threshold: scanConfig.value.outperform_index_threshold !== null && scanConfig.value.outperform_index_threshold !== undefined ? scanConfig.value.outperform_index_threshold : null,
-      use_fundamental_filter: scanConfig.value.use_fundamental_filter,
-      revenue_growth_percentile: scanConfig.value.revenue_growth_percentile,
-      profit_growth_percentile: scanConfig.value.profit_growth_percentile,
-      roe_percentile: scanConfig.value.roe_percentile,
-      liability_percentile: scanConfig.value.liability_percentile,
-      pe_percentile: scanConfig.value.pe_percentile,
-      pb_percentile: scanConfig.value.pb_percentile,
-      fundamental_years_to_check: scanConfig.value.fundamental_years_to_check,
-      use_window_weights: scanConfig.value.use_window_weights,
-      window_weights: scanConfig.value.window_weights || {},
-      use_scan_cache: scanConfig.value.use_scan_cache !== undefined ? scanConfig.value.use_scan_cache : true,
-      max_stock_count: scanConfig.value.max_stock_count && scanConfig.value.max_stock_count > 0 ? scanConfig.value.max_stock_count : null,
-      use_local_database_first: scanConfig.value.use_local_database_first !== undefined ? scanConfig.value.use_local_database_first : true
+      ...scanPayload // 合并扫描配置
     }
     
     const response = await axios.post('/platform/api/batch-scan/start', payload)

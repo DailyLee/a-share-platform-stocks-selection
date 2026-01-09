@@ -1396,6 +1396,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'; // 确认对话框�
 import DateRangeFilter from './components/DateRangeFilter.vue'; // 日期筛选组件
 import ScanConfigForm from './components/ScanConfigForm.vue'; // 扫描配置表单组件
 import { getStockBoard } from './utils/stockBoardUtils.js'; // 板块工具函数
+import { getDefaultScanConfig } from './config/scanConfig.js'; // 默认扫描配置
 import { gsap } from 'gsap';
 
 const router = useRouter();
@@ -1414,7 +1415,7 @@ const isDarkMode = ref(false); // 暗色模式状态
 const expandedReasons = ref({}); // 跟踪每个股票的选择理由是否展开
 const selectedStocks = ref([]); // 选中的股票列表（用于回测）
 const scanConfigFormRef = ref(null); // 扫描配置表单引用
-const config = ref({}); // 扫描配置，由 ScanConfigForm 组件通过 v-model 更新
+const config = ref(getDefaultScanConfig()); // 扫描配置，使用默认配置初始化
 
 // 筛选相关状态
 const showFilterPanel = ref(false); // 筛选面板显示状态
@@ -2151,46 +2152,12 @@ function goToBacktest() {
     error.value = '请至少选择一只股票进行回测';
     return;
   }
-  // 获取当前扫描配置
-  const currentScanConfig = {
-    scan_date: config.value.scan_date || maxDate.value,
+  // 获取当前扫描配置（使用辅助函数构建）
+  const currentScanConfig = buildScanPayload(config.value, {
+    includeScanDate: true,
     windows: parsedWindows.value,
-    expected_count: config.value.expected_count || 10,
-    box_threshold: config.value.box_threshold,
-    ma_diff_threshold: config.value.ma_diff_threshold,
-    volatility_threshold: config.value.volatility_threshold,
-    use_volume_analysis: config.value.use_volume_analysis,
-    volume_change_threshold: config.value.volume_change_threshold,
-    volume_stability_threshold: config.value.volume_stability_threshold,
-    volume_increase_threshold: config.value.volume_increase_threshold,
-    max_turnover_rate: config.value.max_turnover_rate,
-    allow_turnover_spikes: config.value.allow_turnover_spikes,
-    use_technical_indicators: config.value.use_technical_indicators,
-    use_breakthrough_prediction: config.value.use_breakthrough_prediction,
-    use_low_position: config.value.use_low_position,
-    high_point_lookback_days: config.value.high_point_lookback_days,
-    decline_period_days: config.value.decline_period_days,
-    decline_threshold: config.value.decline_threshold,
-    use_rapid_decline_detection: config.value.use_rapid_decline_detection,
-    rapid_decline_days: config.value.rapid_decline_days,
-    rapid_decline_threshold: config.value.rapid_decline_threshold,
-    use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
-    breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
-    use_window_weights: config.value.use_window_weights,
-    window_weights: config.value.window_weights,
-    use_box_detection: config.value.use_box_detection,
-    box_quality_threshold: config.value.box_quality_threshold,
-    check_relative_strength: config.value.check_relative_strength,
-    outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
-    use_fundamental_filter: config.value.use_fundamental_filter,
-    revenue_growth_percentile: config.value.revenue_growth_percentile,
-    profit_growth_percentile: config.value.profit_growth_percentile,
-    roe_percentile: config.value.roe_percentile,
-    liability_percentile: config.value.liability_percentile,
-    pe_percentile: config.value.pe_percentile,
-    pb_percentile: config.value.pb_percentile,
-    fundamental_years_to_check: config.value.fundamental_years_to_check
-  };
+    scanDate: config.value.scan_date || maxDate.value
+  })
   
   console.log('准备跳转到回测页面，当前扫描配置:', currentScanConfig);
   
@@ -2468,6 +2435,83 @@ const parsedWindows = computed(() => {
   return windows;
 });
 
+// 构建扫描配置 payload 的辅助函数
+// 从 config 中提取所有扫描相关参数，排除不需要的字段
+function buildScanPayload(config, options = {}) {
+  const {
+    includeScanDate = true, // 是否包含 scan_date
+    windows = null, // 自定义 windows（如果提供则使用，否则从 config 解析）
+    scanDate = null // 自定义 scan_date（如果提供则使用，否则从 config 获取）
+  } = options
+
+  // 需要排除的字段（这些字段不应该发送到后端）
+  const excludeFields = ['windowsInput'] // windowsInput 需要转换为 windows 数组
+
+  // 从 config 中提取所有字段，排除不需要的
+  const payload = {}
+  Object.keys(config).forEach(key => {
+    if (!excludeFields.includes(key)) {
+      const value = config[key]
+      // 处理 null/undefined 值
+      if (value !== null && value !== undefined) {
+        payload[key] = value
+      }
+    }
+  })
+
+  // 设置 windows（优先使用传入的，否则从 config 解析）
+  if (windows) {
+    payload.windows = windows
+  } else if (config.windowsInput) {
+    const parsed = config.windowsInput
+      .split(',')
+      .map(w => parseInt(w.trim(), 10))
+      .filter(w => !isNaN(w) && w > 0)
+    payload.windows = parsed.length > 0 ? parsed : [30, 60, 90]
+  }
+
+  // 设置 scan_date（如果包含）
+  if (includeScanDate) {
+    payload.scan_date = scanDate || config.scan_date || maxDate.value
+  }
+
+  // 处理特殊字段的默认值
+  if (payload.expected_count === undefined || payload.expected_count === null) {
+    payload.expected_count = 10
+  }
+
+  // 处理 outperform_index_threshold（null 值需要明确传递）
+  if (payload.outperform_index_threshold === null || payload.outperform_index_threshold === undefined) {
+    payload.outperform_index_threshold = null
+  }
+
+  // 处理 use_scan_cache 默认值
+  if (payload.use_scan_cache === undefined) {
+    payload.use_scan_cache = false
+  }
+
+  // 处理 max_stock_count（null 或 0 表示不限制）
+  if (payload.max_stock_count && payload.max_stock_count > 0) {
+    payload.max_stock_count = payload.max_stock_count
+  } else {
+    payload.max_stock_count = null
+  }
+
+  // 处理 use_local_database_first 默认值
+  if (payload.use_local_database_first === undefined) {
+    payload.use_local_database_first = true
+  }
+
+  // 处理 window_weights（确保是对象）
+  if (payload.window_weights && typeof payload.window_weights === 'object') {
+    payload.window_weights = payload.window_weights
+  } else {
+    payload.window_weights = {}
+  }
+
+  return payload
+}
+
 // 清理轮询定时器
 onUnmounted(() => {
   if (pollingInterval.value) {
@@ -2597,75 +2641,12 @@ async function fetchPlatformStocks () {
   // Add similar validation for other thresholds if needed
 
   try {
-    const payload = {
-      // 扫描日期
-      scan_date: config.value.scan_date || maxDate.value,
-      
-      // 基本参数
+    // 使用辅助函数构建 payload
+    const payload = buildScanPayload(config.value, {
+      includeScanDate: true,
       windows: parsedWindows.value,
-      expected_count: config.value.expected_count || 10,
-
-      // 价格参数
-      box_threshold: config.value.box_threshold,
-      ma_diff_threshold: config.value.ma_diff_threshold,
-      volatility_threshold: config.value.volatility_threshold,
-
-      // 成交量参数
-      use_volume_analysis: config.value.use_volume_analysis,
-      volume_change_threshold: config.value.volume_change_threshold,
-      volume_stability_threshold: config.value.volume_stability_threshold,
-      volume_increase_threshold: config.value.volume_increase_threshold,
-
-      // 换手率参数
-      max_turnover_rate: config.value.max_turnover_rate,
-      allow_turnover_spikes: config.value.allow_turnover_spikes,
-
-      // 技术指标参数
-      use_technical_indicators: config.value.use_technical_indicators,
-      use_breakthrough_prediction: config.value.use_breakthrough_prediction,
-
-      // 位置参数
-      use_low_position: config.value.use_low_position,
-      high_point_lookback_days: config.value.high_point_lookback_days,
-      decline_period_days: config.value.decline_period_days,
-      decline_threshold: config.value.decline_threshold,
-
-      // 快速下跌判断参数
-      use_rapid_decline_detection: config.value.use_rapid_decline_detection,
-      rapid_decline_days: config.value.rapid_decline_days,
-      rapid_decline_threshold: config.value.rapid_decline_threshold,
-
-      // 突破确认参数
-      use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
-      breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
-
-      // 窗口权重参数
-      use_window_weights: config.value.use_window_weights,
-      window_weights: config.value.window_weights,
-
-      // 箱体检测参数
-      use_box_detection: config.value.use_box_detection,
-      box_quality_threshold: config.value.box_quality_threshold,
-
-      // 相对强度参数
-      check_relative_strength: config.value.check_relative_strength,
-      outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
-
-      // 基本面筛选参数
-      use_fundamental_filter: config.value.use_fundamental_filter,
-      revenue_growth_percentile: config.value.revenue_growth_percentile,
-      profit_growth_percentile: config.value.profit_growth_percentile,
-      roe_percentile: config.value.roe_percentile,
-      liability_percentile: config.value.liability_percentile,
-      pe_percentile: config.value.pe_percentile,
-      pb_percentile: config.value.pb_percentile,
-      fundamental_years_to_check: config.value.fundamental_years_to_check,
-      
-      // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : false,
-      max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
-      use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
-    };
+      scanDate: config.value.scan_date || maxDate.value
+    })
 
     console.log("发送POST请求到 /platform/api/scan/start...");
     const resp = await axios.post('/platform/api/scan/start', payload);
@@ -2714,75 +2695,12 @@ async function fetchPlatformStocksLegacy () {
   }
 
   try {
-    const payload = {
-      // 扫描日期
-      scan_date: config.value.scan_date || maxDate.value,
-      
-      // 基本参数
+    // 使用辅助函数构建 payload
+    const payload = buildScanPayload(config.value, {
+      includeScanDate: true,
       windows: parsedWindows.value,
-      expected_count: config.value.expected_count || 10,
-
-      // 价格参数
-      box_threshold: config.value.box_threshold,
-      ma_diff_threshold: config.value.ma_diff_threshold,
-      volatility_threshold: config.value.volatility_threshold,
-
-      // 成交量参数
-      use_volume_analysis: config.value.use_volume_analysis,
-      volume_change_threshold: config.value.volume_change_threshold,
-      volume_stability_threshold: config.value.volume_stability_threshold,
-      volume_increase_threshold: config.value.volume_increase_threshold,
-
-      // 换手率参数
-      max_turnover_rate: config.value.max_turnover_rate,
-      allow_turnover_spikes: config.value.allow_turnover_spikes,
-
-      // 技术指标参数
-      use_technical_indicators: config.value.use_technical_indicators,
-      use_breakthrough_prediction: config.value.use_breakthrough_prediction,
-
-      // 位置参数
-      use_low_position: config.value.use_low_position,
-      high_point_lookback_days: config.value.high_point_lookback_days,
-      decline_period_days: config.value.decline_period_days,
-      decline_threshold: config.value.decline_threshold,
-
-      // 快速下跌判断参数
-      use_rapid_decline_detection: config.value.use_rapid_decline_detection,
-      rapid_decline_days: config.value.rapid_decline_days,
-      rapid_decline_threshold: config.value.rapid_decline_threshold,
-
-      // 突破确认参数
-      use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
-      breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
-
-      // 窗口权重参数
-      use_window_weights: config.value.use_window_weights,
-      window_weights: config.value.window_weights,
-
-      // 箱体检测参数
-      use_box_detection: config.value.use_box_detection,
-      box_quality_threshold: config.value.box_quality_threshold,
-
-      // 相对强度参数
-      check_relative_strength: config.value.check_relative_strength,
-      outperform_index_threshold: config.value.outperform_index_threshold !== null && config.value.outperform_index_threshold !== undefined ? config.value.outperform_index_threshold : null,
-
-      // 基本面筛选参数
-      use_fundamental_filter: config.value.use_fundamental_filter,
-      revenue_growth_percentile: config.value.revenue_growth_percentile,
-      profit_growth_percentile: config.value.profit_growth_percentile,
-      roe_percentile: config.value.roe_percentile,
-      liability_percentile: config.value.liability_percentile,
-      pe_percentile: config.value.pe_percentile,
-      pb_percentile: config.value.pb_percentile,
-      fundamental_years_to_check: config.value.fundamental_years_to_check,
-      
-      // 系统设置
-      use_scan_cache: config.value.use_scan_cache !== undefined ? config.value.use_scan_cache : false,
-      max_stock_count: config.value.max_stock_count && config.value.max_stock_count > 0 ? config.value.max_stock_count : null,
-      use_local_database_first: config.value.use_local_database_first !== undefined ? config.value.use_local_database_first : true
-    };
+      scanDate: config.value.scan_date || maxDate.value
+    })
 
     console.log("使用旧版API直接请求...");
     const resp = await axios.post('/platform/api/scan', payload, {
@@ -2832,44 +2750,12 @@ async function fetchPlatformStocksLegacy () {
       selectedStocks.value = [...processedResults];
       console.log('✓ 扫描完成，默认全选所有股票:', selectedStocks.value.length, '只');
       
-      // 保存扫描配置到 localStorage，供回测使用
-      const currentScanConfig = {
-        scan_date: config.value.scan_date || maxDate.value,
+      // 保存扫描配置到 localStorage，供回测使用（使用辅助函数构建）
+      const currentScanConfig = buildScanPayload(config.value, {
+        includeScanDate: true,
         windows: parsedWindows.value,
-        expected_count: config.value.expected_count || 10,
-        box_threshold: config.value.box_threshold,
-        ma_diff_threshold: config.value.ma_diff_threshold,
-        volatility_threshold: config.value.volatility_threshold,
-        use_volume_analysis: config.value.use_volume_analysis,
-        volume_change_threshold: config.value.volume_change_threshold,
-        volume_stability_threshold: config.value.volume_stability_threshold,
-        volume_increase_threshold: config.value.volume_increase_threshold,
-        max_turnover_rate: config.value.max_turnover_rate,
-        allow_turnover_spikes: config.value.allow_turnover_spikes,
-        use_technical_indicators: config.value.use_technical_indicators,
-        use_breakthrough_prediction: config.value.use_breakthrough_prediction,
-        use_low_position: config.value.use_low_position,
-        high_point_lookback_days: config.value.high_point_lookback_days,
-        decline_period_days: config.value.decline_period_days,
-        decline_threshold: config.value.decline_threshold,
-        use_rapid_decline_detection: config.value.use_rapid_decline_detection,
-        rapid_decline_days: config.value.rapid_decline_days,
-        rapid_decline_threshold: config.value.rapid_decline_threshold,
-        use_breakthrough_confirmation: config.value.use_breakthrough_confirmation,
-        breakthrough_confirmation_days: config.value.breakthrough_confirmation_days,
-        use_window_weights: config.value.use_window_weights,
-        window_weights: config.value.window_weights,
-        use_box_detection: config.value.use_box_detection,
-        box_quality_threshold: config.value.box_quality_threshold,
-        use_fundamental_filter: config.value.use_fundamental_filter,
-        revenue_growth_percentile: config.value.revenue_growth_percentile,
-        profit_growth_percentile: config.value.profit_growth_percentile,
-        roe_percentile: config.value.roe_percentile,
-        liability_percentile: config.value.liability_percentile,
-        pe_percentile: config.value.pe_percentile,
-        pb_percentile: config.value.pb_percentile,
-        fundamental_years_to_check: config.value.fundamental_years_to_check
-      };
+        scanDate: config.value.scan_date || maxDate.value
+      })
       
       try {
         localStorage.setItem('scanConfig', JSON.stringify(currentScanConfig));
