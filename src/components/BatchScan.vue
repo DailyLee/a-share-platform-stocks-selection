@@ -418,9 +418,9 @@
                         <span class="text-sm font-medium">回测日（扫描日期）:</span>
                         <span class="text-sm ml-2">{{ result.scanDate }}</span>
                       </div>
-                      <span class="text-xs text-muted-foreground">
-                        {{ result.stockCount }} 只股票
-                      </span>
+                      <div class="text-xs text-muted-foreground">
+                        成功/总数: {{ result.successCount || 0 }}/{{ result.totalScanned || 0 }} 结果：{{ result.stockCount || 0 }}只
+                      </div>
                     </div>
                     <div>
                       <label class="block text-xs text-muted-foreground mb-1">统计日 *</label>
