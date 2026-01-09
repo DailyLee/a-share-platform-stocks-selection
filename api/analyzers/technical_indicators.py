@@ -153,7 +153,7 @@ def calculate_bollinger_bands(df: pd.DataFrame, period: int = 20, std_dev: float
     # Calculate middle band (SMA)
     result_df['bb_middle'] = result_df['close'].rolling(window=period).mean()
     
-    # Calculate standard deviation
+    # Calculate standard deviation (使用 ddof=1 表示样本标准差，pandas 默认)
     rolling_std = result_df['close'].rolling(window=period).std()
     
     # Calculate upper and lower bands

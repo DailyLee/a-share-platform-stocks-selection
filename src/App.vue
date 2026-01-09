@@ -765,6 +765,30 @@
                   已选择 {{ selectedBoards.length }} / 3 个板块
                 </p>
               </div>
+
+              <!-- 布林极限 (%B) 筛选 -->
+              <div class="mb-3">
+                <h3 class="text-sm font-semibold mb-2 flex items-center">
+                  <i class="fas fa-chart-line mr-1 text-primary"></i>
+                  布林极限 (%B) 筛选
+                </h3>
+                <div v-if="percentBRange.maxPercentB > percentBRange.minPercentB && percentBRange.maxPercentB > 0" class="space-y-1.5">
+                  <Slider
+                    v-model="percentBRangeArray"
+                    :min="percentBRange.minPercentB"
+                    :max="percentBRange.maxPercentB"
+                    :step="Math.max(0.01, (percentBRange.maxPercentB - percentBRange.minPercentB) / 100)"
+                  />
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-muted-foreground">{{ percentBRange.minPercentB.toFixed(2) }}</span>
+                    <span class="font-medium text-foreground">
+                      {{ percentBRangeArray[0].toFixed(2) }} - {{ percentBRangeArray[1].toFixed(2) }}
+                    </span>
+                    <span class="text-muted-foreground">{{ percentBRange.maxPercentB.toFixed(2) }}</span>
+                  </div>
+                </div>
+                <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+              </div>
             </div>
             
             <!-- 桌面端表格视图 -->
@@ -1397,6 +1421,8 @@ import DateRangeFilter from './components/DateRangeFilter.vue'; // 日期筛选�
 import ScanConfigForm from './components/ScanConfigForm.vue'; // 扫描配置表单组件
 import { getStockBoard } from './utils/stockBoardUtils.js'; // 板块工具函数
 import { getDefaultScanConfig } from './config/scanConfig.js'; // 默认扫描配置
+import { extractPercentB, calculatePercentBRange } from './utils/selectionReasonsParser.js'; // %B 相关工具函数
+import Slider from './components/ui/slider.vue'; // Slider 组件
 import { gsap } from 'gsap';
 
 const router = useRouter();
@@ -1424,6 +1450,8 @@ const availablePlatformPeriods = ref([]); // 可用的平台期列表（从结�
 const selectedBoards = ref(['创业板', '科创板', '主板']); // 选中的板块列表（默认选中所有板块）
 const minOutperformIndex = ref(null); // 最小相对强度值
 const maxOutperformIndex = ref(null); // 最大相对强度值
+const percentBRange = ref({ minPercentB: 0, maxPercentB: 1 }); // %B 范围
+const selectedPercentBRange = ref({ min: null, max: null }); // 选中的 %B 范围
 
 // 筛选后的股票列表
 const filteredStocks = computed(() => {
@@ -1526,6 +1554,39 @@ const filteredStocks = computed(() => {
     })
   }
   
+  // 应用 %B 筛选
+  if (selectedPercentBRange.value.min !== null && selectedPercentBRange.value.max !== null) {
+    const minPercentB = percentBRange.value.minPercentB
+    const maxPercentB = percentBRange.value.maxPercentB
+    // 只有当用户设置的范围比全范围更窄时才进行筛选
+    if (selectedPercentBRange.value.min > minPercentB || selectedPercentBRange.value.max < maxPercentB) {
+      filtered = filtered.filter(stock => {
+        const stockPercentB = extractPercentB(stock)
+        if (stockPercentB === null) {
+          return false // 如果没有 %B 数据，排除
+        }
+        if (stockPercentB < selectedPercentBRange.value.min || stockPercentB > selectedPercentBRange.value.max) {
+          return false
+        }
+        return true
+      }).map(stock => {
+        // 确保筛选后的对象保留所有原始字段
+        return {
+          ...stock,
+          volume_analysis: stock.volume_analysis || null,
+          breakthrough_prediction: stock.breakthrough_prediction || null,
+          turnover_analysis: stock.turnover_analysis || null,
+          box_analysis: stock.box_analysis || null,
+          details: stock.details || {},
+          selection_reasons: stock.selection_reasons || {},
+          platform_windows: stock.platform_windows || [],
+          kline_data: stock.kline_data || [],
+          markLines: stock.markLines || stock.mark_lines || []
+        }
+      })
+    }
+  }
+  
   return filtered
 })
 
@@ -1591,8 +1652,25 @@ function clearPlatformPeriodFilter() {
   selectedPlatformPeriods.value = []
 }
 
+// %B 范围数组（用于 Slider 组件）
+const percentBRangeArray = computed({
+  get: () => {
+    const min = selectedPercentBRange.value.min ?? percentBRange.value.minPercentB
+    const max = selectedPercentBRange.value.max ?? percentBRange.value.maxPercentB
+    return [min, max]
+  },
+  set: (value) => {
+    if (Array.isArray(value) && value.length === 2) {
+      selectedPercentBRange.value = {
+        min: value[0],
+        max: value[1]
+      }
+    }
+  }
+})
+
 // 监听筛选变化，重置分页
-watch(selectedPlatformPeriods, () => {
+watch([selectedPlatformPeriods, selectedBoards, selectedPercentBRange], () => {
   currentPage.value = 1
   expandedReasons.value = {}
 }, { deep: true })
@@ -2585,6 +2663,17 @@ function startPolling (taskId) {
           // 统计可用平台期并设置默认全选
           updateAvailablePlatformPeriods();
 
+          // 计算 %B 范围
+          const percentBRangeResult = calculatePercentBRange(processedResults)
+          percentBRange.value = percentBRangeResult
+          // 默认设置为全范围（不筛选）
+          if (selectedPercentBRange.value.min === null || selectedPercentBRange.value.max === null) {
+            selectedPercentBRange.value = {
+              min: percentBRangeResult.minPercentB,
+              max: percentBRangeResult.maxPercentB
+            }
+          }
+
           // 重置分页状态
           currentPage.value = 1;
           
@@ -2619,6 +2708,8 @@ async function fetchPlatformStocks () {
   expandedReasons.value = {}; // 重置所有选择理由为收起状态
   hasSearched.value = true; // Mark that a search was initiated
   currentPage.value = 1; // 重置到第一页
+  percentBRange.value = { minPercentB: 0, maxPercentB: 1 }; // 重置 %B 范围
+  selectedPercentBRange.value = { min: null, max: null }; // 重置选中的 %B 范围
 
   // Reset task status
   taskStatus.value = 'pending';
@@ -2745,6 +2836,17 @@ async function fetchPlatformStocksLegacy () {
       
       // 统计可用平台期并设置默认全选
       updateAvailablePlatformPeriods();
+      
+      // 计算 %B 范围
+      const percentBRangeResult = calculatePercentBRange(processedResults)
+      percentBRange.value = percentBRangeResult
+      // 默认设置为全范围（不筛选）
+      if (selectedPercentBRange.value.min === null || selectedPercentBRange.value.max === null) {
+        selectedPercentBRange.value = {
+          min: percentBRangeResult.minPercentB,
+          max: percentBRangeResult.maxPercentB
+        }
+      }
       
       // 默认全选所有扫描结果
       selectedStocks.value = [...processedResults];
@@ -3101,6 +3203,17 @@ async function loadScanHistoryToPage(record) {
 
     // 统计可用平台期并设置默认全选
     updateAvailablePlatformPeriods()
+
+    // 计算 %B 范围
+    const percentBRangeResult = calculatePercentBRange(processedStocks)
+    percentBRange.value = percentBRangeResult
+    // 默认设置为全范围（不筛选）
+    if (selectedPercentBRange.value.min === null || selectedPercentBRange.value.max === null) {
+      selectedPercentBRange.value = {
+        min: percentBRangeResult.minPercentB,
+        max: percentBRangeResult.maxPercentB
+      }
+    }
 
     // 重置分页状态
     currentPage.value = 1

@@ -212,3 +212,108 @@ export function extractBreakthroughInfo(reason) {
   return ''
 }
 
+/**
+ * 计算布林带指标
+ * @param {Array} klineData - K线数据数组，每个元素包含 close 价格
+ * @param {number} period - 周期，默认20
+ * @param {number} stdDev - 标准差倍数，默认2.0
+ * @returns {Object|null} - 包含 bb_upper, bb_middle, bb_lower 的对象，如果数据不足返回null
+ */
+function calculateBollingerBands(klineData, period = 20, stdDev = 2.0) {
+  if (!klineData || !Array.isArray(klineData) || klineData.length < period) {
+    return null
+  }
+  
+  // 获取最近 period 天的收盘价
+  const closes = klineData.slice(-period).map(item => {
+    const close = item.close
+    return typeof close === 'number' && !isNaN(close) ? close : null
+  }).filter(close => close !== null)
+  
+  if (closes.length < period) {
+    return null
+  }
+  
+  // 计算移动平均（中轨）
+  const sum = closes.reduce((acc, val) => acc + val, 0)
+  const bb_middle = sum / period
+  
+  // 计算标准差（使用样本标准差，除以 n-1，与后端 pandas 默认行为保持一致）
+  const variance = closes.reduce((acc, val) => acc + Math.pow(val - bb_middle, 2), 0) / (period - 1)
+  const std = Math.sqrt(variance)
+  
+  // 计算上轨和下轨
+  const bb_upper = bb_middle + (std * stdDev)
+  const bb_lower = bb_middle - (std * stdDev)
+  
+  return {
+    bb_upper,
+    bb_middle,
+    bb_lower
+  }
+}
+
+/**
+ * 从股票数据中提取 %B (Percent B) 值
+ * %B = (收盘价 - 布林下轨) / (布林上轨 - 布林下轨)
+ * @param {Object} stock - 股票对象，包含 kline_data
+ * @returns {number|null} - %B 值，如果无法计算返回null
+ */
+export function extractPercentB(stock) {
+  if (!stock || !stock.kline_data || !Array.isArray(stock.kline_data) || stock.kline_data.length === 0) {
+    return null
+  }
+  
+  // 计算布林带（使用默认参数：周期20，标准差2.0）
+  const bb = calculateBollingerBands(stock.kline_data, 20, 2.0)
+  if (!bb) {
+    return null
+  }
+  
+  // 获取最新收盘价
+  const lastKline = stock.kline_data[stock.kline_data.length - 1]
+  const close = lastKline?.close
+  if (typeof close !== 'number' || isNaN(close)) {
+    return null
+  }
+  
+  // 计算 %B
+  const bandWidth = bb.bb_upper - bb.bb_lower
+  if (bandWidth === 0) {
+    // 如果带宽为0，返回0.5（中位）
+    return 0.5
+  }
+  
+  const percentB = (close - bb.bb_lower) / bandWidth
+  
+  return percentB
+}
+
+/**
+ * 计算股票列表中 %B 的最小值和最大值
+ * @param {Array} stocks - 股票对象数组
+ * @returns {Object} - 包含 minPercentB 和 maxPercentB 的对象
+ */
+export function calculatePercentBRange(stocks) {
+  if (!stocks || !Array.isArray(stocks) || stocks.length === 0) {
+    return { minPercentB: 0, maxPercentB: 1 }
+  }
+  
+  const percentBs = []
+  stocks.forEach(stock => {
+    const percentB = extractPercentB(stock)
+    if (percentB !== null && typeof percentB === 'number' && !isNaN(percentB) && isFinite(percentB)) {
+      percentBs.push(percentB)
+    }
+  })
+  
+  if (percentBs.length === 0) {
+    return { minPercentB: 0, maxPercentB: 1 }
+  }
+  
+  return {
+    minPercentB: Math.min(...percentBs),
+    maxPercentB: Math.max(...percentBs)
+  }
+}
+

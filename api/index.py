@@ -2882,6 +2882,7 @@ class BatchTaskBacktestRequest(BaseModel):
     sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
     platform_periods: Optional[List[int]] = None  # 平台期筛选（可选），如果提供则只买入选中平台期的股票
     boards: Optional[List[str]] = None  # 板块筛选（可选），如果提供则只买入选中板块的股票，如 ['创业板', '科创板', '主板']
+    percent_b_range: Optional[Dict[str, float]] = None  # %B 筛选范围 { min: float, max: float }
 
 
 class BatchTaskBacktestResult(BaseModel):
@@ -3162,10 +3163,63 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     if len(scanned_stocks) > 0:
                         print(f"{Fore.CYAN}[{idx + 1}/{total}] 板块筛选: 原始股票数={original_count}, 筛选后={len(scanned_stocks)}, 选中板块={request.boards}{Style.RESET_ALL}")
                 
+                # 如果设置了 %B 筛选，过滤股票
+                if request.percent_b_range and 'min' in request.percent_b_range and 'max' in request.percent_b_range:
+                    from api.analyzers.technical_indicators import calculate_bollinger_bands
+                    import pandas as pd
+                    
+                    min_percent_b = request.percent_b_range['min']
+                    max_percent_b = request.percent_b_range['max']
+                    
+                    filtered_stocks_by_percent_b = []
+                    for stock in scanned_stocks:
+                        try:
+                            # 获取股票的 K 线数据
+                            kline_data = stock.get('kline_data')
+                            if not kline_data or not isinstance(kline_data, list) or len(kline_data) < 20:
+                                continue  # 数据不足，跳过
+                            
+                            # 转换为 DataFrame
+                            df = pd.DataFrame(kline_data)
+                            if 'close' not in df.columns:
+                                continue
+                            
+                            # 计算布林带
+                            df = calculate_bollinger_bands(df, period=20, std_dev=2.0)
+                            
+                            # 获取最新的收盘价和布林带值
+                            latest_close = df['close'].iloc[-1]
+                            bb_upper = df['bb_upper'].iloc[-1]
+                            bb_lower = df['bb_lower'].iloc[-1]
+                            
+                            # 计算 %B
+                            if pd.isna(bb_upper) or pd.isna(bb_lower):
+                                continue  # 无法计算 %B，跳过
+                            
+                            # 如果带宽为0，使用0.5（中位），与前端保持一致
+                            if bb_upper == bb_lower:
+                                percent_b = 0.5
+                            else:
+                                percent_b = (latest_close - bb_lower) / (bb_upper - bb_lower)
+                            
+                            # 检查是否在范围内
+                            if min_percent_b <= percent_b <= max_percent_b:
+                                filtered_stocks_by_percent_b.append(stock)
+                        except Exception as e:
+                            # 如果计算失败，跳过该股票
+                            continue
+                    
+                    original_count = len(scanned_stocks)
+                    scanned_stocks = filtered_stocks_by_percent_b
+                    if len(scanned_stocks) > 0:
+                        print(f"{Fore.CYAN}[{idx + 1}/{total}] %B 筛选: 原始股票数={original_count}, 筛选后={len(scanned_stocks)}, %B 范围=[{min_percent_b:.4f}, {max_percent_b:.4f}]{Style.RESET_ALL}")
+                
                 if not scanned_stocks or len(scanned_stocks) == 0:
                     filter_reason = '平台期筛选后'
                     if request.boards and len(request.boards) > 0 and len(request.boards) < 3:
                         filter_reason = '平台期和板块筛选后'
+                    if request.percent_b_range:
+                        filter_reason += '和 %B 筛选后'
                     print(f"{Fore.YELLOW}[{idx + 1}/{total}] 跳过：扫描日期{scan_date}没有符合条件的股票（{filter_reason}）{Style.RESET_ALL}")
                     failed += 1
                     

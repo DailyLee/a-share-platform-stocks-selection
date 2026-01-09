@@ -453,6 +453,11 @@
                 @update:selected-platform-periods="selectedPlatformPeriods = $event"
                 :selected-boards="selectedBoards"
                 @update:selected-boards="selectedBoards = $event"
+                :available-stocks="allStocksForBacktest"
+                :show-percent-b-filter="scanResultsForBacktest.length > 0"
+                :percent-b-range="percentBRange"
+                :selected-percent-b-range="selectedPercentBRange"
+                @update:selected-percent-b-range="selectedPercentBRange = $event"
               />
 
               <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
@@ -685,6 +690,7 @@ import BuySellStrategy from './BuySellStrategy.vue'
 import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
 import { getStockBoard } from '../utils/stockBoardUtils.js'
 import { getDefaultScanConfig } from '../config/scanConfig.js' // 默认扫描配置
+import { calculatePercentBRange } from '../utils/selectionReasonsParser.js'
 
 const router = useRouter()
 
@@ -729,6 +735,8 @@ const backtestConfig = ref({
 const availablePlatformPeriods = ref([]) // 可用的平台期列表（从所有扫描结果的股票中统计）
 const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
 const selectedBoards = ref(['创业板', '科创板', '主板']) // 选中的板块列表（默认选中所有板块）
+const percentBRange = ref({ minPercentB: 0, maxPercentB: 1 }) // %B 范围
+const selectedPercentBRange = ref({ min: null, max: null }) // 选中的 %B 范围
 
 // 批量回测历史相关
 const showBacktestHistoryDialog = ref(false)
@@ -1136,6 +1144,8 @@ const openBacktestDialog = async (task) => {
   backtestConfig.value.periodStatDaysOffset = 5 // 重置为默认5天
   availablePlatformPeriods.value = [] // 清空可用平台期
   selectedPlatformPeriods.value = [] // 清空选中的平台期
+  percentBRange.value = { minPercentB: 0, maxPercentB: 1 } // 重置 %B 范围
+  selectedPercentBRange.value = { min: null, max: null } // 重置选中的 %B 范围
   loadingBacktestTaskId.value = task.id
   backtestLoading.value = true
   
@@ -1236,7 +1246,49 @@ async function updateAvailablePlatformPeriods() {
       !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
     selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
   }
+  
+  // 计算 %B 范围（从所有股票中）
+  const allStocks = []
+  for (const result of scanResultsForBacktest.value) {
+    try {
+      let scanResult = result
+      if (!result.scannedStocks || result.scannedStocks.length === 0) {
+        const response = await axios.get(`/platform/api/batch-scan/results/${result.id}`)
+        if (response.data.success) {
+          scanResult = response.data.data
+        }
+      }
+      if (scanResult.scannedStocks && Array.isArray(scanResult.scannedStocks)) {
+        allStocks.push(...scanResult.scannedStocks)
+      }
+    } catch (error) {
+      console.warn(`加载扫描结果 ${result.id} 详情失败:`, error)
+    }
+  }
+  
+  if (allStocks.length > 0) {
+    const percentBRangeResult = calculatePercentBRange(allStocks)
+    percentBRange.value = percentBRangeResult
+    // 默认设置为全范围（不筛选）
+    if (selectedPercentBRange.value.min === null || selectedPercentBRange.value.max === null) {
+      selectedPercentBRange.value = {
+        min: percentBRangeResult.minPercentB,
+        max: percentBRangeResult.maxPercentB
+      }
+    }
+  }
 }
+
+// 获取所有扫描结果中的所有股票（用于 %B 筛选）
+const allStocksForBacktest = computed(() => {
+  const allStocks = []
+  for (const result of scanResultsForBacktest.value) {
+    if (result.scannedStocks && Array.isArray(result.scannedStocks)) {
+      allStocks.push(...result.scannedStocks)
+    }
+  }
+  return allStocks
+})
 
 const canRunBatchBacktest = computed(() => {
   // 检查回测名称是否填写
@@ -1291,6 +1343,19 @@ const runBatchBacktest = async () => {
     // 如果设置了板块筛选，添加板块筛选参数
     if (selectedBoards.value.length > 0 && selectedBoards.value.length < 3) {
       requestData.boards = selectedBoards.value
+    }
+    
+    // 如果设置了 %B 筛选，添加 %B 筛选参数
+    if (selectedPercentBRange.value.min !== null && selectedPercentBRange.value.max !== null) {
+      const minPercentB = percentBRange.value.minPercentB
+      const maxPercentB = percentBRange.value.maxPercentB
+      // 只有当用户设置的范围比全范围更窄时才添加筛选参数
+      if (selectedPercentBRange.value.min > minPercentB || selectedPercentBRange.value.max < maxPercentB) {
+        requestData.percent_b_range = {
+          min: selectedPercentBRange.value.min,
+          max: selectedPercentBRange.value.max
+        }
+      }
     }
     
     const response = await axios.post(

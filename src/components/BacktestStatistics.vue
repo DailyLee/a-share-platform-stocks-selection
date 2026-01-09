@@ -418,6 +418,27 @@
               <p v-else class="text-xs text-muted-foreground">暂无数据</p>
             </div>
 
+            <!-- 布林极限 (%B) -->
+            <div>
+              <label class="block text-xs font-medium mb-1">布林极限 (%B)</label>
+              <div v-if="allStockAttributes.maxPercentB > allStockAttributes.minPercentB && allStockAttributes.maxPercentB > 0" class="space-y-1.5">
+                <Slider
+                  v-model="percentBRangeArray"
+                  :min="allStockAttributes.minPercentB"
+                  :max="allStockAttributes.maxPercentB"
+                  :step="Math.max(0.01, (allStockAttributes.maxPercentB - allStockAttributes.minPercentB) / 100)"
+                />
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-muted-foreground">{{ allStockAttributes.minPercentB.toFixed(2) }}</span>
+                  <span class="font-medium text-foreground">
+                    {{ percentBRangeArray[0].toFixed(2) }} - {{ percentBRangeArray[1].toFixed(2) }}
+                  </span>
+                  <span class="text-muted-foreground">{{ allStockAttributes.maxPercentB.toFixed(2) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+            </div>
+
             <!-- ========== 第四组：位置和下跌（百分比 Range Slider） ========== -->
             <!-- 低位判断百分比 -->
             <div>
@@ -712,7 +733,8 @@ import {
   extractMaDiff,
   extractVolatility,
   extractLowPositionPercent,
-  extractRapidDeclinePercent
+  extractRapidDeclinePercent,
+  extractPercentB
 } from '../utils/selectionReasonsParser.js'
 import { getStockBoard } from '../utils/stockBoardUtils.js'
 import Slider from './ui/slider.vue'
@@ -755,7 +777,8 @@ const router = useRouter()
     rapidDeclinePercentRange: { min: null, max: null }, // 快速下跌百分比范围
     stockCountRange: { min: null, max: null }, // 周期内购买的股票数量范围
     turnoverRateRange: { min: null, max: null }, // 换手率范围（min/max为null表示不限制）
-    outperformIndexRange: { min: null, max: null } // 相对强度范围（min/max为null表示不限制）
+    outperformIndexRange: { min: null, max: null }, // 相对强度范围（min/max为null表示不限制）
+    percentBRange: { min: null, max: null } // 布林极限 (%B) 范围（min/max为null表示不限制）
   })
   
   // 所有股票的属性集合（用于筛选条件选项）
@@ -783,7 +806,9 @@ const router = useRouter()
     minTurnoverRate: 0, // 最小换手率
     maxTurnoverRate: 0, // 最大换手率
     minOutperformIndex: undefined, // 最小相对强度
-    maxOutperformIndex: undefined // 最大相对强度
+    maxOutperformIndex: undefined, // 最大相对强度
+    minPercentB: 0, // 最小布林极限 (%B)
+    maxPercentB: 1 // 最大布林极限 (%B)
   })
 
   // 价格区间数组（用于 shadcn-vue Slider 组件）
@@ -954,6 +979,23 @@ const router = useRouter()
     set: (value) => {
       if (Array.isArray(value) && value.length === 2) {
         statisticsFilters.value.outperformIndexRange = {
+          min: value[0],
+          max: value[1]
+        }
+      }
+    }
+  })
+
+  // 布林极限 (%B) 数组（用于 shadcn-vue Slider 组件）
+  const percentBRangeArray = computed({
+    get: () => {
+      const min = statisticsFilters.value.percentBRange.min ?? allStockAttributes.value.minPercentB
+      const max = statisticsFilters.value.percentBRange.max ?? allStockAttributes.value.maxPercentB
+      return [min, max]
+    },
+    set: (value) => {
+      if (Array.isArray(value) && value.length === 2) {
+        statisticsFilters.value.percentBRange = {
           min: value[0],
           max: value[1]
         }
@@ -1471,6 +1513,7 @@ const router = useRouter()
       const outperformIndices = []
       const lowPositionPercents = []
       const rapidDeclinePercents = []
+      const percentBs = []
 
       allStocks.forEach(stock => {
         // 收集平台期
@@ -1683,6 +1726,12 @@ const router = useRouter()
         if (stock.outperform_index !== null && stock.outperform_index !== undefined && typeof stock.outperform_index === 'number' && !isNaN(stock.outperform_index) && isFinite(stock.outperform_index)) {
           outperformIndices.push(stock.outperform_index)
         }
+        
+        // 收集布林极限 (%B) 数据
+        const percentB = extractPercentB(stock)
+        if (percentB !== null && typeof percentB === 'number' && !isNaN(percentB) && isFinite(percentB)) {
+          percentBs.push(percentB)
+        }
       })
 
       // 更新属性集合
@@ -1883,6 +1932,27 @@ const router = useRouter()
           }
         }
       }
+      if (percentBs.length > 0) {
+        allStockAttributes.value.minPercentB = Math.min(...percentBs)
+        allStockAttributes.value.maxPercentB = Math.max(...percentBs)
+        // 如果 percentBRange 未设置，默认设置为最小值和最大值（默认启用，不筛选）
+        if (statisticsFilters.value.percentBRange.min === null || statisticsFilters.value.percentBRange.max === null) {
+          statisticsFilters.value.percentBRange = {
+            min: allStockAttributes.value.minPercentB,
+            max: allStockAttributes.value.maxPercentB
+          }
+        }
+      } else {
+        // 如果没有数据，设置为默认值（0-1）
+        allStockAttributes.value.minPercentB = 0
+        allStockAttributes.value.maxPercentB = 1
+        if (statisticsFilters.value.percentBRange.min === null || statisticsFilters.value.percentBRange.max === null) {
+          statisticsFilters.value.percentBRange = {
+            min: 0,
+            max: 1
+          }
+        }
+      }
       
       return {
         allStocks,
@@ -1935,6 +2005,16 @@ const router = useRouter()
       (filters.stockCountRange.min !== null && filters.stockCountRange.max !== null && 
        (filters.stockCountRange.min > allStockAttributes.value.minStockCount || 
         filters.stockCountRange.max < allStockAttributes.value.maxStockCount)) ||
+      (filters.turnoverRateRange.min !== null && filters.turnoverRateRange.max !== null && 
+       (filters.turnoverRateRange.min > allStockAttributes.value.minTurnoverRate || 
+        filters.turnoverRateRange.max < allStockAttributes.value.maxTurnoverRate)) ||
+      (filters.outperformIndexRange.min !== null && filters.outperformIndexRange.max !== null && 
+       allStockAttributes.value.minOutperformIndex !== undefined && allStockAttributes.value.maxOutperformIndex !== undefined &&
+       (filters.outperformIndexRange.min > allStockAttributes.value.minOutperformIndex || 
+        filters.outperformIndexRange.max < allStockAttributes.value.maxOutperformIndex)) ||
+      (filters.percentBRange.min !== null && filters.percentBRange.max !== null && 
+       (filters.percentBRange.min > allStockAttributes.value.minPercentB || 
+        filters.percentBRange.max < allStockAttributes.value.maxPercentB)) ||
       (filters.boxQualityRange.min !== null && filters.boxQualityRange.max !== null && 
        (filters.boxQualityRange.min > allStockAttributes.value.minBoxQuality || 
         filters.boxQualityRange.max < allStockAttributes.value.maxBoxQuality))
@@ -2558,6 +2638,27 @@ const router = useRouter()
             }
           }
           // 如果用户设置的范围等于全范围，不进行筛选（包括没有相对强度数据的股票也通过）
+        }
+
+        // 布林极限 (%B) 筛选
+        const percentBRangeFilter = statisticsFilters.value.percentBRange
+        if (percentBRangeFilter.min !== null && percentBRangeFilter.max !== null) {
+          const stockPercentB = extractPercentB(stock)
+          if (stockPercentB === null) {
+            // 没有数据，排除股票（因为用户明确选择了筛选条件）
+            return false
+          } else {
+            // 检查是否在范围内（只有当范围不是默认的全范围时才筛选）
+            const minPercentB = allStockAttributes.value.minPercentB
+            const maxPercentB = allStockAttributes.value.maxPercentB
+            // 只有当用户设置的范围比全范围更窄时才进行筛选
+            if (percentBRangeFilter.min > minPercentB || percentBRangeFilter.max < maxPercentB) {
+              if (stockPercentB < percentBRangeFilter.min || stockPercentB > percentBRangeFilter.max) {
+                return false
+              }
+            }
+            // 如果用户设置的范围等于全范围，不进行筛选（所有股票都通过）
+          }
         }
 
         return true

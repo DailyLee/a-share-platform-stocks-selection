@@ -90,6 +90,11 @@
             @update:selected-platform-periods="selectedPlatformPeriods = $event"
             :selected-boards="selectedBoards"
             @update:selected-boards="selectedBoards = $event"
+            :available-stocks="selectedStocks"
+            :show-percent-b-filter="selectedStocks.length > 0"
+            :percent-b-range="percentBRange"
+            :selected-percent-b-range="selectedPercentBRange"
+            @update:selected-percent-b-range="selectedPercentBRange = $event"
           />
 
           <!-- 回测股票预览 -->
@@ -1105,6 +1110,7 @@ import BacktestStatistics from './BacktestStatistics.vue'
 import BuySellStrategy from './BuySellStrategy.vue'
 import DateRangeFilter from './DateRangeFilter.vue'
 import { getStockBoard } from '../utils/stockBoardUtils.js'
+import { extractPercentB, calculatePercentBRange } from '../utils/selectionReasonsParser.js'
 
 // 注册 ECharts 组件
 echarts.use([
@@ -1147,6 +1153,8 @@ const scanConfig = ref(null)
 const availablePlatformPeriods = ref([]) // 可用的平台期列表（从股票中统计）
 const selectedPlatformPeriods = ref([]) // 选中的平台期列表（默认全选）
 const selectedBoards = ref(['创业板', '科创板', '主板']) // 选中的板块列表（默认选中所有板块）
+const percentBRange = ref({ minPercentB: 0, maxPercentB: 1 }) // %B 范围
+const selectedPercentBRange = ref({ min: null, max: null }) // 选中的 %B 范围
 
 // 获取当前季度信息（需要在初始化时使用）
 function getCurrentQuarter() {
@@ -1395,6 +1403,25 @@ const stocksForBacktest = computed(() => {
     })
   }
   
+  // 应用 %B 筛选
+  if (selectedPercentBRange.value.min !== null && selectedPercentBRange.value.max !== null) {
+    const minPercentB = percentBRange.value.minPercentB
+    const maxPercentB = percentBRange.value.maxPercentB
+    // 只有当用户设置的范围比全范围更窄时才进行筛选
+    if (selectedPercentBRange.value.min > minPercentB || selectedPercentBRange.value.max < maxPercentB) {
+      filtered = filtered.filter(stock => {
+        const stockPercentB = extractPercentB(stock)
+        if (stockPercentB === null) {
+          return false // 如果没有 %B 数据，排除
+        }
+        if (stockPercentB < selectedPercentBRange.value.min || stockPercentB > selectedPercentBRange.value.max) {
+          return false
+        }
+        return true
+      })
+    }
+  }
+  
   return filtered
 })
 
@@ -1564,6 +1591,19 @@ function updateAvailablePlatformPeriods() {
       selectedPlatformPeriods.value.length !== availablePlatformPeriods.value.length ||
       !selectedPlatformPeriods.value.every(p => availablePlatformPeriods.value.includes(p))) {
     selectedPlatformPeriods.value = [...availablePlatformPeriods.value]
+  }
+  
+  // 计算 %B 范围
+  if (selectedStocks.value.length > 0) {
+    const percentBRangeResult = calculatePercentBRange(selectedStocks.value)
+    percentBRange.value = percentBRangeResult
+    // 默认设置为全范围（不筛选）
+    if (selectedPercentBRange.value.min === null || selectedPercentBRange.value.max === null) {
+      selectedPercentBRange.value = {
+        min: percentBRangeResult.minPercentB,
+        max: percentBRangeResult.maxPercentB
+      }
+    }
   }
   
   // 自动选中所有符合平台期筛选的股票

@@ -196,6 +196,33 @@
             已选择 {{ selectedBoards.length }} / 3 个板块
           </p>
         </div>
+
+        <!-- 布林极限 (%B) 筛选 -->
+        <div v-if="showPercentBFilter && availableStocks && availableStocks.length > 0" class="mt-4">
+          <label class="block text-sm font-medium mb-2">
+            <i class="fas fa-chart-line mr-1 text-primary"></i>
+            布林极限 (%B) 筛选
+          </label>
+          <p class="text-xs text-muted-foreground mb-2">
+            只买入 %B 值在指定范围内的股票
+          </p>
+          <div v-if="percentBRange.maxPercentB > percentBRange.minPercentB && percentBRange.maxPercentB > 0" class="space-y-1.5">
+            <Slider
+              v-model="percentBRangeArray"
+              :min="percentBRange.minPercentB"
+              :max="percentBRange.maxPercentB"
+              :step="Math.max(0.01, (percentBRange.maxPercentB - percentBRange.minPercentB) / 100)"
+            />
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-muted-foreground">{{ percentBRange.minPercentB.toFixed(2) }}</span>
+              <span class="font-medium text-foreground">
+                {{ percentBRangeArray[0].toFixed(2) }} - {{ percentBRangeArray[1].toFixed(2) }}
+              </span>
+              <span class="text-muted-foreground">{{ percentBRange.maxPercentB.toFixed(2) }}</span>
+            </div>
+          </div>
+          <p v-else class="text-xs text-muted-foreground">暂无数据</p>
+        </div>
       </div>
     </div>
 
@@ -315,6 +342,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import Slider from './ui/slider.vue'
+import { calculatePercentBRange } from '../utils/selectionReasonsParser.js'
+
 const props = defineProps({
   modelValue: {
     type: Object,
@@ -368,10 +399,30 @@ const props = defineProps({
   selectedBoards: {
     type: Array,
     default: () => ['创业板', '科创板', '主板']
+  },
+  // 可用的股票列表（用于计算 %B 范围）
+  availableStocks: {
+    type: Array,
+    default: () => []
+  },
+  // 是否显示 %B 筛选
+  showPercentBFilter: {
+    type: Boolean,
+    default: false
+  },
+  // %B 范围（从父组件传入，用于初始化）
+  percentBRange: {
+    type: Object,
+    default: () => ({ minPercentB: 0, maxPercentB: 1 })
+  },
+  // 选中的 %B 范围
+  selectedPercentBRange: {
+    type: Object,
+    default: () => ({ min: null, max: null })
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'update:selectedPlatformPeriods', 'update:selectedBoards'])
+const emit = defineEmits(['update:modelValue', 'update:selectedPlatformPeriods', 'update:selectedBoards', 'update:selectedPercentBRange'])
 
 const updateBuyStrategy = (value) => {
   emit('update:modelValue', {
@@ -464,5 +515,33 @@ const selectAllBoards = () => {
 const clearBoardFilter = () => {
   emit('update:selectedBoards', [])
 }
+
+// 计算 %B 范围（如果父组件没有传入，则从股票列表中计算）
+const percentBRange = computed(() => {
+  if (props.percentBRange && props.percentBRange.minPercentB !== undefined && props.percentBRange.maxPercentB !== undefined) {
+    return props.percentBRange
+  }
+  if (props.availableStocks && props.availableStocks.length > 0) {
+    return calculatePercentBRange(props.availableStocks)
+  }
+  return { minPercentB: 0, maxPercentB: 1 }
+})
+
+// %B 范围数组（用于 Slider 组件）
+const percentBRangeArray = computed({
+  get: () => {
+    const min = props.selectedPercentBRange.min ?? percentBRange.value.minPercentB
+    const max = props.selectedPercentBRange.max ?? percentBRange.value.maxPercentB
+    return [min, max]
+  },
+  set: (value) => {
+    if (Array.isArray(value) && value.length === 2) {
+      emit('update:selectedPercentBRange', {
+        min: value[0],
+        max: value[1]
+      })
+    }
+  }
+})
 </script>
 
