@@ -2505,6 +2505,9 @@ const router = useRouter()
     let recalculatedProfitableStocks = 0
     let recalculatedLossStocks = 0
     let recalculatedBreakEvenStocks = 0
+    let recalculatedStopLossStocks = 0  // 触发止损的股票数
+    let recalculatedTakeProfitStocks = 0  // 触发止盈的股票数
+    let recalculatedNormalSellStocks = 0  // 正常卖出（统计日卖出）的股票数
     const recalculatedRecordReturns = []
     
     // 获取策略类型（从第一个周期统计中获取）
@@ -2580,7 +2583,7 @@ const router = useRouter()
       
       recalculatedTotalProfit += periodStat.totalProfit
       
-      // 统计盈利、亏损和平的股票数
+      // 统计盈利、亏损和平的股票数，以及止损/止盈/正常卖出股票数
       periodStat.stocks.forEach(stock => {
         if (stock.returnRate !== null && stock.returnRate !== undefined) {
           if (stock.returnRate > 0) {
@@ -2590,6 +2593,48 @@ const router = useRouter()
           } else if (stock.returnRate === 0) {
             recalculatedBreakEvenStocks++
           }
+        }
+        
+        // 从记录中获取sellReason信息
+        let sellReason = null
+        if (periodStat.records && periodStat.records.length > 0) {
+          const stockCode = stock.code
+          // 遍历所有记录，找到包含该股票的记录
+          for (const recordDetail of periodStat.records) {
+            const record = recordDetail.record
+            if (!record) continue
+            
+            // 检查该股票是否属于该记录（通过检查recordDetail.stocks）
+            const recordStocks = recordDetail.stocks || []
+            const stockInRecord = recordStocks.some(s => s.code === stockCode)
+            if (!stockInRecord) continue
+            
+            const result = record.result || {}
+            
+            // 优先使用实时计算的数据
+            if (record.realtimeCalculation && record.realtimeCalculation[stockCode]) {
+              const realtimeCalc = record.realtimeCalculation[stockCode]
+              sellReason = realtimeCalc.sellReason || null
+              break
+            } else {
+              // 如果没有实时计算数据，从sellRecords中获取
+              const sellRecords = result.sellRecords || []
+              const sellRecord = sellRecords.find(sr => sr.code === stockCode)
+              if (sellRecord) {
+                sellReason = sellRecord.sellReason || null
+                break
+              }
+            }
+          }
+        }
+        
+        // 统计触发止损、止盈和正常卖出的股票数
+        if (sellReason === '止损') {
+          recalculatedStopLossStocks++
+        } else if (sellReason === '止盈') {
+          recalculatedTakeProfitStocks++
+        } else if (sellReason === '统计日卖出') {
+          recalculatedNormalSellStocks++
         }
       })
       
@@ -2830,6 +2875,9 @@ const router = useRouter()
       profitableStocks: recalculatedProfitableStocks,
       lossStocks: recalculatedLossStocks,
       breakEvenStocks: recalculatedBreakEvenStocks,
+      stopLossStocks: recalculatedStopLossStocks,
+      takeProfitStocks: recalculatedTakeProfitStocks,
+      normalSellStocks: recalculatedNormalSellStocks,
       winRate: recalculatedWinRate
     }
   }
@@ -4253,6 +4301,9 @@ const router = useRouter()
               profitableStocks = recalculatedStats.profitableStocks
               lossStocks = recalculatedStats.lossStocks
               breakEvenStocks = recalculatedStats.breakEvenStocks
+              stopLossStocks = recalculatedStats.stopLossStocks
+              takeProfitStocks = recalculatedStats.takeProfitStocks
+              normalSellStocks = recalculatedStats.normalSellStocks
               winRate = recalculatedStats.winRate
             }
           }
