@@ -1318,6 +1318,7 @@ class BacktestResponse(BaseModel):
     buyRecords: List[BuyRecord]
     sellRecords: List[SellRecord]
     stockDetails: List[StockDetail]
+    kline_data: Optional[Dict[str, List[KlineDataPoint]]] = None  # 回测期间的K线数据，key为股票代码
 
 
 def run_backtest_with_progress(request: BacktestRequest, progress_callback=None):
@@ -1421,6 +1422,88 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     buy_records = []
     sell_records = []
     stock_details = []
+    kline_data_dict = {}  # 收集回测期间的K线数据，key为股票代码
+    
+    # 统一在策略开始之前获取所有股票的K线数据
+    if progress_callback:
+        progress_callback(10, "正在获取K线数据...")
+    
+    stock_kline_map = {}  # {code: (kline_df, buy_day_data, buy_price), ...}
+    print(f"{Fore.CYAN}开始获取 {len(valid_stocks)} 只股票的K线数据...{Style.RESET_ALL}")
+    
+    for idx, stock in enumerate(valid_stocks):
+        code = stock['code']
+        name = stock.get('name', code)
+        start_date = request.backtest_date
+        end_date = request.stat_date
+        
+        if progress_callback:
+            progress = 10 + int((idx + 1) / len(valid_stocks) * 5)  # 10-15%用于获取K线数据
+            progress_callback(progress, f"正在获取K线数据 {idx + 1}/{len(valid_stocks)}: {name} ({code})...")
+        
+        try:
+            with BaostockConnectionManager():
+                kline_df = fetch_kline_data(code, start_date, end_date)
+            
+            if kline_df.empty:
+                print(f"{Fore.YELLOW}Warning: {code} ({name}) 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
+                continue
+            
+            # 确保数据按日期排序
+            kline_df = kline_df.sort_values('date').reset_index(drop=True)
+            kline_df['date_str'] = kline_df['date'].astype(str)
+            
+            # 找到买入日的数据
+            buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
+            if buy_day_data.empty:
+                if len(kline_df) > 0:
+                    buy_day_data = kline_df.iloc[[0]]
+                else:
+                    continue
+            
+            buy_price = float(buy_day_data.iloc[0]['open'])
+            stock_kline_map[code] = (kline_df, buy_day_data, buy_price, stock)
+            
+            # 同时收集K线数据用于返回
+            try:
+                kline_data_points = []
+                for _, row in kline_df.iterrows():
+                    date_obj = row['date']
+                    if isinstance(date_obj, pd.Timestamp):
+                        date_str = date_obj.strftime('%Y-%m-%d')
+                    else:
+                        date_str = str(date_obj).split()[0]
+                    
+                    kline_point = KlineDataPoint(
+                        date=date_str,
+                        open=float(row['open']) if pd.notna(row['open']) else None,
+                        high=float(row['high']) if pd.notna(row['high']) else None,
+                        low=float(row['low']) if pd.notna(row['low']) else None,
+                        close=float(row['close']) if pd.notna(row['close']) else None,
+                        volume=float(row['volume']) if pd.notna(row['volume']) else None,
+                        turn=float(row['turn']) if pd.notna(row['turn']) else None,
+                        preclose=float(row['preclose']) if pd.notna(row['preclose']) else None,
+                        pctChg=float(row['pctChg']) if pd.notna(row['pctChg']) else None,
+                        peTTM=float(row['peTTM']) if pd.notna(row['peTTM']) else None,
+                        pbMRQ=float(row['pbMRQ']) if pd.notna(row['pbMRQ']) else None
+                    )
+                    kline_data_points.append(kline_point)
+                kline_data_dict[code] = kline_data_points
+            except Exception as e:
+                print(f"{Fore.YELLOW}Warning: 收集股票 {code} 的K线数据失败: {e}{Style.RESET_ALL}")
+                import traceback
+                traceback.print_exc()
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: 获取股票 {code} 的K线数据失败: {e}{Style.RESET_ALL}")
+            continue
+    
+    print(f"{Fore.GREEN}成功获取 {len(stock_kline_map)} 只股票的K线数据{Style.RESET_ALL}")
+    
+    if len(stock_kline_map) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"所有股票在回测日 {request.backtest_date} 到统计日 {request.stat_date} 期间都没有有效的K线数据"
+        )
     
     # 根据买入策略计算每只股票的买入金额
     if request.buy_strategy == "equal_distribution" or request.buy_strategy == "equal_distribution_fixed":
@@ -1432,37 +1515,10 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         strategy_name = "固定金额平均分配策略" if request.buy_strategy == "equal_distribution_fixed" else "平均分配策略（累计余额）"
         print(f"{Fore.CYAN}使用{strategy_name}: 初始资金={initial_capital}, 股票数={len(valid_stocks)}, 每只股票分配={buy_amount_per_stock:.2f}{Style.RESET_ALL}")
         
-        # 先获取所有股票的价格信息，用于优化资金分配
+        # 从统一获取的K线数据中构建价格信息
         stock_price_info = []  # [(stock, buy_price, buy_day_data, kline_df), ...]
-        for stock in valid_stocks:
-            code = stock['code']
-            start_date = request.backtest_date
-            end_date = request.stat_date
-            
-            with BaostockConnectionManager():
-                kline_df = fetch_kline_data(code, start_date, end_date)
-            
-            if kline_df.empty:
-                continue
-            
-            kline_df = kline_df.sort_values('date').reset_index(drop=True)
-            kline_df['date_str'] = kline_df['date'].astype(str)
-            buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
-            if buy_day_data.empty:
-                if len(kline_df) > 0:
-                    buy_day_data = kline_df.iloc[[0]]
-                else:
-                    continue
-            
-            buy_price = float(buy_day_data.iloc[0]['open'])
+        for code, (kline_df, buy_day_data, buy_price, stock) in stock_kline_map.items():
             stock_price_info.append((stock, buy_price, buy_day_data, kline_df))
-        
-        # 如果没有有效的股票价格信息，抛出异常
-        if len(stock_price_info) == 0:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"平均分配策略：所有股票在回测日 {request.backtest_date} 到统计日 {request.stat_date} 期间都没有有效的K线数据"
-            )
         
         # 重新计算每只股票的目标分配金额（基于实际有数据的股票数）
         target_amount_per_stock = initial_capital / len(stock_price_info)
@@ -1712,40 +1768,13 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         # 固定金额策略：每只股票买入1万元
         buy_amount_per_stock = 10000
         
-        total_stocks = len(valid_stocks)
-        for idx, stock in enumerate(valid_stocks):
-            code = stock['code']
+        total_stocks = len(stock_kline_map)
+        for idx, (code, (kline_df, buy_day_data, buy_price, stock)) in enumerate(stock_kline_map.items()):
             name = stock.get('name', code)
             
             if progress_callback:
-                progress = 10 + int((idx + 1) / total_stocks * 85)
+                progress = 15 + int((idx + 1) / total_stocks * 80)  # 15-95%用于处理股票
                 progress_callback(progress, f"正在处理股票 {idx + 1}/{total_stocks}: {name} ({code})...")
-            
-            # 获取从回测日到统计日的历史数据
-            start_date = request.backtest_date
-            end_date = request.stat_date
-            
-            with BaostockConnectionManager():
-                kline_df = fetch_kline_data(code, start_date, end_date)
-            
-            if kline_df.empty:
-                print(f"{Fore.YELLOW}Warning: {code} ({name}) 在 {start_date} 到 {end_date} 期间无数据，跳过{Style.RESET_ALL}")
-                continue
-            
-            # 确保数据按日期排序
-            kline_df = kline_df.sort_values('date')
-            kline_df = kline_df.reset_index(drop=True)
-            
-            # 找到回测日的数据（买入日）
-            kline_df['date_str'] = kline_df['date'].astype(str)
-            buy_day_data = kline_df[kline_df['date_str'] == request.backtest_date]
-            if buy_day_data.empty:
-                if len(kline_df) > 0:
-                    buy_day_data = kline_df.iloc[[0]]
-                else:
-                    continue
-            
-            buy_price = float(buy_day_data.iloc[0]['open'])
             buy_date_obj = buy_day_data.iloc[0]['date']
             if isinstance(buy_date_obj, pd.Timestamp):
                 buy_date_raw = buy_date_obj.strftime('%Y-%m-%d')
@@ -1947,6 +1976,76 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         progress_callback(100, "回测完成！")
     
     # 构建响应
+    # 根据实际的买入和卖出日期过滤K线数据
+    # 将kline_data_dict转换为字典格式（KlineDataPoint对象需要转换为字典）
+    kline_data_result = {}
+    
+    # 辅助函数：从sellDate字符串中提取日期部分
+    def extract_sell_date(sell_date_str):
+        """从sellDate字符串中提取日期部分，如 '2024-01-15（止损）' -> '2024-01-15'"""
+        if not sell_date_str:
+            return None
+        # 去掉后缀（中文括号和英文括号）
+        date = sell_date_str.split('（')[0].split('(')[0].strip()
+        # 去掉时间部分
+        date = date.split(' ')[0].strip()
+        return date
+    
+    # 辅助函数：从buyDate字符串中提取日期部分
+    def extract_buy_date(buy_date_str):
+        """从buyDate字符串中提取日期部分，如 '2024-01-01（开盘）' -> '2024-01-01'"""
+        if not buy_date_str:
+            return None
+        date = buy_date_str.split('（')[0].split('(')[0].strip()
+        date = date.split(' ')[0].strip()
+        return date
+    
+    # 为每只股票过滤K线数据（从买入日到卖出日）
+    for code, kline_points in kline_data_dict.items():
+        # 找到对应的买入和卖出记录
+        buy_record = next((r for r in buy_records if r['code'] == code), None)
+        sell_record = next((r for r in sell_records if r['code'] == code), None)
+        
+        if not buy_record:
+            # 如果没有买入记录，跳过
+            continue
+        
+        buy_date = extract_buy_date(buy_record.get('buyDate', ''))
+        sell_date_str = sell_record.get('sellDate', '') if sell_record else ''
+        sell_date = extract_sell_date(sell_date_str)
+        
+        if not buy_date:
+            # 如果无法提取买入日期，使用全部数据
+            kline_data_result[code] = [point.model_dump() for point in kline_points]
+            continue
+        
+        # 如果没有卖出日期（未卖出），使用统计日或K线数据的最后一天
+        if not sell_date:
+            # 尝试使用统计日
+            sell_date = request.stat_date
+            # 如果K线数据中有更早的日期，使用K线数据的最后一天
+            if kline_points:
+                last_point_date = kline_points[-1].date.split(' ')[0].strip() if kline_points[-1].date else None
+                if last_point_date and last_point_date < sell_date:
+                    sell_date = last_point_date
+        
+        # 过滤K线数据：从买入日到卖出日（包含买入日和卖出日）
+        filtered_points = []
+        for point in kline_points:
+            point_date = point.date.split(' ')[0].strip() if point.date else None
+            if not point_date:
+                continue
+            
+            # 如果日期在买入日之后或等于买入日，且在卖出日之前或等于卖出日
+            if point_date >= buy_date and point_date <= sell_date:
+                filtered_points.append(point.model_dump())
+            elif point_date > sell_date:
+                # 如果已经超过卖出日，停止添加
+                break
+        
+        kline_data_result[code] = filtered_points
+        print(f"{Fore.CYAN}股票 {code}: 买入日={buy_date}, 卖出日={sell_date}, K线数据点数={len(filtered_points)}/{len(kline_points)}{Style.RESET_ALL}")
+    
     response = BacktestResponse(
         summary=BacktestSummary(
             totalStocks=total_stocks,
@@ -1959,7 +2058,8 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
         ),
         buyRecords=[BuyRecord(**record) for record in buy_records],
         sellRecords=[SellRecord(**record) for record in sell_records],
-        stockDetails=[StockDetail(**detail) for detail in stock_details]
+        stockDetails=[StockDetail(**detail) for detail in stock_details],
+        kline_data=kline_data_result if kline_data_result else None
     )
     
     print(f"{Fore.GREEN}回测完成: 总股票数={total_stocks}, 总投入={total_investment:.2f}, 总收益={total_profit:.2f}, 总收益率={total_return_rate:.2f}%{Style.RESET_ALL}")

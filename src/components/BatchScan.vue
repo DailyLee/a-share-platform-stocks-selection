@@ -1492,9 +1492,10 @@ const getGroupReturnRate = (records) => {
 const getGroupWinRate = (records) => {
   if (!records || records.length === 0) return null
   
-  // 统计所有股票中的盈利和亏损股票数
+  // 统计所有股票中的盈利、亏损和平的股票数
   let profitableStocks = 0
   let lossStocks = 0
+  let breakEvenStocks = 0
   
   records.forEach(record => {
     // 跳过失败的记录
@@ -1513,20 +1514,24 @@ const getGroupWinRate = (records) => {
             profitableStocks++
           } else if (profit < 0) {
             lossStocks++
+          } else if (profit === 0) {
+            breakEvenStocks++
           }
         }
       })
     }
     // 方式2: 从summary中获取（批量回测历史记录列表通常只有summary）
     else if (record.summary) {
-      // summary中可能包含profitableStocks和lossStocks字段
+      // summary中可能包含profitableStocks、lossStocks和breakEvenStocks字段
       const summaryProfitable = record.summary.profitableStocks
       const summaryLoss = record.summary.lossStocks
+      const summaryBreakEven = record.summary.breakEvenStocks || 0
       
       if (summaryProfitable !== null && summaryProfitable !== undefined && 
           summaryLoss !== null && summaryLoss !== undefined) {
         profitableStocks += summaryProfitable
         lossStocks += summaryLoss
+        breakEvenStocks += summaryBreakEven
       }
       // 如果summary中没有这些字段，无法计算准确的股票胜率
     }

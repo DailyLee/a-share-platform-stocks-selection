@@ -252,6 +252,10 @@
                   <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ backtestResult.summary.profitableStocks }}</div>
                 </div>
                 <div class="p-4 bg-muted/30 rounded-md">
+                  <div class="text-sm text-muted-foreground mb-1">平的股票数</div>
+                  <div class="text-2xl font-bold text-gray-600 dark:text-gray-400">{{ backtestResult.summary.breakEvenStocks || 0 }}</div>
+                </div>
+                <div class="p-4 bg-muted/30 rounded-md">
                   <div class="text-sm text-muted-foreground mb-1">亏损股票数</div>
                   <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ backtestResult.summary.lossStocks }}</div>
                 </div>
@@ -629,6 +633,10 @@
                   <div class="p-3 bg-muted/30 rounded-md">
                     <div class="text-sm text-muted-foreground mb-1">盈利股票数</div>
                     <div class="text-xl font-bold text-red-600 dark:text-red-400">{{ selectedHistoryRecord.result.summary.profitableStocks }}</div>
+                  </div>
+                  <div class="p-3 bg-muted/30 rounded-md">
+                    <div class="text-sm text-muted-foreground mb-1">平的股票数</div>
+                    <div class="text-xl font-bold text-gray-600 dark:text-gray-400">{{ selectedHistoryRecord.result.summary.breakEvenStocks || 0 }}</div>
                   </div>
                   <div class="p-3 bg-muted/30 rounded-md">
                     <div class="text-sm text-muted-foreground mb-1">亏损股票数</div>
@@ -3990,6 +3998,7 @@ async function calculateStatistics() {
     let totalRecords = filteredRecords.length
     let profitableStocks = 0  // 盈利股票数
     let lossStocks = 0  // 亏损股票数
+    let breakEvenStocks = 0  // 平的股票数
     
     // 每次回测都是独立的，所以需要分别计算每次回测的收益率
     const recordReturns = [] // 存储每次回测的收益率和投入资金
@@ -4025,11 +4034,13 @@ async function calculateStatistics() {
         recordInvestment += buyAmount
         recordProfit += (detail.profit || 0)
         
-        // 统计盈利和亏损股票数
+        // 统计盈利、亏损和平的股票数
         if (detail.profit > 0) {
           profitableStocks++
         } else if (detail.profit < 0) {
           lossStocks++
+        } else if (detail.profit === 0) {
+          breakEvenStocks++
         }
       })
 
