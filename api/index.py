@@ -1690,10 +1690,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 # 优先级1：检查止损（最高优先级）
                 # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_stop_loss:
-                    low_return_rate = ((current_low - buy_price) / buy_price) * 100
-                    if low_return_rate <= request.stop_loss_percent:
-                        # 止损时使用止损目标价格卖出
-                        sell_price = buy_price * (1 + request.stop_loss_percent / 100)
+                    stop_loss_price = buy_price * (1 + request.stop_loss_percent / 100)
+                    # 如果开盘价就低于或等于止损价，以开盘价卖出
+                    if current_open <= stop_loss_price:
+                        sell_price = current_open
+                        sell_date = f"{current_date}（止损-开盘）"
+                        sell_reason = '止损'
+                        break
+                    # 如果开盘价高于止损价，但盘中最低价低于止损价，以止损价卖出
+                    elif current_low <= stop_loss_price:
+                        sell_price = stop_loss_price
                         sell_date = f"{current_date}（止损）"
                         sell_reason = '止损'
                         break
@@ -1828,10 +1834,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 # 优先级1：检查止损（最高优先级）
                 # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_stop_loss:
-                    low_return_rate = ((current_low - buy_price) / buy_price) * 100
-                    if low_return_rate <= request.stop_loss_percent:
-                        # 止损时使用止损目标价格卖出
-                        sell_price = buy_price * (1 + request.stop_loss_percent / 100)
+                    stop_loss_price = buy_price * (1 + request.stop_loss_percent / 100)
+                    # 如果开盘价就低于或等于止损价，以开盘价卖出
+                    if current_open <= stop_loss_price:
+                        sell_price = current_open
+                        sell_date = f"{current_date}（止损-开盘）"
+                        sell_reason = '止损'
+                        break
+                    # 如果开盘价高于止损价，但盘中最低价低于止损价，以止损价卖出
+                    elif current_low <= stop_loss_price:
+                        sell_price = stop_loss_price
                         sell_date = f"{current_date}（止损）"
                         sell_reason = '止损'
                         break

@@ -2334,12 +2334,20 @@ const router = useRouter()
                   continue
                 }
                 
-                // 优先级1：检查止损（使用最低价判断）
+                // 优先级1：检查止损
                 if (realtimeStopLoss.value < 0) {
-                  const lowReturnRate = ((currentLow - buyPrice) / buyPrice) * 100
-                  if (lowReturnRate <= realtimeStopLoss.value) {
-                    // 触发止损，使用止损目标价格卖出
-                    sellPrice = buyPrice * (1 + realtimeStopLoss.value / 100)
+                  const stopLossPrice = buyPrice * (1 + realtimeStopLoss.value / 100)
+                  // 如果开盘价就低于或等于止损价，以开盘价卖出
+                  if (currentOpen <= stopLossPrice) {
+                    sellPrice = currentOpen
+                    sellDate = klineDate
+                    sellReason = '止损'
+                    console.log(`[实时计算] 股票 ${stockCode}: 触发止损（开盘），买入价=${buyPrice.toFixed(2)}, 卖出价=${sellPrice.toFixed(2)}, 日期=${actualKlineDate}`)
+                    break
+                  }
+                  // 如果开盘价高于止损价，但盘中最低价低于止损价，以止损价卖出
+                  else if (currentLow <= stopLossPrice) {
+                    sellPrice = stopLossPrice
                     sellDate = klineDate
                     sellReason = '止损'
                     console.log(`[实时计算] 股票 ${stockCode}: 触发止损，买入价=${buyPrice.toFixed(2)}, 卖出价=${sellPrice.toFixed(2)}, 日期=${actualKlineDate}`)
