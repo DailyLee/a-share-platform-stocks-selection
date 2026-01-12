@@ -2355,12 +2355,20 @@ const router = useRouter()
                   }
                 }
                 
-                // 优先级2：检查止盈（使用最高价判断）
+                // 优先级2：检查止盈
                 if (realtimeTakeProfit.value > 0) {
-                  const highReturnRate = ((currentHigh - buyPrice) / buyPrice) * 100
-                  if (highReturnRate >= realtimeTakeProfit.value) {
-                    // 触发止盈，使用止盈目标价格卖出
-                    sellPrice = buyPrice * (1 + realtimeTakeProfit.value / 100)
+                  const takeProfitPrice = buyPrice * (1 + realtimeTakeProfit.value / 100)
+                  // 如果开盘价就高于或等于止盈价，以开盘价卖出
+                  if (currentOpen >= takeProfitPrice) {
+                    sellPrice = currentOpen
+                    sellDate = klineDate
+                    sellReason = '止盈'
+                    console.log(`[实时计算] 股票 ${stockCode}: 触发止盈（开盘），买入价=${buyPrice.toFixed(2)}, 卖出价=${sellPrice.toFixed(2)}, 日期=${actualKlineDate}`)
+                    break
+                  }
+                  // 如果开盘价低于止盈价，但盘中最高价高于止盈价，以止盈价卖出
+                  else if (currentHigh >= takeProfitPrice) {
+                    sellPrice = takeProfitPrice
                     sellDate = klineDate
                     sellReason = '止盈'
                     console.log(`[实时计算] 股票 ${stockCode}: 触发止盈，买入价=${buyPrice.toFixed(2)}, 卖出价=${sellPrice.toFixed(2)}, 日期=${actualKlineDate}`)
@@ -2447,9 +2455,11 @@ const router = useRouter()
                 }
               }
               
-              // 计算收益率和收益
+              // 计算收益率和收益（与后端逻辑保持一致）
+              // 后端计算：sell_amount = quantity * sell_price, profit = sell_amount - actual_buy_amount
+              const sellAmount = sellPrice * quantity
+              const profit = sellAmount - buyAmount
               const returnRate = ((sellPrice - buyPrice) / buyPrice) * 100
-              const profit = (sellPrice - buyPrice) * quantity
               
               // 保存实时计算结果
               if (!record.realtimeCalculation) {

@@ -4187,35 +4187,10 @@ async function calculateStatistics() {
     })
 
     // 计算整体收益率
-    // 因为每次回测都是独立的，所以整体收益率应该用复利方式计算
-    // 或者用加权平均的方式计算
+    // 与后端计算逻辑保持一致：总收益率 = 总收益 / 总投入 * 100
     let totalReturnRate = 0
-    if (recordReturns.length > 0) {
-      // 方法1：复利计算（更准确）
-      // 总收益率 = (1 + r1/100) * (1 + r2/100) * ... * (1 + rn/100) - 1
-      let compoundReturn = 1
-      recordReturns.forEach(r => {
-        if (r.investment > 0) {
-          compoundReturn *= (1 + r.returnRate / 100)
-        }
-      })
-      totalReturnRate = (compoundReturn - 1) * 100
-      
-      // 方法2：加权平均（按投入资金加权）
-      // 如果总投入为0，则使用简单平均
-      if (totalInvestment > 0) {
-        let weightedSum = 0
-        recordReturns.forEach(r => {
-          if (r.investment > 0) {
-            weightedSum += r.returnRate * (r.investment / totalInvestment)
-          }
-        })
-        totalReturnRate = weightedSum
-      } else {
-        // 如果总投入为0，使用简单平均
-        const avgReturn = recordReturns.reduce((sum, r) => sum + r.returnRate, 0) / recordReturns.length
-        totalReturnRate = avgReturn
-      }
+    if (totalInvestment > 0) {
+      totalReturnRate = (totalProfit / totalInvestment) * 100
     }
 
     // 计算胜率（基于股票数量）

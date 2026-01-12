@@ -1707,10 +1707,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 # 优先级2：检查止盈
                 # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_take_profit:
-                    high_return_rate = ((current_high - buy_price) / buy_price) * 100
-                    if high_return_rate >= request.take_profit_percent:
-                        # 止盈时使用止盈目标价格卖出
-                        sell_price = buy_price * (1 + request.take_profit_percent / 100)
+                    take_profit_price = buy_price * (1 + request.take_profit_percent / 100)
+                    # 如果开盘价就高于或等于止盈价，以开盘价卖出
+                    if current_open >= take_profit_price:
+                        sell_price = current_open
+                        sell_date = f"{current_date}（止盈-开盘）"
+                        sell_reason = '止盈'
+                        break
+                    # 如果开盘价低于止盈价，但盘中最高价高于止盈价，以止盈价卖出
+                    elif current_high >= take_profit_price:
+                        sell_price = take_profit_price
                         sell_date = f"{current_date}（止盈）"
                         sell_reason = '止盈'
                         break
@@ -1851,10 +1857,16 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 # 优先级2：检查止盈
                 # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
                 if request.use_take_profit:
-                    high_return_rate = ((current_high - buy_price) / buy_price) * 100
-                    if high_return_rate >= request.take_profit_percent:
-                        # 止盈时使用止盈目标价格卖出
-                        sell_price = buy_price * (1 + request.take_profit_percent / 100)
+                    take_profit_price = buy_price * (1 + request.take_profit_percent / 100)
+                    # 如果开盘价就高于或等于止盈价，以开盘价卖出
+                    if current_open >= take_profit_price:
+                        sell_price = current_open
+                        sell_date = f"{current_date}（止盈-开盘）"
+                        sell_reason = '止盈'
+                        break
+                    # 如果开盘价低于止盈价，但盘中最高价高于止盈价，以止盈价卖出
+                    elif current_high >= take_profit_price:
+                        sell_price = take_profit_price
                         sell_date = f"{current_date}（止盈）"
                         sell_reason = '止盈'
                         break
