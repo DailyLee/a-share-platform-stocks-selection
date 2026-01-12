@@ -3499,7 +3499,8 @@ const router = useRouter()
             const maxPercentB = allStockAttributes.value.maxPercentB
             // 只有当用户设置的范围比全范围更窄时才进行筛选
             if (percentBRangeFilter.min > minPercentB || percentBRangeFilter.max < maxPercentB) {
-              if (stockPercentB < percentBRangeFilter.min || stockPercentB > percentBRangeFilter.max) {
+              // 包含边界值：大于等于最小值且小于等于最大值
+              if (!(stockPercentB >= percentBRangeFilter.min && stockPercentB <= percentBRangeFilter.max)) {
                 return false
               }
             }

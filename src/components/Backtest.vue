@@ -1422,7 +1422,8 @@ const stocksForBacktest = computed(() => {
         if (stockPercentB === null) {
           return false // 如果没有 %B 数据，排除
         }
-        if (stockPercentB < selectedPercentBRange.value.min || stockPercentB > selectedPercentBRange.value.max) {
+        // 包含边界值：大于等于最小值且小于等于最大值
+        if (!(stockPercentB >= selectedPercentBRange.value.min && stockPercentB <= selectedPercentBRange.value.max)) {
           return false
         }
         return true
