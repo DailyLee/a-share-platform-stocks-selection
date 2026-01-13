@@ -628,11 +628,7 @@ const setOptions = () => {
           silent: true, // 不响应鼠标事件
           symbol: ['none', 'none'], // 不显示起点和终点标记
           label: {
-            show: true,
-            position: 'end',
-            formatter: '{b}',
-            fontSize: 10,
-            color: props.isDarkMode ? '#fff' : '#333'
+            show: false // 禁用全局label，每个数据项使用自己的label配置
           },
           lineStyle: {
             type: 'dashed',
@@ -651,6 +647,13 @@ const setOptions = () => {
                 type: 'solid',
                 width: 1,
                 opacity: 0.8
+              },
+              label: {
+                show: true,
+                position: 'end',
+                formatter: `支撑位: ${level.toFixed(2)}`,
+                fontSize: 10,
+                color: props.isDarkMode ? '#8cb58c' : '#10b981' // 使用与线条相同的颜色
               }
             })),
 
@@ -663,6 +666,13 @@ const setOptions = () => {
                 type: 'solid',
                 width: 1,
                 opacity: 0.8
+              },
+              label: {
+                show: true,
+                position: 'end',
+                formatter: `阻力位: ${level.toFixed(2)}`,
+                fontSize: 10,
+                color: props.isDarkMode ? '#a15c5c' : '#ec0000' // 使用与线条相同的颜色
               }
             }))
           ]

@@ -233,61 +233,58 @@
         卖出策略
       </h3>
       <div class="bg-muted/30 p-4 rounded-md space-y-4">
-        <!-- 卖出策略类型选择 -->
-        <div class="space-y-2">
-          <label class="block text-sm font-medium mb-2">
-            <i class="fas fa-cog mr-1 text-primary"></i>
-            卖出触发方式
-          </label>
-          <div class="ml-6 space-y-2">
-            <label class="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="radio"
-                :id="`sellStrategyTypePercent-${uniqueId}`"
-                :checked="!modelValue.sellStrategyType || modelValue.sellStrategyType === 'percent'"
-                @change="updateField('sellStrategyType', 'percent')"
-                class="radio"
-              />
-              <span class="text-sm">基于涨跌幅（止损/止盈）</span>
-            </label>
-            <label class="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="radio"
-                :id="`sellStrategyTypeLevel-${uniqueId}`"
-                :checked="modelValue.sellStrategyType === 'level'"
-                @change="updateField('sellStrategyType', 'level')"
-                class="radio"
-              />
-              <span class="text-sm">基于支撑位/压力位</span>
+        <!-- 止损设置 -->
+        <div class="space-y-3 border-b border-border pb-4">
+          <div class="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              :id="`sellStrategyStopLoss-${uniqueId}`"
+              :checked="modelValue.useStopLoss"
+              @change="updateField('useStopLoss', $event.target.checked)"
+              class="checkbox"
+            />
+            <label :for="`sellStrategyStopLoss-${uniqueId}`" class="text-sm font-medium">
+              <i class="fas fa-arrow-down mr-1 text-red-500"></i>
+              止损
             </label>
           </div>
-        </div>
-
-        <!-- 基于涨跌幅的卖出策略（止损/止盈） -->
-        <div v-if="!modelValue.sellStrategyType || modelValue.sellStrategyType === 'percent'" class="space-y-4 border-t border-border pt-4">
-          <div class="text-xs font-medium text-muted-foreground mb-2">风控设置</div>
           
-          <!-- 止损设置 -->
-          <div class="space-y-2">
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                :id="`sellStrategyStopLoss-${uniqueId}`"
-                :checked="modelValue.useStopLoss"
-                @change="updateField('useStopLoss', $event.target.checked)"
-                class="checkbox"
-              />
-              <label :for="`sellStrategyStopLoss-${uniqueId}`" class="text-sm">
-                止损
-              </label>
+          <div v-if="modelValue.useStopLoss" class="ml-6 space-y-3">
+            <!-- 止损触发方式选择 -->
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-muted-foreground">触发方式</label>
+              <div class="space-y-2">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`stopLossTypePercent-${uniqueId}`"
+                    :checked="!modelValue.stopLossType || modelValue.stopLossType === 'percent'"
+                    @change="updateField('stopLossType', 'percent')"
+                    class="radio"
+                  />
+                  <span class="text-sm">固定百分比</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`stopLossTypeLevel-${uniqueId}`"
+                    :checked="modelValue.stopLossType === 'level'"
+                    @change="updateField('stopLossType', 'level')"
+                    class="radio"
+                  />
+                  <span class="text-sm">基于支撑位</span>
+                </label>
+              </div>
             </div>
-            <div v-if="modelValue.useStopLoss" class="ml-6 flex items-center space-x-2">
+
+            <!-- 固定百分比止损 -->
+            <div v-if="!modelValue.stopLossType || modelValue.stopLossType === 'percent'" class="flex items-center space-x-2">
               <label :for="`stopLossPercent-${uniqueId}`" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
               <div class="flex items-center">
                 <span class="text-sm text-muted-foreground mr-1">-</span>
                 <input
                   :id="`stopLossPercent-${uniqueId}`"
-                  :value="Math.abs(modelValue.stopLossPercent)"
+                  :value="Math.abs(modelValue.stopLossPercent || 0)"
                   @input="handleStopLossInput($event)"
                   type="number"
                   step="0.1"
@@ -302,27 +299,88 @@
                 (只需输入数字，系统自动转换为负数，例如：输入 3 表示下跌3%时止损)
               </p>
             </div>
+
+            <!-- 基于支撑位的止损 -->
+            <div v-if="modelValue.stopLossType === 'level'" class="space-y-2">
+              <div class="flex items-center space-x-4">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`stopLossSupportIndex1-${uniqueId}`"
+                    :checked="(modelValue.stopLossSupportIndex || 2) === 1"
+                    @change="updateField('stopLossSupportIndex', 1)"
+                    class="radio"
+                  />
+                  <span class="text-sm">点位1（最近的支撑位）</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`stopLossSupportIndex2-${uniqueId}`"
+                    :checked="(modelValue.stopLossSupportIndex || 2) === 2"
+                    @change="updateField('stopLossSupportIndex', 2)"
+                    class="radio"
+                  />
+                  <span class="text-sm">点位2</span>
+                </label>
+              </div>
+              <p v-if="showHelpText" class="text-xs text-muted-foreground">
+                (当价格跌破该股票对应的支撑位点位时止损卖出，每只股票使用其自己的支撑位数据)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 止盈设置 -->
+        <div class="space-y-3 border-b border-border pb-4">
+          <div class="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              :id="`sellStrategyTakeProfit-${uniqueId}`"
+              :checked="modelValue.useTakeProfit"
+              @change="updateField('useTakeProfit', $event.target.checked)"
+              class="checkbox"
+            />
+            <label :for="`sellStrategyTakeProfit-${uniqueId}`" class="text-sm font-medium">
+              <i class="fas fa-arrow-up mr-1 text-green-500"></i>
+              止盈
+            </label>
           </div>
           
-          <!-- 止盈设置 -->
-          <div class="space-y-2">
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                :id="`sellStrategyTakeProfit-${uniqueId}`"
-                :checked="modelValue.useTakeProfit"
-                @change="updateField('useTakeProfit', $event.target.checked)"
-                class="checkbox"
-              />
-              <label :for="`sellStrategyTakeProfit-${uniqueId}`" class="text-sm">
-                止盈
-              </label>
+          <div v-if="modelValue.useTakeProfit" class="ml-6 space-y-3">
+            <!-- 止盈触发方式选择 -->
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-muted-foreground">触发方式</label>
+              <div class="space-y-2">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`takeProfitTypePercent-${uniqueId}`"
+                    :checked="!modelValue.takeProfitType || modelValue.takeProfitType === 'percent'"
+                    @change="updateField('takeProfitType', 'percent')"
+                    class="radio"
+                  />
+                  <span class="text-sm">固定百分比</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    :id="`takeProfitTypeLevel-${uniqueId}`"
+                    :checked="modelValue.takeProfitType === 'level'"
+                    @change="updateField('takeProfitType', 'level')"
+                    class="radio"
+                  />
+                  <span class="text-sm">基于压力位</span>
+                </label>
+              </div>
             </div>
-            <div v-if="modelValue.useTakeProfit" class="ml-6 flex items-center space-x-2">
+
+            <!-- 固定百分比止盈 -->
+            <div v-if="!modelValue.takeProfitType || modelValue.takeProfitType === 'percent'" class="flex items-center space-x-2">
               <label :for="`takeProfitPercent-${uniqueId}`" class="text-sm text-muted-foreground whitespace-nowrap">百分比：</label>
               <input
                 :id="`takeProfitPercent-${uniqueId}`"
-                :value="modelValue.takeProfitPercent"
+                :value="modelValue.takeProfitPercent || 0"
                 @input="handleNumberInput('takeProfitPercent', $event)"
                 type="number"
                 step="0.1"
@@ -336,35 +394,16 @@
                 (正数，例如：10 表示上涨10%时止盈)
               </p>
             </div>
-          </div>
-        </div>
 
-        <!-- 基于支撑位/压力位的卖出策略 -->
-        <div v-if="modelValue.sellStrategyType === 'level'" class="space-y-4 border-t border-border pt-4">
-          <div class="text-xs font-medium text-muted-foreground mb-2">支撑位/压力位设置</div>
-          
-          <!-- 压力位选择 -->
-          <div class="space-y-2">
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                :id="`sellStrategyResistance-${uniqueId}`"
-                :checked="modelValue.useResistance"
-                @change="updateField('useResistance', $event.target.checked)"
-                class="checkbox"
-              />
-              <label :for="`sellStrategyResistance-${uniqueId}`" class="text-sm">
-                到达压力位卖出
-              </label>
-            </div>
-            <div v-if="modelValue.useResistance" class="ml-6 space-y-2">
+            <!-- 基于压力位的止盈 -->
+            <div v-if="modelValue.takeProfitType === 'level'" class="space-y-2">
               <div class="flex items-center space-x-4">
                 <label class="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="radio"
-                    :id="`resistanceLevelIndex1-${uniqueId}`"
-                    :checked="modelValue.selectedResistanceIndex === 1"
-                    @change="updateField('selectedResistanceIndex', 1)"
+                    :id="`takeProfitResistanceIndex1-${uniqueId}`"
+                    :checked="(modelValue.takeProfitResistanceIndex || 2) === 1"
+                    @change="updateField('takeProfitResistanceIndex', 1)"
                     class="radio"
                   />
                   <span class="text-sm">点位1（最近的压力位）</span>
@@ -372,79 +411,16 @@
                 <label class="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="radio"
-                    :id="`resistanceLevelIndex2-${uniqueId}`"
-                    :checked="modelValue.selectedResistanceIndex === 2"
-                    @change="updateField('selectedResistanceIndex', 2)"
+                    :id="`takeProfitResistanceIndex2-${uniqueId}`"
+                    :checked="(modelValue.takeProfitResistanceIndex || 2) === 2"
+                    @change="updateField('takeProfitResistanceIndex', 2)"
                     class="radio"
                   />
                   <span class="text-sm">点位2</span>
                 </label>
-                <label class="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    :id="`resistanceLevelIndex3-${uniqueId}`"
-                    :checked="modelValue.selectedResistanceIndex === 3"
-                    @change="updateField('selectedResistanceIndex', 3)"
-                    class="radio"
-                  />
-                  <span class="text-sm">点位3</span>
-                </label>
               </div>
-              <p v-if="showHelpText" class="text-xs text-muted-foreground mt-1">
-                (当价格达到或超过该股票对应的压力位点位时卖出，每只股票使用其自己的压力位数据)
-              </p>
-            </div>
-          </div>
-
-          <!-- 支撑位选择 -->
-          <div class="space-y-2">
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                :id="`sellStrategySupport-${uniqueId}`"
-                :checked="modelValue.useSupport"
-                @change="updateField('useSupport', $event.target.checked)"
-                class="checkbox"
-              />
-              <label :for="`sellStrategySupport-${uniqueId}`" class="text-sm">
-                跌破支撑位卖出
-              </label>
-            </div>
-            <div v-if="modelValue.useSupport" class="ml-6 space-y-2">
-              <div class="flex items-center space-x-4">
-                <label class="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    :id="`supportLevelIndex1-${uniqueId}`"
-                    :checked="modelValue.selectedSupportIndex === 1"
-                    @change="updateField('selectedSupportIndex', 1)"
-                    class="radio"
-                  />
-                  <span class="text-sm">点位1（最近的支撑位）</span>
-                </label>
-                <label class="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    :id="`supportLevelIndex2-${uniqueId}`"
-                    :checked="modelValue.selectedSupportIndex === 2"
-                    @change="updateField('selectedSupportIndex', 2)"
-                    class="radio"
-                  />
-                  <span class="text-sm">点位2</span>
-                </label>
-                <label class="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    :id="`supportLevelIndex3-${uniqueId}`"
-                    :checked="modelValue.selectedSupportIndex === 3"
-                    @change="updateField('selectedSupportIndex', 3)"
-                    class="radio"
-                  />
-                  <span class="text-sm">点位3</span>
-                </label>
-              </div>
-              <p v-if="showHelpText" class="text-xs text-muted-foreground mt-1">
-                (当价格跌破该股票对应的支撑位点位时卖出，每只股票使用其自己的支撑位数据)
+              <p v-if="showHelpText" class="text-xs text-muted-foreground">
+                (当价格达到或超过该股票对应的压力位点位时止盈卖出，每只股票使用其自己的压力位数据)
               </p>
             </div>
           </div>
@@ -501,14 +477,13 @@ const props = defineProps({
       initialCapital: 100000,
       useStopLoss: true,
       useTakeProfit: true,
-      stopLossPercent: -1.6,
-      takeProfitPercent: 16.0,
-      sellPriceType: 'close', // 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
-      sellStrategyType: 'percent', // 卖出策略类型：'percent' 基于涨跌幅，'level' 基于支撑位/压力位
-      useResistance: false, // 使用压力位卖出
-      useSupport: false, // 使用支撑位卖出
-      selectedResistanceIndex: 2, // 选中的压力位点位序号（1、2、3），默认点位2
-      selectedSupportIndex: 2 // 选中的支撑位点位序号（1、2、3），默认点位2
+      stopLossPercent: -1.6, // 止损百分比（负数）
+      stopLossType: 'percent', // 止损类型：'percent' 固定百分比，'level' 基于支撑位
+      stopLossSupportIndex: 2, // 止损使用的支撑位点位序号（1、2），默认点位2
+      takeProfitPercent: 16.0, // 止盈百分比（正数）
+      takeProfitType: 'percent', // 止盈类型：'percent' 固定百分比，'level' 基于压力位
+      takeProfitResistanceIndex: 2, // 止盈使用的压力位点位序号（1、2），默认点位2
+      sellPriceType: 'close' // 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
     })
   },
   // 用于生成唯一的ID，避免多个实例冲突
@@ -701,6 +676,6 @@ const percentBRangeArray = computed({
 })
 
 // 注意：不再需要计算具体的支撑位和压力位价格列表
-// 现在使用点位序号（1、2、3）来选择，每只股票使用其自己的支撑位/压力位数据
+// 现在使用点位序号（1、2）来选择，每只股票使用其自己的支撑位/压力位数据
 </script>
 

@@ -797,7 +797,7 @@
                 <thead class="bg-muted/50">
                   <tr>
                     <th scope="col"
-                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[60px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider max-w-[40px]">
                       <div class="flex items-center space-x-1">
                         <input
                           type="checkbox"
@@ -805,25 +805,25 @@
                           @change="toggleSelectAll"
                           class="checkbox"
                         />
-                        <span class="text-xs text-muted-foreground whitespace-nowrap">
+                        <span class="text-xs text-muted-foreground">
                           ({{ selectedStocks ? selectedStocks.length : 0 }} / {{ filteredStocks.length }})
                         </span>
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[80px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider max-w-[80px]">
                       <div class="flex items-center">
                         <i class="fas fa-hashtag mr-1"></i> 代码
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[100px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider max-w-[100px]">
                       <div class="flex items-center">
                         <i class="fas fa-font mr-1"></i> 名称
                       </div>
                     </th>
                     <th scope="col"
-                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[60px]">
+                      class="px-2 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider max-w-[60px]">
                       <div class="flex items-center">
                         <i class="fas fa-tag mr-1"></i> 行业
                       </div>
@@ -844,7 +844,7 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                   <tr v-for="stock in paginatedStocks" :key="stock.code">
-                    <td class="px-2 py-3 whitespace-nowrap w-[60px]">
+                    <td class="px-2 py-3 whitespace-nowrap max-w-[30px]">
                       <input
                         type="checkbox"
                         :checked="isStockSelected(stock.code)"
@@ -852,9 +852,9 @@
                         class="checkbox"
                       />
                     </td>
-                    <td class="px-2 py-3 whitespace-nowrap text-sm font-medium w-[80px]">{{ stock.code }}</td>
-                    <td class="px-2 py-3 whitespace-nowrap text-sm w-[100px]">{{ stock.name }}</td>
-                    <td class="px-2 py-3 whitespace-nowrap text-sm w-[60px]">
+                    <td class="px-2 py-3 whitespace-nowrap text-sm font-medium max-w-[80px]">{{ stock.code }}</td>
+                    <td class="px-2 py-3 whitespace-nowrap text-sm  max-w-[60px]">{{ stock.name }}</td>
+                    <td class="px-2 py-3 whitespace-nowrap text-sm max-w-[180px]">
                       <span class="px-1 py-0.5 rounded-full text-xs bg-primary/20 text-primary">
                         {{ stock.industry || '未知行业' }}
                       </span>

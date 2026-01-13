@@ -730,11 +730,12 @@ const backtestConfig = ref({
   periodStatDates: {}, // 每个周期对应的统计日 { scanDate: statDate }
   periodStatDaysOffset: 5, // 周期统计日天数偏移，回测日之后多少天，默认5天
   sellPriceType: 'close', // 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
-  sellStrategyType: 'percent', // 卖出策略类型：'percent' 基于涨跌幅，'level' 基于支撑位/压力位
-  useResistance: false, // 使用压力位卖出
-  useSupport: false, // 使用支撑位卖出
-  selectedResistanceIndex: 2, // 选中的压力位点位序号（1、2、3），默认点位2
-  selectedSupportIndex: 2 // 选中的支撑位点位序号（1、2、3），默认点位2
+  stopLossPercent: -1.6, // 止损百分比（负数）
+  stopLossType: 'percent', // 止损类型：'percent' 固定百分比，'level' 基于支撑位
+  stopLossSupportIndex: 2, // 止损使用的支撑位点位序号（1、2），默认点位2
+  takeProfitPercent: 16.0, // 止盈百分比（正数）
+  takeProfitType: 'percent', // 止盈类型：'percent' 固定百分比，'level' 基于压力位
+  takeProfitResistanceIndex: 2 // 止盈使用的压力位点位序号（1、2），默认点位2
 })
 
 // 买入条件配置 - 平台期筛选
@@ -1334,90 +1335,140 @@ const runBatchBacktest = async () => {
       period_stat_dates: backtestConfig.value.periodStatDates,
       buy_strategy: backtestConfig.value.buyStrategy,
       initial_capital: backtestConfig.value.initialCapital,
-      sell_price_type: backtestConfig.value.sellPriceType || 'close',
-      sell_strategy_type: backtestConfig.value.sellStrategyType || 'percent'
+      sell_price_type: backtestConfig.value.sellPriceType || 'close'
     }
     
-    // 根据卖出策略类型添加不同的参数
-    if (backtestConfig.value.sellStrategyType === 'level') {
-      // 基于支撑位/压力位的卖出策略
-      requestData.use_resistance = backtestConfig.value.useResistance || false
-      requestData.use_support = backtestConfig.value.useSupport || false
-      requestData.selected_resistance_index = backtestConfig.value.selectedResistanceIndex
-      requestData.selected_support_index = backtestConfig.value.selectedSupportIndex
-      
-      // 前端计算每只股票的支撑位/压力位价格
-      const stockLevelPrices = {}
-      for (const result of scanResultsForBacktest.value) {
-        if (result.scannedStocks && Array.isArray(result.scannedStocks)) {
-          for (const stock of result.scannedStocks) {
-            const code = stock.code
-            if (!stockLevelPrices[code]) {
-              stockLevelPrices[code] = {}
-            }
-            
-            // 获取支撑位和压力位数组
-            let supportLevels = []
-            let resistanceLevels = []
-            
-            if (stock.box_analysis) {
-              if (Array.isArray(stock.box_analysis.support_levels)) {
-                supportLevels = stock.box_analysis.support_levels
-              } else if (typeof stock.box_analysis.support_levels === 'number') {
-                supportLevels = [stock.box_analysis.support_levels]
+    // 初始化 stock_level_prices 对象
+    if (!requestData.stock_level_prices) {
+      requestData.stock_level_prices = {}
+    }
+    
+    // 处理止损设置
+    if (backtestConfig.value.useStopLoss) {
+      requestData.use_stop_loss = true
+      if (backtestConfig.value.stopLossType === 'level') {
+        // 基于支撑位的止损
+        requestData.stop_loss_type = 'level'
+        
+        // 前端计算每只股票的支撑位价格
+        const stockLevelPrices = requestData.stock_level_prices
+        const stopLossIndex = backtestConfig.value.stopLossSupportIndex || 2
+        
+        for (const result of scanResultsForBacktest.value) {
+          if (result.scannedStocks && Array.isArray(result.scannedStocks)) {
+            for (const stock of result.scannedStocks) {
+              const code = stock.code
+              if (!stockLevelPrices[code]) {
+                stockLevelPrices[code] = {}
               }
-              if (Array.isArray(stock.box_analysis.resistance_levels)) {
-                resistanceLevels = stock.box_analysis.resistance_levels
-              } else if (typeof stock.box_analysis.resistance_levels === 'number') {
-                resistanceLevels = [stock.box_analysis.resistance_levels]
-              }
-            } else if (stock.details) {
-              for (const window in stock.details) {
-                if (stock.details[window].box_analysis) {
-                  const boxAnalysis = stock.details[window].box_analysis
-                  if (Array.isArray(boxAnalysis.support_levels)) {
-                    supportLevels = boxAnalysis.support_levels
-                  } else if (typeof boxAnalysis.support_levels === 'number') {
-                    supportLevels = [boxAnalysis.support_levels]
+              
+              // 获取支撑位数组
+              let supportLevels = []
+              if (stock.box_analysis && stock.box_analysis.support_levels) {
+                if (Array.isArray(stock.box_analysis.support_levels)) {
+                  supportLevels = stock.box_analysis.support_levels
+                } else if (typeof stock.box_analysis.support_levels === 'number') {
+                  supportLevels = [stock.box_analysis.support_levels]
+                }
+              } else if (stock.details) {
+                for (const window in stock.details) {
+                  if (stock.details[window] && stock.details[window].box_analysis && stock.details[window].box_analysis.support_levels) {
+                    const boxAnalysis = stock.details[window].box_analysis
+                    if (Array.isArray(boxAnalysis.support_levels)) {
+                      supportLevels = boxAnalysis.support_levels
+                    } else if (typeof boxAnalysis.support_levels === 'number') {
+                      supportLevels = [boxAnalysis.support_levels]
+                    }
+                    break
                   }
-                  if (Array.isArray(boxAnalysis.resistance_levels)) {
-                    resistanceLevels = boxAnalysis.resistance_levels
-                  } else if (typeof boxAnalysis.resistance_levels === 'number') {
-                    resistanceLevels = [boxAnalysis.resistance_levels]
-                  }
-                  break
                 }
               }
-            }
-            
-            // 根据点位序号计算对应的价格
-            if (backtestConfig.value.useSupport && backtestConfig.value.selectedSupportIndex) {
-              const sortedSupportLevels = [...supportLevels].sort((a, b) => b - a) // 从高到低
-              const index = backtestConfig.value.selectedSupportIndex - 1
-              if (sortedSupportLevels.length > index) {
-                stockLevelPrices[code].support_level = sortedSupportLevels[index]
-              }
-            }
-            
-            if (backtestConfig.value.useResistance && backtestConfig.value.selectedResistanceIndex) {
-              const sortedResistanceLevels = [...resistanceLevels].sort((a, b) => a - b) // 从低到高
-              const index = backtestConfig.value.selectedResistanceIndex - 1
-              if (sortedResistanceLevels.length > index) {
-                stockLevelPrices[code].resistance_level = sortedResistanceLevels[index]
+              
+              // 根据点位序号计算对应的价格
+              if (supportLevels.length > 0) {
+                const sortedSupportLevels = [...supportLevels].sort((a, b) => b - a) // 从高到低
+                const index = stopLossIndex - 1
+                if (sortedSupportLevels.length > index && index >= 0) {
+                  stockLevelPrices[code].support_level = sortedSupportLevels[index]
+                  console.log(`[止损] 股票 ${code}: 支撑位价格 = ${sortedSupportLevels[index]}, 点位序号 = ${stopLossIndex}`)
+                } else {
+                  console.warn(`[止损] 股票 ${code}: 支撑位数组长度(${sortedSupportLevels.length})不足，无法获取点位${stopLossIndex}`)
+                }
+              } else {
+                console.warn(`[止损] 股票 ${code}: 未找到支撑位数据`)
               }
             }
           }
         }
+      } else {
+        // 基于百分比的止损
+        requestData.stop_loss_type = 'percent'
+        requestData.stop_loss_percent = backtestConfig.value.stopLossPercent
       }
-      
-      // 将计算好的价格传递给后端
-      requestData.stock_level_prices = stockLevelPrices
-    } else {
-      // 基于涨跌幅的卖出策略（风控设置）
-      requestData.use_stop_loss = backtestConfig.value.useStopLoss
-      requestData.use_take_profit = backtestConfig.value.useTakeProfit
-      requestData.stop_loss_percent = backtestConfig.value.stopLossPercent
-      requestData.take_profit_percent = backtestConfig.value.takeProfitPercent
+    }
+    
+    // 处理止盈设置
+    if (backtestConfig.value.useTakeProfit) {
+      requestData.use_take_profit = true
+      if (backtestConfig.value.takeProfitType === 'level') {
+        // 基于压力位的止盈
+        requestData.take_profit_type = 'level'
+        
+        // 前端计算每只股票的压力位价格
+        const stockLevelPrices = requestData.stock_level_prices
+        const takeProfitIndex = backtestConfig.value.takeProfitResistanceIndex || 2
+        
+        for (const result of scanResultsForBacktest.value) {
+          if (result.scannedStocks && Array.isArray(result.scannedStocks)) {
+            for (const stock of result.scannedStocks) {
+              const code = stock.code
+              if (!stockLevelPrices[code]) {
+                stockLevelPrices[code] = {}
+              }
+              
+              // 获取压力位数组
+              let resistanceLevels = []
+              if (stock.box_analysis && stock.box_analysis.resistance_levels) {
+                if (Array.isArray(stock.box_analysis.resistance_levels)) {
+                  resistanceLevels = stock.box_analysis.resistance_levels
+                } else if (typeof stock.box_analysis.resistance_levels === 'number') {
+                  resistanceLevels = [stock.box_analysis.resistance_levels]
+                }
+              } else if (stock.details) {
+                for (const window in stock.details) {
+                  if (stock.details[window] && stock.details[window].box_analysis && stock.details[window].box_analysis.resistance_levels) {
+                    const boxAnalysis = stock.details[window].box_analysis
+                    if (Array.isArray(boxAnalysis.resistance_levels)) {
+                      resistanceLevels = boxAnalysis.resistance_levels
+                    } else if (typeof boxAnalysis.resistance_levels === 'number') {
+                      resistanceLevels = [boxAnalysis.resistance_levels]
+                    }
+                    break
+                  }
+                }
+              }
+              
+              // 根据点位序号计算对应的价格
+              if (resistanceLevels.length > 0) {
+                const sortedResistanceLevels = [...resistanceLevels].sort((a, b) => a - b) // 从低到高
+                const index = takeProfitIndex - 1
+                if (sortedResistanceLevels.length > index && index >= 0) {
+                  stockLevelPrices[code].resistance_level = sortedResistanceLevels[index]
+                  console.log(`[止盈] 股票 ${code}: 压力位价格 = ${sortedResistanceLevels[index]}, 点位序号 = ${takeProfitIndex}`)
+                } else {
+                  console.warn(`[止盈] 股票 ${code}: 压力位数组长度(${sortedResistanceLevels.length})不足，无法获取点位${takeProfitIndex}`)
+                }
+              } else {
+                console.warn(`[止盈] 股票 ${code}: 未找到压力位数据`)
+              }
+            }
+          }
+        }
+      } else {
+        // 基于百分比的止盈
+        requestData.take_profit_type = 'percent'
+        requestData.take_profit_percent = backtestConfig.value.takeProfitPercent
+      }
     }
     
     // 如果设置了平台期筛选，添加平台期筛选参数

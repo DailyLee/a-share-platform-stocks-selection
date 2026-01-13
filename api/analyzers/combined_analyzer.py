@@ -466,7 +466,18 @@ def analyze_stock(df: pd.DataFrame,
         # 使用最大窗口进行箱体检测，以获取更稳定的支撑位和阻力位
         max_window = max(windows) if windows else 90
         box_analysis = analyze_box_pattern(df, max_window, box_quality_threshold=box_quality_threshold)
-        box_analysis_results = box_analysis
+        box_analysis_results = box_analysis.copy() if isinstance(box_analysis, dict) else box_analysis
+
+        # 限制支撑位和阻力位数量为最多2个，与mark_lines保持一致
+        if "support_levels" in box_analysis_results and box_analysis_results["support_levels"]:
+            support_levels = box_analysis_results["support_levels"]
+            if isinstance(support_levels, list) and len(support_levels) > 2:
+                box_analysis_results["support_levels"] = support_levels[:2]
+        
+        if "resistance_levels" in box_analysis_results and box_analysis_results["resistance_levels"]:
+            resistance_levels = box_analysis_results["resistance_levels"]
+            if isinstance(resistance_levels, list) and len(resistance_levels) > 2:
+                box_analysis_results["resistance_levels"] = resistance_levels[:2]
 
         # 如果启用了箱体检测，还需要满足箱体条件
         is_box_pattern = box_analysis.get("is_box_pattern", False)
