@@ -1258,11 +1258,19 @@ class BacktestRequest(BaseModel):
     stat_date: str  # 统计日，格式：YYYY-MM-DD
     buy_strategy: str = "fixed_amount"  # 买入策略
     initial_capital: Optional[float] = 100000  # 初始资金（用于平均分配策略）
-    use_stop_loss: bool = True  # 使用止损
-    use_take_profit: bool = True  # 使用止盈
-    stop_loss_percent: float = -3.0  # 止损百分比
-    take_profit_percent: float = 10.0  # 止盈百分比
     sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
+    sell_strategy_type: str = "percent"  # 卖出策略类型：'percent' 基于涨跌幅，'level' 基于支撑位/压力位
+    # 基于涨跌幅的卖出策略（风控设置）
+    use_stop_loss: Optional[bool] = True  # 使用止损
+    use_take_profit: Optional[bool] = True  # 使用止盈
+    stop_loss_percent: Optional[float] = -3.0  # 止损百分比
+    take_profit_percent: Optional[float] = 10.0  # 止盈百分比
+    # 基于支撑位/压力位的卖出策略
+    use_resistance: Optional[bool] = False  # 使用压力位卖出
+    use_support: Optional[bool] = False  # 使用支撑位卖出
+    selected_resistance_index: Optional[int] = None  # 选中的压力位点位序号（1、2、3）
+    selected_support_index: Optional[int] = None  # 选中的支撑位点位序号（1、2、3）
+    stock_level_prices: Optional[Dict[str, Dict[str, float]]] = None  # 每只股票的支撑位/压力位价格 {code: {support_level: float, resistance_level: float}}
     selected_stocks: List[Dict[str, Any]]  # 选中的股票列表（从扫描结果传递）
 
 
@@ -1327,6 +1335,75 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
     """
     from datetime import datetime, timedelta
     import time
+    
+    def check_sell_conditions(day_data, buy_price, stock, request, use_open_price):
+        """
+        检查卖出条件的辅助函数
+        返回: (should_sell, sell_price, sell_date, sell_reason)
+        """
+        date_obj = day_data['date']
+        if isinstance(date_obj, pd.Timestamp):
+            current_date = date_obj.strftime('%Y-%m-%d')
+        else:
+            current_date = str(date_obj).split()[0]
+        current_close = float(day_data['close'])
+        current_open = float(day_data['open'])
+        current_low = float(day_data['low'])
+        current_high = float(day_data['high'])
+        current_sell_price = current_open if use_open_price else current_close
+        
+        sell_strategy_type = getattr(request, 'sell_strategy_type', 'percent')
+        
+        if sell_strategy_type == 'level':
+            # 基于支撑位/压力位的卖出策略
+            # 直接使用前端传递的股票价格，不需要重新计算
+            support_level = None
+            resistance_level = None
+            
+            stock_code = stock.get('code', '')
+            stock_level_prices = getattr(request, 'stock_level_prices', None)
+            
+            if stock_level_prices and stock_code in stock_level_prices:
+                level_prices = stock_level_prices[stock_code]
+                if getattr(request, 'use_support', False):
+                    support_level = level_prices.get('support_level')
+                if getattr(request, 'use_resistance', False):
+                    resistance_level = level_prices.get('resistance_level')
+            
+            # 优先级1：检查跌破支撑位（最高优先级）
+            if getattr(request, 'use_support', False) and support_level is not None:
+                if current_open <= support_level:
+                    return (True, current_open, f"{current_date}（跌破支撑位-开盘）", '跌破支撑位')
+                elif current_low <= support_level:
+                    return (True, support_level, f"{current_date}（跌破支撑位）", '跌破支撑位')
+            
+            # 优先级2：检查到达压力位
+            if getattr(request, 'use_resistance', False) and resistance_level is not None:
+                if current_open >= resistance_level:
+                    return (True, current_open, f"{current_date}（到达压力位-开盘）", '到达压力位')
+                elif current_high >= resistance_level:
+                    return (True, resistance_level, f"{current_date}（到达压力位）", '到达压力位')
+        else:
+            # 基于涨跌幅的卖出策略（风控设置）
+            # 优先级1：检查止损（最高优先级）
+            if getattr(request, 'use_stop_loss', True):
+                stop_loss_percent = getattr(request, 'stop_loss_percent', -3.0)
+                stop_loss_price = buy_price * (1 + stop_loss_percent / 100)
+                if current_open <= stop_loss_price:
+                    return (True, current_open, f"{current_date}（止损-开盘）", '止损')
+                elif current_low <= stop_loss_price:
+                    return (True, stop_loss_price, f"{current_date}（止损）", '止损')
+            
+            # 优先级2：检查止盈
+            if getattr(request, 'use_take_profit', True):
+                take_profit_percent = getattr(request, 'take_profit_percent', 10.0)
+                take_profit_price = buy_price * (1 + take_profit_percent / 100)
+                if current_open >= take_profit_price:
+                    return (True, current_open, f"{current_date}（止盈-开盘）", '止盈')
+                elif current_high >= take_profit_price:
+                    return (True, take_profit_price, f"{current_date}（止盈）", '止盈')
+        
+        return (False, None, None, None)
     
     # 验证日期格式
     try:
@@ -1687,42 +1764,19 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 
                 return_rate = ((current_close - buy_price) / buy_price) * 100
                 
-                # 优先级1：检查止损（最高优先级）
-                # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
-                if request.use_stop_loss:
-                    stop_loss_price = buy_price * (1 + request.stop_loss_percent / 100)
-                    # 如果开盘价就低于或等于止损价，以开盘价卖出
-                    if current_open <= stop_loss_price:
-                        sell_price = current_open
-                        sell_date = f"{current_date}（止损-开盘）"
-                        sell_reason = '止损'
-                        break
-                    # 如果开盘价高于止损价，但盘中最低价低于止损价，以止损价卖出
-                    elif current_low <= stop_loss_price:
-                        sell_price = stop_loss_price
-                        sell_date = f"{current_date}（止损）"
-                        sell_reason = '止损'
-                        break
+                # 使用辅助函数检查卖出条件
+                should_sell, check_sell_price, check_sell_date, check_sell_reason = check_sell_conditions(
+                    day_data, buy_price, stock, request, use_open_price
+                )
                 
-                # 优先级2：检查止盈
-                # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
-                if request.use_take_profit:
-                    take_profit_price = buy_price * (1 + request.take_profit_percent / 100)
-                    # 如果开盘价就高于或等于止盈价，以开盘价卖出
-                    if current_open >= take_profit_price:
-                        sell_price = current_open
-                        sell_date = f"{current_date}（止盈-开盘）"
-                        sell_reason = '止盈'
-                        break
-                    # 如果开盘价低于止盈价，但盘中最高价高于止盈价，以止盈价卖出
-                    elif current_high >= take_profit_price:
-                        sell_price = take_profit_price
-                        sell_date = f"{current_date}（止盈）"
-                        sell_reason = '止盈'
-                        break
+                if should_sell:
+                    sell_price = check_sell_price
+                    sell_date = check_sell_date
+                    sell_reason = check_sell_reason
+                    break
                 
                 # 优先级3：统计日卖出（最低优先级）
-                # 只有在没有触发止损和止盈的情况下，才会执行统计日卖出
+                # 只有在没有触发其他卖出条件的情况下，才会执行统计日卖出
                 if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
                     sell_price = current_sell_price
                     price_type_label = '开盘' if use_open_price else '收盘'
@@ -1837,42 +1891,19 @@ def run_backtest_with_progress(request: BacktestRequest, progress_callback=None)
                 
                 return_rate = ((current_close - buy_price) / buy_price) * 100
                 
-                # 优先级1：检查止损（最高优先级）
-                # 如果触发止损，立即卖出并跳出循环，后续日期（包括统计日）不再检查
-                if request.use_stop_loss:
-                    stop_loss_price = buy_price * (1 + request.stop_loss_percent / 100)
-                    # 如果开盘价就低于或等于止损价，以开盘价卖出
-                    if current_open <= stop_loss_price:
-                        sell_price = current_open
-                        sell_date = f"{current_date}（止损-开盘）"
-                        sell_reason = '止损'
-                        break
-                    # 如果开盘价高于止损价，但盘中最低价低于止损价，以止损价卖出
-                    elif current_low <= stop_loss_price:
-                        sell_price = stop_loss_price
-                        sell_date = f"{current_date}（止损）"
-                        sell_reason = '止损'
-                        break
+                # 使用辅助函数检查卖出条件
+                should_sell, check_sell_price, check_sell_date, check_sell_reason = check_sell_conditions(
+                    day_data, buy_price, stock, request, use_open_price
+                )
                 
-                # 优先级2：检查止盈
-                # 如果触发止盈，立即卖出并跳出循环，后续日期（包括统计日）不再检查
-                if request.use_take_profit:
-                    take_profit_price = buy_price * (1 + request.take_profit_percent / 100)
-                    # 如果开盘价就高于或等于止盈价，以开盘价卖出
-                    if current_open >= take_profit_price:
-                        sell_price = current_open
-                        sell_date = f"{current_date}（止盈-开盘）"
-                        sell_reason = '止盈'
-                        break
-                    # 如果开盘价低于止盈价，但盘中最高价高于止盈价，以止盈价卖出
-                    elif current_high >= take_profit_price:
-                        sell_price = take_profit_price
-                        sell_date = f"{current_date}（止盈）"
-                        sell_reason = '止盈'
-                        break
+                if should_sell:
+                    sell_price = check_sell_price
+                    sell_date = check_sell_date
+                    sell_reason = check_sell_reason
+                    break
                 
                 # 优先级3：统计日卖出（最低优先级）
-                # 只有在没有触发止损和止盈的情况下，才会执行统计日卖出
+                # 只有在没有触发其他卖出条件的情况下，才会执行统计日卖出
                 if current_date == request.stat_date or str(day_data.get('date_str', current_date)) == request.stat_date:
                     sell_price = current_sell_price
                     price_type_label = '开盘' if use_open_price else '收盘'
@@ -2999,11 +3030,19 @@ class BatchTaskBacktestRequest(BaseModel):
     period_stat_dates: Dict[str, str]  # 每个周期对应的统计日 { scanDate: statDate }
     buy_strategy: str = "fixed_amount"  # 买入策略
     initial_capital: Optional[float] = 100000  # 初始资金（用于平均分配策略）
-    use_stop_loss: bool = True  # 使用止损
-    use_take_profit: bool = True  # 使用止盈
-    stop_loss_percent: float = -2.0  # 止损百分比
-    take_profit_percent: float = 18.0  # 止盈百分比
     sell_price_type: str = "close"  # 卖出价格类型：'open' 开盘价，'close' 收盘价（默认）
+    sell_strategy_type: str = "percent"  # 卖出策略类型：'percent' 基于涨跌幅，'level' 基于支撑位/压力位
+    # 基于涨跌幅的卖出策略（风控设置）
+    use_stop_loss: Optional[bool] = True  # 使用止损
+    use_take_profit: Optional[bool] = True  # 使用止盈
+    stop_loss_percent: Optional[float] = -2.0  # 止损百分比
+    take_profit_percent: Optional[float] = 18.0  # 止盈百分比
+    # 基于支撑位/压力位的卖出策略
+    use_resistance: Optional[bool] = False  # 使用压力位卖出
+    use_support: Optional[bool] = False  # 使用支撑位卖出
+    selected_resistance_index: Optional[int] = None  # 选中的压力位点位序号（1、2、3）
+    selected_support_index: Optional[int] = None  # 选中的支撑位点位序号（1、2、3）
+    stock_level_prices: Optional[Dict[str, Dict[str, float]]] = None  # 每只股票的支撑位/压力位价格 {code: {support_level: float, resistance_level: float}}
     platform_periods: Optional[List[int]] = None  # 平台期筛选（可选），如果提供则只买入选中平台期的股票
     boards: Optional[List[str]] = None  # 板块筛选（可选），如果提供则只买入选中板块的股票，如 ['创业板', '科创板', '主板']
     percent_b_range: Optional[Dict[str, float]] = None  # %B 筛选范围 { min: float, max: float }
@@ -3101,14 +3140,22 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                             'stat_date': None,
                             'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
-                            'use_stop_loss': request.use_stop_loss,
-                            'use_take_profit': request.use_take_profit,
-                            'stop_loss_percent': request.stop_loss_percent,
-                            'take_profit_percent': request.take_profit_percent,
+                            'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
                             'selected_stocks': scan_result.get('scannedStocks', []),
                             'batch_task_id': task_id,
                             'status': 'failed'
                         }
+                        # 根据卖出策略类型添加不同的参数
+                        if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                            config_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                            config_dict['use_support'] = getattr(request, 'use_support', False)
+                            config_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                            config_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                        else:
+                            config_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                            config_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                            config_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                            config_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
                         result_dict = {
                             'status': 'failed',
                             'error': f'扫描日期{scan_date}未设置统计日',
@@ -3146,14 +3193,22 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                             'stat_date': stat_date_str,
                             'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
-                            'use_stop_loss': request.use_stop_loss,
-                            'use_take_profit': request.use_take_profit,
-                            'stop_loss_percent': request.stop_loss_percent,
-                            'take_profit_percent': request.take_profit_percent,
+                            'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
                             'selected_stocks': scan_result.get('scannedStocks', []),
                             'batch_task_id': task_id,
                             'status': 'failed'
                         }
+                        # 根据卖出策略类型添加不同的参数
+                        if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                            config_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                            config_dict['use_support'] = getattr(request, 'use_support', False)
+                            config_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                            config_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                        else:
+                            config_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                            config_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                            config_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                            config_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
                         result_dict = {
                             'status': 'failed',
                             'error': f'统计日格式错误: {stat_date_str}',
@@ -3190,14 +3245,22 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                             'stat_date': stat_date_str,
                             'backtest_name': request.backtest_name,  # 回测名称
                             'buy_strategy': request.buy_strategy,
-                            'use_stop_loss': request.use_stop_loss,
-                            'use_take_profit': request.use_take_profit,
-                            'stop_loss_percent': request.stop_loss_percent,
-                            'take_profit_percent': request.take_profit_percent,
+                            'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
                             'selected_stocks': scan_result.get('scannedStocks', []),
                             'batch_task_id': task_id,
                             'status': 'failed'
                         }
+                        # 根据卖出策略类型添加不同的参数
+                        if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                            config_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                            config_dict['use_support'] = getattr(request, 'use_support', False)
+                            config_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                            config_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                        else:
+                            config_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                            config_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                            config_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                            config_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
                         result_dict = {
                             'status': 'failed',
                             'error': f'回测日({scan_date})必须早于统计日({stat_date_str})',
@@ -3399,18 +3462,34 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     print(f"{Fore.CYAN}[{idx + 1}/{total}] 执行回测: 回测日={scan_date}, 统计日={stat_date_str}, 股票数={len(scanned_stocks)}{Style.RESET_ALL}")
                 
                 # 构建回测请求
-                backtest_request = BacktestRequest(
-                    backtest_date=scan_date,
-                    stat_date=stat_date_str,
-                    buy_strategy=request.buy_strategy,
-                    initial_capital=period_initial_capital,  # 使用当前周期的初始资金
-                    use_stop_loss=request.use_stop_loss,
-                    use_take_profit=request.use_take_profit,
-                    stop_loss_percent=request.stop_loss_percent,
-                    take_profit_percent=request.take_profit_percent,
-                    sell_price_type=getattr(request, 'sell_price_type', 'close'),
-                    selected_stocks=scanned_stocks
-                )
+                backtest_request_dict = {
+                    'backtest_date': scan_date,
+                    'stat_date': stat_date_str,
+                    'buy_strategy': request.buy_strategy,
+                    'initial_capital': period_initial_capital,  # 使用当前周期的初始资金
+                    'sell_price_type': getattr(request, 'sell_price_type', 'close'),
+                    'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
+                    'selected_stocks': scanned_stocks
+                }
+                
+                # 根据卖出策略类型添加不同的参数
+                if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                    # 基于支撑位/压力位的卖出策略
+                    backtest_request_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                    backtest_request_dict['use_support'] = getattr(request, 'use_support', False)
+                    backtest_request_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                    backtest_request_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                    # 传递前端计算的股票价格（如果有）
+                    if hasattr(request, 'stock_level_prices') and request.stock_level_prices:
+                        backtest_request_dict['stock_level_prices'] = request.stock_level_prices
+                else:
+                    # 基于涨跌幅的卖出策略（风控设置）
+                    backtest_request_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                    backtest_request_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                    backtest_request_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                    backtest_request_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
+                
+                backtest_request = BacktestRequest(**backtest_request_dict)
                 
                 # 执行回测
                 result = run_backtest_with_progress(backtest_request, progress_callback=None)
@@ -3437,13 +3516,22 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                     'backtest_name': request.backtest_name,  # 回测名称
                     'buy_strategy': request.buy_strategy,
                     'initial_capital': period_initial_capital,  # 保存当前周期的初始资金
-                    'use_stop_loss': request.use_stop_loss,
-                    'use_take_profit': request.use_take_profit,
-                    'stop_loss_percent': request.stop_loss_percent,
-                    'take_profit_percent': request.take_profit_percent,
+                    'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
                     'selected_stocks': scanned_stocks,
                     'batch_task_id': task_id
                 }
+                
+                # 根据卖出策略类型保存不同的参数
+                if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                    config_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                    config_dict['use_support'] = getattr(request, 'use_support', False)
+                    config_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                    config_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                else:
+                    config_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                    config_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                    config_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                    config_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
                 history_id = save_backtest_history(config_dict, result_dict, batch_task_id=task_id)
                 print(f"{Fore.GREEN}[{idx + 1}/{total}] 回测完成并保存: {history_id}{Style.RESET_ALL}")
                 
@@ -3473,14 +3561,22 @@ async def run_batch_task_backtest(task_id: str, request: BatchTaskBacktestReques
                         'stat_date': request.period_stat_dates.get(scan_date) if scan_date else None,
                         'backtest_name': request.backtest_name,  # 回测名称
                         'buy_strategy': request.buy_strategy,
-                        'use_stop_loss': request.use_stop_loss,
-                        'use_take_profit': request.use_take_profit,
-                        'stop_loss_percent': request.stop_loss_percent,
-                        'take_profit_percent': request.take_profit_percent,
+                        'sell_strategy_type': getattr(request, 'sell_strategy_type', 'percent'),
                         'selected_stocks': scan_result.get('scannedStocks', []),
                         'batch_task_id': task_id,
                         'status': 'failed'
                     }
+                    # 根据卖出策略类型添加不同的参数
+                    if getattr(request, 'sell_strategy_type', 'percent') == 'level':
+                        config_dict['use_resistance'] = getattr(request, 'use_resistance', False)
+                        config_dict['use_support'] = getattr(request, 'use_support', False)
+                        config_dict['selected_resistance_index'] = getattr(request, 'selected_resistance_index', None)
+                        config_dict['selected_support_index'] = getattr(request, 'selected_support_index', None)
+                    else:
+                        config_dict['use_stop_loss'] = getattr(request, 'use_stop_loss', True)
+                        config_dict['use_take_profit'] = getattr(request, 'use_take_profit', True)
+                        config_dict['stop_loss_percent'] = getattr(request, 'stop_loss_percent', -2.0)
+                        config_dict['take_profit_percent'] = getattr(request, 'take_profit_percent', 18.0)
                     result_dict = {
                         'status': 'failed',
                         'error': error_message,

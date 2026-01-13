@@ -3279,12 +3279,16 @@ async function goToBacktestFromScanHistory(record) {
       return
     }
 
-    // 准备股票数据（确保格式正确）
+    // 准备股票数据（确保格式正确，包含完整的点位数据）
     const stocksForBacktest = scanRecord.scannedStocks.map(stock => ({
       code: stock.code,
       name: stock.name,
       industry: stock.industry || '未知行业',
-      selection_reasons: stock.selection_reasons || {}
+      selection_reasons: stock.selection_reasons || {},
+      box_analysis: stock.box_analysis || null, // 包含箱体分析数据（用于点位卖出策略）
+      details: stock.details || null, // 包含窗口详情数据（用于点位卖出策略）
+      platform_windows: stock.platform_windows || [],
+      kline_data: stock.kline_data || []
     }))
 
     // 准备扫描配置
