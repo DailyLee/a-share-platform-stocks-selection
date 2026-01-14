@@ -1430,6 +1430,7 @@ import ScanConfigForm from './components/ScanConfigForm.vue'; // 扫描配置表
 import { getStockBoard } from './utils/stockBoardUtils.js'; // 板块工具函数
 import { getDefaultScanConfig } from './config/scanConfig.js'; // 默认扫描配置
 import { extractPercentB, calculatePercentBRange } from './utils/selectionReasonsParser.js'; // %B 相关工具函数
+import { exportStocksToCSV } from './utils/stockExportUtils.js'; // 股票导出工具函数
 import Slider from './components/ui/slider.vue'; // Slider 组件
 import { gsap } from 'gsap';
 
@@ -2388,69 +2389,22 @@ async function exportToCase (stock) {
 }
 
 // 导出扫描结果到CSV文件
-function exportToCSV () {
+async function exportToCSV () {
   if (filteredStocks.value.length === 0) {
     showToast('没有可导出的数据', 'error');
     return;
   }
 
   try {
-    // CSV 表头
-    const headers = ['代码', '名称', '行业', '选择理由'];
-    
-    // 构建CSV行数据（使用筛选后的股票）
-    const rows = filteredStocks.value.map(stock => {
-      // 格式化选择理由
-      let reasons = '';
-      if (stock.selection_reasons) {
-        reasons = Object.entries(stock.selection_reasons)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join('; ');
+    // 使用工具函数导出
+    const result = await exportStocksToCSV(
+      filteredStocks.value,
+      {
+        includeBuySellDates: false
       }
-      
-      return [
-        stock.code || '',
-        stock.name || '',
-        stock.industry || '未知行业',
-        reasons
-      ];
-    });
-
-    // 添加BOM以支持中文Excel打开
-    const BOM = '\uFEFF';
+    );
     
-    // 构建CSV内容
-    const csvContent = BOM + [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => {
-        // 处理包含逗号、引号或换行的单元格
-        const cellStr = String(cell);
-        if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
-          return `"${cellStr.replace(/"/g, '""')}"`;
-        }
-        return cellStr;
-      }).join(','))
-    ].join('\n');
-
-    // 创建下载链接
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    // 生成文件名（包含日期）
-    const date = new Date();
-    const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-    const filename = `平台股扫描结果_${dateStr}.csv`;
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    showToast(`已导出 ${filteredStocks.value.length} 条数据`, 'success');
+    showToast(`已导出 ${result.count} 条数据`, 'success');
   } catch (error) {
     console.error('导出CSV失败:', error);
     showToast(`导出失败: ${error.message || '未知错误'}`, 'error');

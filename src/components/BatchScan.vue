@@ -703,6 +703,7 @@ import { calculateTotalReturnRate } from '../utils/returnRateCalculator.js'
 import { getStockBoard } from '../utils/stockBoardUtils.js'
 import { getDefaultScanConfig } from '../config/scanConfig.js' // 默认扫描配置
 import { calculatePercentBRange, extractPercentB } from '../utils/selectionReasonsParser.js'
+import { exportStocksToCSV } from '../utils/stockExportUtils.js'
 
 const router = useRouter()
 
@@ -1809,33 +1810,6 @@ const handleDeleteBacktestNameConfirm = async () => {
   }
 }
 
-// 将周末日期调整为下一个周一
-const adjustWeekendToMonday = (dateStr) => {
-  if (!dateStr) return dateStr
-  
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) {
-    return dateStr // 无效日期，返回原值
-  }
-  
-  const dayOfWeek = date.getDay() // 0=周日, 1=周一, ..., 6=周六
-  
-  // 如果是周末（周六=6 或 周日=0），调整为下一个周一
-  if (dayOfWeek === 0) {
-    // 周日，加1天到周一
-    date.setDate(date.getDate() + 1)
-  } else if (dayOfWeek === 6) {
-    // 周六，加2天到周一
-    date.setDate(date.getDate() + 2)
-  }
-  
-  // 格式化为 YYYY-MM-DD
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 // 导出扫描结果为CSV
 const exportScanResultsToCSV = async () => {
   if (scanResultsForBacktest.value.length === 0) {
@@ -1845,13 +1819,11 @@ const exportScanResultsToCSV = async () => {
 
   try {
     // 收集所有股票数据
-    const exportData = []
+    const allStocks = []
     
     // 遍历所有扫描结果
     for (const result of scanResultsForBacktest.value) {
       const originalScanDate = result.scanDate // 原始扫描日期（用于查找统计日）
-      // 如果买入日期是周末，调整为下一个周一
-      const buyDate = adjustWeekendToMonday(originalScanDate)
       const statDate = backtestConfig.value.periodStatDates[originalScanDate] || '' // 卖出日期（统计日）
       
       // 获取扫描结果的完整数据（如果还没有加载）
@@ -1871,160 +1843,38 @@ const exportScanResultsToCSV = async () => {
       // 遍历该扫描结果中的所有股票
       if (scanResult.scannedStocks && Array.isArray(scanResult.scannedStocks)) {
         for (const stock of scanResult.scannedStocks) {
-          // 提取 box_quality
-          let boxQuality = null
-          if (stock.box_analysis && stock.box_analysis.box_quality !== undefined) {
-            boxQuality = stock.box_analysis.box_quality
-          } else if (stock.details && typeof stock.details === 'object') {
-            // 从 details 中查找最大的 box_quality
-            Object.values(stock.details).forEach(windowDetail => {
-              if (windowDetail && typeof windowDetail === 'object') {
-                if (windowDetail.box_analysis && typeof windowDetail.box_analysis === 'object' && windowDetail.box_analysis.box_quality !== undefined) {
-                  const quality = windowDetail.box_analysis.box_quality
-                  if (typeof quality === 'number' && !isNaN(quality)) {
-                    if (boxQuality === null || quality > boxQuality) {
-                      boxQuality = quality
-                    }
-                  }
-                }
-                if (windowDetail.box_quality !== undefined) {
-                  const quality = windowDetail.box_quality
-                  if (typeof quality === 'number' && !isNaN(quality)) {
-                    if (boxQuality === null || quality > boxQuality) {
-                      boxQuality = quality
-                    }
-                  }
-                }
-              }
-            })
-          }
-          
-          // 提取 windows（平台期）
-          let windows = ''
-          if (stock.platform_windows) {
-            if (Array.isArray(stock.platform_windows) && stock.platform_windows.length > 0) {
-              // 如果是数组，过滤掉无效值，排序后用逗号连接
-              const validWindows = stock.platform_windows
-                .filter(w => typeof w === 'number' && !isNaN(w) && w > 0)
-                .sort((a, b) => a - b)
-              if (validWindows.length > 0) {
-                windows = validWindows.join(',')
-              }
-            } else if (typeof stock.platform_windows === 'string') {
-              // 如果已经是字符串，直接使用
-              windows = stock.platform_windows
-            } else if (typeof stock.platform_windows === 'number') {
-              // 如果是单个数字，转换为字符串
-              windows = String(stock.platform_windows)
-            }
-          }
-          
-          // 提取 %B
-          const percentB = extractPercentB(stock)
-          const percentBStr = percentB !== null && typeof percentB === 'number' && !isNaN(percentB) 
-            ? percentB.toFixed(4) 
-            : ''
-          
-          // 添加到导出数据
-          exportData.push({
-            code: stock.code || '',
-            name: stock.name || '',
-            buy_date: buyDate || '',
-            sell_date: statDate || '',
-            windows: windows,
-            box_quality: boxQuality !== null && typeof boxQuality === 'number' && !isNaN(boxQuality)
-              ? boxQuality.toFixed(4)
-              : '',
-            percentB: percentBStr
+          // 为每只股票添加买入和卖出日期信息
+          allStocks.push({
+            stock,
+            buyDate: originalScanDate, // 原始扫描日期，工具函数会自动处理周末
+            sellDate: statDate
           })
         }
       }
     }
     
-    if (exportData.length === 0) {
+    if (allStocks.length === 0) {
       alert('没有可导出的股票数据')
       return
     }
     
-    // 生成CSV内容
-    const headers = ['code', 'name', 'buy_date', 'sell_date', 'windows', 'box_quality', '%B']
-    const csvRows = []
-    
-    // 添加表头
-    csvRows.push(headers.join(','))
-    
-    // 添加数据行
-    exportData.forEach(row => {
-      const values = [
-        escapeCSVValue(row.code),
-        escapeCSVValue(row.name),
-        escapeCSVValue(row.buy_date),
-        escapeCSVValue(row.sell_date),
-        escapeCSVValue(row.windows),
-        escapeCSVValue(row.box_quality),
-        escapeCSVValue(row.percentB)
-      ]
-      csvRows.push(values.join(','))
-    })
-    
-    // 生成CSV字符串
-    const csvContent = csvRows.join('\n')
-    
-    // 添加BOM以支持中文（UTF-8 with BOM）
-    const BOM = '\uFEFF'
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' })
-    
-    // 创建下载链接
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.style.display = 'none' // 隐藏链接
-    
-    // 生成文件名（清理特殊字符）
-    const taskName = selectedTaskForBacktest.value?.taskName || '批量扫描'
-    // 移除文件名中不允许的字符：/ \ : * ? " < > |
-    const cleanTaskName = taskName.replace(/[/\\:*?"<>|]/g, '_').trim()
-    const fileName = `${cleanTaskName}_扫描结果.csv`
-    link.download = fileName
-    
-    // 添加到DOM并触发下载
-    document.body.appendChild(link)
-    
-    // 触发下载
-    link.click()
-    
-    // 延迟清理，确保下载开始（给浏览器足够时间开始下载）
-    setTimeout(() => {
-      try {
-        document.body.removeChild(link)
-        URL.revokeObjectURL(url)
-      } catch (e) {
-        console.warn('清理下载链接时出错:', e)
+    // 使用工具函数导出
+    const result = await exportStocksToCSV(
+      allStocks.map(item => item.stock),
+      {
+        filename: `${selectedTaskForBacktest.value?.taskName || '批量扫描'}_扫描结果.csv`,
+        includeBuySellDates: true,
+        getBuyDate: (stock, index) => allStocks[index].buyDate,
+        getSellDate: (stock, index) => allStocks[index].sellDate
       }
-    }, 200)
+    )
     
-    // 显示成功消息，提示用户检查下载文件夹
-    alert(`成功导出 ${exportData.length} 条扫描结果\n\n文件名: ${fileName}\n\n请检查浏览器的下载文件夹。\n如果未看到文件，请检查浏览器是否阻止了下载。`)
+    // 显示成功消息
+    alert(`成功导出 ${result.count} 条扫描结果\n\n文件名: ${result.filename}\n\n请检查浏览器的下载文件夹。\n如果未看到文件，请检查浏览器是否阻止了下载。`)
   } catch (error) {
     console.error('导出CSV失败:', error)
     alert('导出CSV失败: ' + (error.message || '未知错误'))
   }
-}
-
-// CSV值转义函数（处理包含逗号、引号或换行符的值）
-const escapeCSVValue = (value) => {
-  if (value === null || value === undefined) {
-    return ''
-  }
-  
-  const str = String(value)
-  
-  // 如果值包含逗号、引号或换行符，需要用引号包裹并转义引号
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`
-  }
-  
-  return str
 }
 
 // 返回上一页
